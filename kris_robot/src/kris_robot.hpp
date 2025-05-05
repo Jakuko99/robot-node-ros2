@@ -11,7 +11,7 @@
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/convert.h"
 
-class KRISRobot
+class KRISRobot : public rclcpp::Node
 {
 public:
   KRISRobot(std::string);
@@ -21,9 +21,8 @@ public:
   void publish_urdf();
   void publish_tf();
   void publish_joint_state();
-  void handle_vel_msg(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void update_state();
-  rclcpp::Node::SharedPtr get_node();
 
 private:
   float x;
@@ -31,7 +30,6 @@ private:
   float theta;
   float v_linear;
   float v_angular;
-  rclcpp::Node::SharedPtr node;
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr laser_pub;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub;
@@ -39,8 +37,3 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr tf_pub;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;
 };
-
-inline rclcpp::Node::SharedPtr KRISRobot::get_node()
-{
-  return this->node;
-}

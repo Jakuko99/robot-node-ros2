@@ -1,4 +1,4 @@
-<robot name="robot">
+<robot name="kris_robot">
 	<link name="base_link">
 		<visual>
 			<geometry>

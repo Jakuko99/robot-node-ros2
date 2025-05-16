@@ -22,6 +22,12 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
 
   std::chrono::milliseconds rate(100);
   auto loopTimer = this->create_wall_timer(rate, std::bind(&KRISRobot::update_state, this));
+  if (loopTimer->is_ready())
+  {
+#ifdef DEBUG
+    RCLCPP_DEBUG(this->get_logger(), "State timer is ready");
+#endif
+  }
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 }

@@ -16,15 +16,16 @@ class KRISRobot : public rclcpp::Node
 public:
   KRISRobot(std::string);
   ~KRISRobot();
+  void update_state();
+
+private:
   void publish_scan();
   void publish_odometry();
   void publish_urdf();
   void publish_tf();
   void publish_joint_state();
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
-  void update_state();
 
-private:
   float x;
   float y;
   float theta;

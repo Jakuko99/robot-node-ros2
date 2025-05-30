@@ -25,7 +25,7 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   if (loopTimer->is_ready())
   {
 #ifdef DEBUG
-    RCLCPP_DEBUG(this->get_logger(), "State timer is ready");
+    RCLCPP_INFO(this->get_logger(), "State timer is ready");
 #endif
   }
 
@@ -41,7 +41,7 @@ void KRISRobot::publish_scan()
 void KRISRobot::publish_odometry()
 {
 #ifdef DEBUG
-  RCLCPP_DEBUG(this->get_logger(), "x = %f, y = %f, theta = %f\n", this->x, this->y, this->theta);
+  RCLCPP_INFO(this->get_logger(), "x = %f, y = %f, theta = %f\n", this->x, this->y, this->theta);
 #endif
 
   nav_msgs::msg::Odometry msg = nav_msgs::msg::Odometry();
@@ -110,7 +110,7 @@ void KRISRobot::publish_joint_state()
 void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
 #ifdef DEBUG
-  RCLCPP_DEBUG(this->get_logger(), "Recieved cmd_vel: linear.x = %f, angular.z = %f\n", msg->linear.x, msg->angular.z);
+  RCLCPP_INFO(this->get_logger(), "Recieved cmd_vel: linear.x = %f, angular.z = %f\n", msg->linear.x, msg->angular.z);
 #endif
   this->x = msg->linear.x;
   this->y = msg->linear.y;
@@ -120,7 +120,7 @@ void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 void KRISRobot::update_state()
 {
 #ifdef DEBUG
-  RCLCPP_DEBUG(this->get_logger(), "Updating node state");
+  RCLCPP_INFO(this->get_logger(), "Updating node state");
 #endif
 
   float dt = 0.1; // Time step

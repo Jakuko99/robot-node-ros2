@@ -9,8 +9,16 @@
 				<color rgba="1 1 1 1" />
 			</material>
 		</visual>
+		<inertial>
+			<origin xyz="0 0 0" rpy="0 0 0.041"/>
+			<mass value="0.25"/>
+			<inertia
+				ixx="1.0" ixy="0.0" ixz="0.0"
+				iyy="1.0" iyz="0.0"
+				izz="1.0"/>
+		</inertial>
 	</link>
-	<joint name="base_link_to_lwheel" type="continuous">
+	<joint name="base_link_to_lwheel" type="fixed">
 		<parent link="base_link" />
 		<child link="lwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02" />
@@ -25,8 +33,16 @@
 				<color rgba="0 0 0 1" />
 			</material>
 		</visual>
+		<inertial>
+			<origin xyz="1.5708 1.5708 0" rpy="0 0.050 0.02"/>
+			<mass value="0.1"/>
+			<inertia
+				ixx="1.0" ixy="0.0" ixz="0.0"
+				iyy="1.0" iyz="0.0"
+				izz="1.0"/>
+		</inertial>
 	</link>
-	<joint name="base_link_to_rwheel" type="continuous">
+	<joint name="base_link_to_rwheel" type="fixed">
 		<parent link="base_link" />
 		<child link="rwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02" />
@@ -41,5 +57,64 @@
 				<color rgba="0 0 0 1" />
 			</material>
 		</visual>
+		<inertial>
+			<origin xyz="1.5708 1.5708 0" rpy="0 -0.050 0.02"/>
+			<mass value="0.1"/>
+			<inertia
+				ixx="1.0" ixy="0.0" ixz="0.0"
+				iyy="1.0" iyz="0.0"
+				izz="1.0"/>
+		</inertial>
 	</link>
+
+	<joint name="laser_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="laser_frame"/>
+        <origin xyz="0.1 0 0.175" rpy="0 0 0"/>
+    </joint>
+
+    <link name="laser_frame">
+		<visual>
+			<geometry>
+				<cylinder radius="0.035" length="0.034"/>
+			</geometry>
+			<material name="red"/>
+			<origin xyz="0 0 0.09" rpy="0 0 0"/>
+		</visual>
+		<inertial>
+			<origin xyz="0 0 0.09" rpy="0 0 0"/>
+			<mass value="0.05"/>
+			<inertia
+				ixx="1.0" ixy="0.0" ixz="0.0"
+				iyy="1.0" iyz="0.0"
+				izz="1.0"/>
+		</inertial>
+	</link>
+
+	<material name="red">
+    	<color rgba="1 0 0 1"/>
+	</material>
+
+	<gazebo reference="laser_frame">
+        <material>Gazebo/Red</material>
+
+        <sensor name="laser" type="ray">
+            <pose> 0 0 0 0 0 0 </pose>
+            <visualize>true</visualize>
+            <update_rate>10</update_rate>
+            <ray>
+                <scan>
+                    <horizontal>
+                        <samples>360</samples>
+                        <min_angle>-3.14</min_angle>
+                        <max_angle>3.14</max_angle>
+                    </horizontal>
+                </scan>
+                <range>
+                    <min>0.3</min>
+                    <max>12</max>
+                </range>
+            </ray>
+        </sensor>
+    </gazebo>
 </robot>

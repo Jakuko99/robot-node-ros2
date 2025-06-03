@@ -10,7 +10,7 @@ def generate_launch_description():
             output="screen",
             emulate_tty=True,
             parameters=[
-                {"robot_description": "~/ros_ws/src/kris_robot/urdf/kris_robot.urdf"},
+                {"robot_description": "/home/ubuntu/ros_ws/src/kris_robot/urdf/kris_robot.urdf"},
             ]
         )
     ])

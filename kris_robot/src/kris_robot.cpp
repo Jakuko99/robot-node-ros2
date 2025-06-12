@@ -1,7 +1,7 @@
 #include "kris_robot.hpp"
 
 using std::placeholders::_1;
-#define DEBUG
+// #define DEBUG
 
 KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
                                               x(0.0),
@@ -11,7 +11,7 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
                                               v_angular(0.0)
 {
   this->declare_parameter("robot_description", "");
-  this->laser_pub = this->create_publisher<sensor_msgs::msg::LaserScan>("laser_scan", rclcpp::QoS(10));
+  this->laser_pub = this->create_publisher<sensor_msgs::msg::LaserScan>("scan", rclcpp::QoS(10));
   this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10));
   this->joint_state_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::QoS(10));
   this->urdf_pub = this->create_publisher<std_msgs::msg::String>("robot_description", 10);
@@ -20,14 +20,16 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
       "cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
   publish_urdf();
 
-  std::chrono::milliseconds rate(100);
+  /*std::chrono::milliseconds rate(100);
   auto loopTimer = this->create_wall_timer(rate, std::bind(&KRISRobot::update_state, this));
-  if (loopTimer->is_ready())
+  auto timer = this->create_timer(
+      rate, std::bind(&KRISRobot::update_state, this));
+  if (timer->is_ready())
   {
 #ifdef DEBUG
     RCLCPP_INFO(this->get_logger(), "State timer is ready");
 #endif
-  }
+  }*/
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 }
@@ -36,6 +38,29 @@ KRISRobot::~KRISRobot() {}
 
 void KRISRobot::publish_scan()
 {
+  sensor_msgs::msg::LaserScan scan_msg;
+  scan_msg.header.stamp = this->now();
+  scan_msg.header.frame_id = "laser_frame";
+  scan_msg.angle_min = 0;                // Start angle of the scan
+  scan_msg.angle_max = 2 * M_PI;         // End angle of the scan
+  scan_msg.angle_increment = M_PI / 180; // 1 degree increments
+  scan_msg.scan_time = 0.1;              // Time taken to scan
+  scan_msg.time_increment = 0.0002;      // Time between measurements
+  scan_msg.range_min = 0.03;             // Minimum range
+  scan_msg.range_max = 12.0;             // Maximum range
+  scan_msg.ranges.resize(static_cast<size_t>((scan_msg.angle_max - scan_msg.angle_min) / scan_msg.angle_increment));
+  scan_msg.intensities.resize(scan_msg.ranges.size(), 0.0); // Initialize intensities to zero
+  for (size_t i = 0; i < scan_msg.ranges.size(); ++i)
+  {
+    scan_msg.ranges[i] = 2.0;      // Placeholder value for range
+    scan_msg.intensities[i] = 1.0; // Placeholder value for intensity
+  }
+
+  this->laser_pub->publish(scan_msg);
+
+#ifdef DEBUG
+  RCLCPP_INFO(this->get_logger(), "Published laser scan with %zu ranges", scan_msg.ranges.size());
+#endif
 }
 
 void KRISRobot::publish_odometry()
@@ -105,6 +130,19 @@ void KRISRobot::publish_tf()
 
 void KRISRobot::publish_joint_state()
 {
+  sensor_msgs::msg::JointState joint_state_msg;
+  joint_state_msg.header.stamp = this->now();
+  joint_state_msg.header.frame_id = "base_link";
+  joint_state_msg.name.push_back("lwheel");
+  joint_state_msg.name.push_back("rwheel");
+  joint_state_msg.position.push_back(0.0);            // Placeholder for left wheel position
+  joint_state_msg.position.push_back(0.0);            // Placeholder for right wheel position
+  joint_state_msg.velocity.push_back(this->v_linear); // Placeholder for left wheel velocity
+  joint_state_msg.velocity.push_back(this->v_linear); // Placeholder for right wheel velocity
+  joint_state_msg.effort.push_back(0.0);              // Placeholder for left wheel effort
+  joint_state_msg.effort.push_back(0.0);              // Placeholder for right wheel effort
+
+  this->joint_state_pub->publish(joint_state_msg);
 }
 
 void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -129,6 +167,7 @@ void KRISRobot::update_state()
   this->y += this->v_linear * sin(this->theta) * dt;
 
   publish_odometry();
+  publish_scan();
   publish_tf();
   publish_joint_state();
 }

@@ -17,13 +17,13 @@ public:
   void update_state();
 
 private:
-    void publish_cmd_vel();
-    void receive_cmd(const geometry_msgs::msg::Twist::SharedPtr msg);
-    void receive_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
-    void receive_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
+  void publish_cmd_vel();
+  void receive_cmd(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void receive_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+  void receive_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
 
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
-    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub;
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
 };

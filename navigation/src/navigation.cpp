@@ -3,7 +3,6 @@
 using std::placeholders::_1;
 #define DEBUG
 
-
 Navigation::Navigation(std::string node_name) : Node(node_name)
 {
     cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd", 10);
@@ -32,10 +31,13 @@ void Navigation::publish_cmd_vel()
 void Navigation::receive_cmd(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
     // This function receives the cmd message and publishes it to cmd_vel
-    if (msg) {
+    if (msg)
+    {
         RCLCPP_INFO(this->get_logger(), "Received cmd: linear.x: %f, angular.z: %f", msg->linear.x, msg->angular.z);
         cmd_vel_pub->publish(*msg);
-    } else {
+    }
+    else
+    {
         RCLCPP_WARN(this->get_logger(), "Received null cmd message");
     }
 }
@@ -43,10 +45,13 @@ void Navigation::receive_cmd(const geometry_msgs::msg::Twist::SharedPtr msg)
 void Navigation::receive_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
     // This function receives the scan message and processes it
-    if (msg) {
+    if (msg)
+    {
         RCLCPP_INFO(this->get_logger(), "Received scan with %zu ranges", msg->ranges.size());
         // Process the scan data here
-    } else {
+    }
+    else
+    {
         RCLCPP_WARN(this->get_logger(), "Received null scan message");
     }
 }
@@ -54,10 +59,13 @@ void Navigation::receive_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 void Navigation::receive_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
     // This function receives the odometry message and processes it
-    if (msg) {
+    if (msg)
+    {
         RCLCPP_INFO(this->get_logger(), "Received odom: position.x: %f, position.y: %f", msg->pose.pose.position.x, msg->pose.pose.position.y);
         // Process the odometry data here
-    } else {
+    }
+    else
+    {
         RCLCPP_WARN(this->get_logger(), "Received null odom message");
     }
 }

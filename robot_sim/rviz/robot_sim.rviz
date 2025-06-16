@@ -10,6 +10,7 @@ Panels:
         - /LaserScan1/Topic1
         - /Map1
         - /Odometry1
+        - /Odometry1/Status1
         - /Odometry1/Shape1
         - /RobotModel1
         - /RobotModel1/Status1
@@ -85,7 +86,7 @@ Visualization Manager:
         Filter size: 100
         History Policy: Keep All
         Reliability Policy: Reliable
-        Value: /laser_scan
+        Value: /scan
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -259,7 +260,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.420012950897217
+      Distance: 1.7105460166931152
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -277,7 +278,7 @@ Visualization Manager:
       Pitch: 0.6903985142707825
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 1.550397515296936
+      Yaw: 1.5653975009918213
     Saved: ~
 Window Geometry:
   Displays:

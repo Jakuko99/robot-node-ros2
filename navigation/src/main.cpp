@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     auto node = std::make_shared<Navigation>("navigation_node");
     while (rclcpp::ok())
     {
-        rclcpp::spin(node);
+        rclcpp::spin_some(node);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     rclcpp::shutdown();

@@ -112,7 +112,7 @@ void KRISRobot::publish_tf()
 {
   geometry_msgs::msg::TransformStamped tf_msg;
   tf_msg.header.stamp = this->now();
-  tf_msg.header.frame_id = "odom";
+  tf_msg.header.frame_id = "kris_robot";
   tf_msg.child_frame_id = "base_link";
   tf_msg.transform.translation.x = this->x;
   tf_msg.transform.translation.y = this->y;
@@ -150,9 +150,8 @@ void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 #ifdef DEBUG
   RCLCPP_INFO(this->get_logger(), "Recieved cmd_vel: linear.x = %f, angular.z = %f\n", msg->linear.x, msg->angular.z);
 #endif
-  this->x = msg->linear.x;
-  this->y = msg->linear.y;
-  this->theta = msg->angular.z;
+  this->v_linear = msg->linear.x; // Set linear velocity
+  this->v_angular = msg->angular.z; // Set angular velocity
 }
 
 void KRISRobot::update_state()

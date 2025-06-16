@@ -31,6 +31,7 @@ private:
   float theta;
   float v_linear;
   float v_angular;
+
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr laser_pub;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub;

@@ -1,4 +1,66 @@
-<robot name="kris_robot">
+<sdf version="1.6">
+  <world name="diff_drive">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin
+      filename="ignition-gazebo-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin
+      filename="ignition-gazebo-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin
+      filename="ignition-gazebo-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name='kris_robot>
+      <pose>0 2 0.325 0 -0 0</pose>
 	<link name="base_link">
 		<visual>
 			<geometry>
@@ -18,7 +80,7 @@
 				izz="1.0"/>
 		</inertial>
 	</link>
-	<joint name="base_link_to_lwheel" type="continuous">
+	<joint name="base_link_to_lwheel" type="revolute">
 		<parent link="base_link" />
 		<child link="lwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02" />
@@ -49,7 +111,7 @@
 				izz="1.0"/>
 		</inertial>
 	</link>
-	<joint name="base_link_to_rwheel" type="continuous">
+	<joint name="base_link_to_rwheel" type="revolute">
 		<parent link="base_link" />
 		<child link="rwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02" />
@@ -129,6 +191,26 @@
                     <max>12</max>
                 </range>
             </ray>
-        </sensor>
-    </gazebo>
-</robot>
+        </sensor>    
+
+      <plugin
+        filename="ignition-gazebo-diff-drive-system"
+        name="gz::sim::systems::DiffDrive">
+        <left_joint>left_wheel_joint</left_joint>
+        <right_joint>right_wheel_joint</right_joint>
+        <wheel_separation>1.25</wheel_separation>
+        <wheel_radius>0.3</wheel_radius>
+        <odom_publish_frequency>1</odom_publish_frequency>
+        <max_linear_acceleration>1</max_linear_acceleration>
+        <min_linear_acceleration>-1</min_linear_acceleration>
+        <max_angular_acceleration>2</max_angular_acceleration>
+        <min_angular_acceleration>-2</min_angular_acceleration>
+        <max_linear_velocity>0.5</max_linear_velocity>
+        <min_linear_velocity>-0.5</min_linear_velocity>
+        <max_angular_velocity>1</max_angular_velocity>
+        <min_angular_velocity>-1</min_angular_velocity>
+      </plugin>
+
+    </model>
+  </world>
+</sdf>

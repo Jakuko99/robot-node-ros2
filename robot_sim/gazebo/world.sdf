@@ -1,3 +1,5 @@
+<!-- https://roboticsbackend.com/ros2-nav2-generate-a-map-with-slam_toolbox/ -->
+
 <sdf version="1.6">
   <world name="diff_drive">
 
@@ -6,8 +8,8 @@
       <real_time_factor>1.0</real_time_factor>
     </physics>
     <plugin
-      filename="ignition-gazebo-physics-system"
-      name="gz::sim::systems::Physics">
+      filename="libignition-gazebo-physics-system"
+      name="ignition::gazebo::systems::Physics">
     </plugin>
     <plugin
       filename="ignition-gazebo-user-commands-system"
@@ -61,7 +63,7 @@
     </model>
 
     <model name='kris_robot'>
-      <pose>0 2 0.325 0 -0 0</pose>
+      <pose>0 0 0 0 0 0</pose>
       <link name="base_link">
         <visual name="visual">
           <geometry>
@@ -90,7 +92,7 @@
         </inertial>
       </link>
 
-      <joint name="base_link_to_lwheel" type="revolute">
+      <joint name="left_wheel_joint" type="revolute">
         <parent>base_link</parent>
         <child>lwheel</child>
         <origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02" />
@@ -130,7 +132,8 @@
           </inertia>
         </inertial>
       </link>
-      <joint name="base_link_to_rwheel" type="revolute">
+
+      <joint name="right_wheel_joint" type="revolute">
         <parent>base_link</parent>
         <child>rwheel</child>
         <origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02" />
@@ -183,7 +186,7 @@
             <cylinder>
               <length>0.0035</length>
               <radius>0.034</radius>
-            </cylinder>            
+            </cylinder>
           </geometry>
           <material>
             <name>red</name>
@@ -232,12 +235,12 @@
         </sensor>
 
         <plugin
-          filename="ignition-gazebo-diff-drive-system"
-          name="gz::sim::systems::DiffDrive">
+          filename="libignition-gazebo-diff-drive-system.so"
+          name="ignition::gazebo::systems::DiffDrive">
           <left_joint>left_wheel_joint</left_joint>
           <right_joint>right_wheel_joint</right_joint>
-          <wheel_separation>1.25</wheel_separation>
-          <wheel_radius>0.3</wheel_radius>
+          <wheel_separation>0.06</wheel_separation>
+          <wheel_radius>0.0325</wheel_radius>
           <odom_publish_frequency>1</odom_publish_frequency>
           <max_linear_acceleration>1</max_linear_acceleration>
           <min_linear_acceleration>-1</min_linear_acceleration>

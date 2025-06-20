@@ -20,17 +20,6 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
       "cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
   publish_urdf();
 
-  /*std::chrono::milliseconds rate(100);
-  auto loopTimer = this->create_wall_timer(rate, std::bind(&KRISRobot::update_state, this));
-  auto timer = this->create_timer(
-      rate, std::bind(&KRISRobot::update_state, this));
-  if (timer->is_ready())
-  {
-#ifdef DEBUG
-    RCLCPP_INFO(this->get_logger(), "State timer is ready");
-#endif
-  }*/
-
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 }
 

@@ -3,28 +3,17 @@
 <sdf version="1.6">
   <world name="diff_drive">
 
-    <physics name="1ms" type="ode">
+    <physics name='default_physics' default='0' type='ode'>
       <max_step_size>0.001</max_step_size>
-      <real_time_factor>1.0</real_time_factor>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
     </physics>
-    <plugin
-      filename="libignition-gazebo-physics-system"
-      name="ignition::gazebo::systems::Physics">
-    </plugin>
-    <plugin
-      filename="ignition-gazebo-user-commands-system"
-      name="gz::sim::systems::UserCommands">
-    </plugin>
-    <plugin
-      filename="ignition-gazebo-scene-broadcaster-system"
-      name="gz::sim::systems::SceneBroadcaster">
-    </plugin>
 
-    <light type="directional" name="sun">
-      <cast_shadows>true</cast_shadows>
-      <pose>0 0 10 0 0 0</pose>
-      <diffuse>1 1 1 1</diffuse>
-      <specular>0.5 0.5 0.5 1</specular>
+    <light name='sun' type='directional'>
+      <cast_shadows>1</cast_shadows>
+      <pose frame=''>0 0 10 0 -0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
       <attenuation>
         <range>1000</range>
         <constant>0.9</constant>
@@ -33,20 +22,39 @@
       </attenuation>
       <direction>-0.5 0.1 -0.9</direction>
     </light>
-    <gravity>0.0 0.0 -9.81</gravity>
 
-    <model name="ground_plane">
-      <static>true</static>
-      <link name="link">
-        <collision name="collision">
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+
+    <model name='ground_plane'>
+      <static>1</static>
+      <link name='link'>
+        <collision name='collision'>
           <geometry>
             <plane>
               <normal>0 0 1</normal>
               <size>100 100</size>
             </plane>
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>100</mu>
+                <mu2>50</mu2>
+              </ode>
+              <torsional>
+                <ode />
+              </torsional>
+            </friction>
+            <contact>
+              <ode />
+            </contact>
+            <bounce />
+          </surface>
+          <max_contacts>10</max_contacts>
         </collision>
-        <visual name="visual">
+        <visual name='visual'>
+          <cast_shadows>0</cast_shadows>
           <geometry>
             <plane>
               <normal>0 0 1</normal>
@@ -54,204 +62,21 @@
             </plane>
           </geometry>
           <material>
-            <ambient>0.8 0.8 0.8 1</ambient>
-            <diffuse>0.8 0.8 0.8 1</diffuse>
-            <specular>0.8 0.8 0.8 1</specular>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
           </material>
         </visual>
+        <self_collide>0</self_collide>
+        <kinematic>0</kinematic>
       </link>
+
     </model>
-
-    <model name='kris_robot'>
-      <pose>0 0 0 0 0 0</pose>
-      <link name="base_link">
-        <visual name="visual">
-          <geometry>
-            <cylinder>
-              <length>0.08</length>
-              <radius>0.055</radius>
-            </cylinder>
-          </geometry>
-          <origin rpy="0 0 0" xyz="0 0 0.041" />
-          <material>
-            <name>white</name>
-            <color rgba="1 1 1 1" />
-          </material>
-        </visual>
-        <inertial>
-          <origin xyz="0 0 0" rpy="0 0 0.041" />
-          <mass>0.25</mass>
-          <inertia>
-            <ixx>1.0</ixx>
-            <ixy>0.0</ixy>
-            <ixz>0.0</ixz>
-            <iyy>1.0</iyy>
-            <iyz>0.0</iyz>
-            <izz>1.0</izz>
-          </inertia>
-        </inertial>
-      </link>
-
-      <joint name="left_wheel_joint" type="revolute">
-        <parent>base_link</parent>
-        <child>lwheel</child>
-        <origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02" />
-        <axis>
-          <xyz>0 0 1</xyz>
-          <limit>
-            <lower>-1.79769e+308</lower>
-            <upper>1.79769e+308</upper>
-          </limit>
-        </axis>
-      </joint>
-
-      <link name="lwheel">
-        <visual name="visual">
-          <geometry>
-            <cylinder>
-              <length>0.025</length>
-              <radius>0.0325</radius>
-            </cylinder>
-          </geometry>
-          <origin rpy="1.5708 1.5708 0" xyz="0 0.050 0.02" />
-          <material>
-            <name>black</name>
-            <color rgba="0 0 0 1" />
-          </material>
-        </visual>
-        <inertial>
-          <origin xyz="1.5708 1.5708 0" rpy="0 0.050 0.02" />
-          <mass>0.1</mass>
-          <inertia>
-            <ixx>1.0</ixx>
-            <ixy>0.0</ixy>
-            <ixz>0.0</ixz>
-            <iyy>1.0</iyy>
-            <iyz>0.0</iyz>
-            <izz>1.0</izz>
-          </inertia>
-        </inertial>
-      </link>
-
-      <joint name="right_wheel_joint" type="revolute">
-        <parent>base_link</parent>
-        <child>rwheel</child>
-        <origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02" />
-        <axis>
-          <xyz>0 0 1</xyz>
-          <limit>
-            <lower>-1.79769e+308</lower>
-            <upper>1.79769e+308</upper>
-          </limit>
-        </axis>
-      </joint>
-
-      <link name="rwheel">
-        <visual name="visual">
-          <geometry>
-            <cylinder>
-              <length>0.025</length>
-              <radius>0.0325</radius>
-            </cylinder>
-          </geometry>
-          <origin rpy="1.5708 1.5708 0" xyz="0 -0.050 0.02" />
-          <material>
-            <name>black</name>
-            <color rgba="0 0 0 1" />
-          </material>
-        </visual>
-        <inertial>
-          <origin xyz="1.5708 1.5708 0" rpy="0 -0.050 0.02" />
-          <mass>0.1</mass>
-          <inertia>
-            <ixx>1.0</ixx>
-            <ixy>0.0</ixy>
-            <ixz>0.0</ixz>
-            <iyy>1.0</iyy>
-            <iyz>0.0</iyz>
-            <izz>1.0</izz>
-          </inertia>
-        </inertial>
-      </link>
-
-      <joint name="laser_joint" type="fixed">
-        <parent>base_link</parent>
-        <child>laser_frame</child>
-        <origin xyz="0.1 0 0.175" rpy="0 0 0" />
-      </joint>
-
-      <link name="laser_frame">
-        <visual name="visual">
-          <geometry>
-            <cylinder>
-              <length>0.0035</length>
-              <radius>0.034</radius>
-            </cylinder>
-          </geometry>
-          <material>
-            <name>red</name>
-            <color rgba="1 0 0 1" />
-          </material>
-          <origin xyz="0 0 0.09" rpy="0 0 0" />
-        </visual>
-        <inertial>
-          <origin xyz="0 0 0.09" rpy="0 0 0" />
-          <mass>0.05</mass>
-          <inertia>
-            <ixx>1.0</ixx>
-            <ixy>0.0</ixy>
-            <ixz>0.0</ixz>
-            <iyy>1.0</iyy>
-            <iyz>0.0</iyz>
-            <izz>1.0</izz>
-          </inertia>
-        </inertial>
-      </link>
-
-      <material name="red">
-        <color rgba="1 0 0 1" />
-      </material>
-
-      <gazebo reference="laser_frame">
-        <material>Gazebo/Red</material>
-
-        <sensor name="laser" type="ray">
-          <pose> 0 0 0 0 0 0 </pose>
-          <visualize>true</visualize>
-          <update_rate>10</update_rate>
-          <ray>
-            <scan>
-              <horizontal>
-                <samples>360</samples>
-                <min_angle>-3.14</min_angle>
-                <max_angle>3.14</max_angle>
-              </horizontal>
-            </scan>
-            <range>
-              <min>0.3</min>
-              <max>12</max>
-            </range>
-          </ray>
-        </sensor>
-
-        <plugin
-          filename="libignition-gazebo-diff-drive-system.so"
-          name="ignition::gazebo::systems::DiffDrive">
-          <left_joint>left_wheel_joint</left_joint>
-          <right_joint>right_wheel_joint</right_joint>
-          <wheel_separation>0.06</wheel_separation>
-          <wheel_radius>0.0325</wheel_radius>
-          <odom_publish_frequency>1</odom_publish_frequency>
-          <max_linear_acceleration>1</max_linear_acceleration>
-          <min_linear_acceleration>-1</min_linear_acceleration>
-          <max_angular_acceleration>2</max_angular_acceleration>
-          <min_angular_acceleration>-2</min_angular_acceleration>
-          <max_linear_velocity>0.5</max_linear_velocity>
-          <min_linear_velocity>-0.5</min_linear_velocity>
-          <max_angular_velocity>1</max_angular_velocity>
-          <min_angular_velocity>-1</min_angular_velocity>
-        </plugin>
-      </gazebo>
-    </model>
+    <include>
+      <uri>model://kris_robot</uri>
+      <file>src/robot_sim/gazebo/kris_robot/model.sdf</file>
+      <name>kris_robot</name>
+    </include>
   </world>
 </sdf>

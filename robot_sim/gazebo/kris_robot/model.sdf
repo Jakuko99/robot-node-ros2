@@ -2,7 +2,7 @@
 <sdf version='1.7'>
   <model name='kris_robot'>
     <link name='base_link'>
-      <pose>0 0.02 -0 0 -0 0</pose>
+      <pose>0 0.02 0 0 -0 0</pose>
       <inertial>
         <mass>0.25</mass>
         <inertia>
@@ -40,7 +40,7 @@
           <specular>0 0 0 1</specular>
           <emissive>0 0 0 1</emissive>
         </material>
-        <pose>0 -0.02 0.02 0 -0 0</pose>
+        <pose>0 -0.02 0.015 0 -0 0</pose>
         <transparency>0</transparency>
         <cast_shadows>1</cast_shadows>
         <origin rpy='0 0 0' xyz='0 0 0.041'/>
@@ -48,7 +48,7 @@
       <collision name='collision'>
         <laser_retro>0</laser_retro>
         <max_contacts>10</max_contacts>
-        <pose>0 -0.02 0.02 0 -0 0</pose>
+        <pose>0 -0.02 0.015 0 -0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.055</radius>
@@ -204,7 +204,7 @@
       </collision>
     </link>
     <link name='lwheel'>
-      <pose>1.1e-05 0.057579 0 -1.40468 1.57079 0.164658</pose>
+      <pose>1.1e-05 0.057579 0 -1.41119 1.57079 0.158151</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>
@@ -305,7 +305,7 @@
       </collision>
     </link>
     <link name='rwheel'>
-      <pose>-2e-05 -0.06367 0 -1.64359 1.57079 -0.074236</pose>
+      <pose>-2e-05 -0.06367 0 -1.64514 1.57079 -0.075782</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>
@@ -488,25 +488,15 @@
     </joint>
     <static>0</static>
     <allow_auto_disable>0</allow_auto_disable>
-    <plugin
-        filename="ignition-gazebo-diff-drive-system"
-        name="gz::sim::systems::DiffDrive">
-      <updateRate>5</updateRate>
-      <leftJoint>left_wheel_joint</leftJoint>
-      <rightJoint>right_wheel_joint</rightJoint>
-      <wheelSeparation>0.08</wheelSeparation>
-      <wheelDiameter>0.0325</wheelDiameter>
-      <wheelAcceleration>1.0</wheelAcceleration>
-      <wheelTorque>20</wheelTorque>
-      <commandTopic>/cmd_vel</commandTopic>
-      <odometryTopic>/odom</odometryTopic>
-      <odometryFrame>odom</odometryFrame>
-      <robotBaseFrame>base_link</robotBaseFrame>
-      <odometrySource>1</odometrySource>
-      <publishWheelTF>1</publishWheelTF>
-      <publishOdom>1</publishOdom>
-      <publishWheelJointState>1</publishWheelJointState>
-      <legacyMode>0</legacyMode>
+    <plugin name='gz::sim::systems::DiffDrive' filename='ignition-gazebo-diff-drive-system'>
+      <odom_publish_frequency>5</odom_publish_frequency>
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.08</wheel_separation>
+      <wheel_radius>0.0325</wheel_radius>
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <max_velocity>0.2</max_velocity>
     </plugin>
   </model>
 </sdf>

@@ -31,16 +31,20 @@ def generate_launch_description():
                 name="parameter_bridge_vel",
                 output="screen",
                 parameters=[{"use_sim_time": use_sim_time}],
-                arguments=["/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist"],
+                arguments=[
+                    "/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist",
+                    "/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry",
+                    "/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan",
+                ],
             ),
-            Node(
-                package="ros_gz_bridge",
-                executable="parameter_bridge",
-                name="parameter_bridge_odom",
-                output="screen",
-                parameters=[{"use_sim_time": use_sim_time}],
-                arguments=["/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry"],
-            ),
+            #     Node(
+            #         package="ros_gz_bridge",
+            #         executable="parameter_bridge",
+            #         name="parameter_bridge_odom",
+            #         output="screen",
+            #         parameters=[{"use_sim_time": use_sim_time}],
+            #         arguments=["/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry"],
+            #     ),
         ]
     )
 

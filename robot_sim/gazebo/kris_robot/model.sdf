@@ -2,7 +2,7 @@
 <sdf version='1.7'>
   <model name='kris_robot'>
     <link name='base_link'>
-      <pose>0 0.02 0 0 -0 0</pose>
+      <pose>0 0.02 -0 0 -0 0</pose>
       <inertial>
         <mass>0.25</mass>
         <inertia>
@@ -40,7 +40,7 @@
           <specular>0 0 0 1</specular>
           <emissive>0 0 0 1</emissive>
         </material>
-        <pose>0 -0.02 0.015 0 -0 0</pose>
+        <pose>0 -0.02 0.01 0 -0 0</pose>
         <transparency>0</transparency>
         <cast_shadows>1</cast_shadows>
         <origin rpy='0 0 0' xyz='0 0 0.041'/>
@@ -141,7 +141,7 @@
           <specular>0.1 0.1 0.1 1</specular>
           <emissive>0 0 0 1</emissive>
         </material>
-        <pose>0 0 0.07 0 -0 0</pose>
+        <pose>0 0 0.055 0 -0 0</pose>
         <transparency>0</transparency>
         <cast_shadows>1</cast_shadows>
         <origin xyz='0 0 0.09' rpy='0 0 0'/>
@@ -149,7 +149,7 @@
       <collision name='collision'>
         <laser_retro>0</laser_retro>
         <max_contacts>10</max_contacts>
-        <pose>0 0 0.07 0 -0 0</pose>
+        <pose>0 0 0.055 0 -0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.034</radius>
@@ -204,7 +204,7 @@
       </collision>
     </link>
     <link name='lwheel'>
-      <pose>1.1e-05 0.057579 0 -1.41119 1.57079 0.158151</pose>
+      <pose>-2.1e-05 0.035 -0 -1.45239 1.57079 0.116953</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>
@@ -305,7 +305,7 @@
       </collision>
     </link>
     <link name='rwheel'>
-      <pose>-2e-05 -0.06367 0 -1.64514 1.57079 -0.075782</pose>
+      <pose>1.1e-05 -0.04 -0 -1.65698 1.57079 -0.087623</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>
@@ -498,5 +498,38 @@
       <odom_topic>/odom</odom_topic>
       <max_velocity>0.2</max_velocity>
     </plugin>
+    <plugin
+      filename='ignition-gazebo-sensors-system'
+      name='gz::sim::systems::Sensors'>
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <sensor name='lidar' type='lidar'>"
+      <pose relative_to='laser_frame'>0 0 0.055 0 -0 0</pose>
+      <topic>/scan</topic>
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>640</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14</min_angle>
+            <max_angle>3.14</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <resolution>0.01</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.03</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+      </ray>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+    </sensor>
   </model>
 </sdf>

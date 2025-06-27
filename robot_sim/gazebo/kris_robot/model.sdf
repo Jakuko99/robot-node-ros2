@@ -102,10 +102,7 @@
         </surface>
       </collision>
     </link>
-    <frame name="lidar_frame" attached_to="laser_frame">
-      <pose>0 0 0.055 0 0 0</pose>
-    </frame>
-    <link name='laser_frame'>
+    <link name='lidar_link'>
       <inertial>
         <mass>0.047</mass>
         <inertia>
@@ -149,6 +146,33 @@
         <cast_shadows>1</cast_shadows>
         <origin xyz='0 0 0.09' rpy='0 0 0'/>
       </visual>
+      <sensor name='gpu_lidar' type='gpu_lidar'>
+        <pose>0 0 0 0 -0 0</pose>
+        <topic>scan</topic>
+        <update_rate>10</update_rate>
+        <enable_metrics>false</enable_metrics>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>640</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14</min_angle>
+              <max_angle>3.14</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+              <resolution>1</resolution>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.02</min>
+            <max>12</max>
+            <resolution>0.01</resolution>
+          </range>
+        </lidar>
+      </sensor>
       <collision name='collision'>
         <laser_retro>0</laser_retro>
         <max_contacts>10</max_contacts>
@@ -410,20 +434,8 @@
     </link>
     <joint name='laser_joint' type='fixed'>
       <parent>base_link</parent>
-      <child>laser_frame</child>
+      <child>lidar_link</child>
       <pose>0 0 0.05 0 -0 0</pose>
-      <physics>
-        <ode>
-          <limit>
-            <cfm>0</cfm>
-            <erp>0.2</erp>
-          </limit>
-          <suspension>
-            <cfm>0</cfm>
-            <erp>0.2</erp>
-          </suspension>
-        </ode>
-      </physics>
     </joint>
     <joint name='left_wheel_joint' type='revolute'>
       <parent>base_link</parent>
@@ -489,8 +501,8 @@
         </ode>
       </physics>
     </joint>
-    <static>0</static>
-    <allow_auto_disable>0</allow_auto_disable>
+    <static>false</static>
+    <self_collide>false</self_collide>
     <plugin name='gz::sim::systems::DiffDrive' filename='ignition-gazebo-diff-drive-system'>
       <odom_publish_frequency>5</odom_publish_frequency>
       <left_joint>left_wheel_joint</left_joint>
@@ -499,40 +511,7 @@
       <wheel_radius>0.0325</wheel_radius>
       <topic>/cmd_vel</topic>
       <odom_topic>/odom</odom_topic>
-      <max_velocity>0.2</max_velocity>      
+      <max_velocity>0.2</max_velocity>
     </plugin>
-    <plugin
-      filename='ignition-gazebo-sensors-system'
-      name='gz::sim::systems::Sensors'>
-      <render_engine>ogre2</render_engine>
-    </plugin>
-    <sensor name='gpu_lidar' type='gpu_lidar'>"
-      <pose relative_to='lidar_frame'>0 0 0.055 0 0 0</pose>
-      <topic>/scan</topic>
-      <update_rate>10</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>640</samples>
-            <resolution>1</resolution>
-            <min_angle>-3.14</min_angle>
-            <max_angle>3.14</max_angle>
-          </horizontal>
-          <vertical>
-            <samples>1</samples>
-            <resolution>0.01</resolution>
-            <min_angle>0</min_angle>
-            <max_angle>0</max_angle>
-          </vertical>
-        </scan>
-        <range>
-          <min>0.03</min>
-          <max>12.0</max>
-          <resolution>0.01</resolution>
-        </range>
-      </ray>
-      <always_on>1</always_on>
-      <visualize>1</visualize>
-    </sensor>
   </model>
 </sdf>

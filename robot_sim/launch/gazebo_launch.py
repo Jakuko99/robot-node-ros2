@@ -37,14 +37,6 @@ def generate_launch_description():
                     "/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan",
                 ],
             ),
-            #     Node(
-            #         package="ros_gz_bridge",
-            #         executable="parameter_bridge",
-            #         name="parameter_bridge_odom",
-            #         output="screen",
-            #         parameters=[{"use_sim_time": use_sim_time}],
-            #         arguments=["/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry"],
-            #     ),
         ]
     )
 

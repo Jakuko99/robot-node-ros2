@@ -102,6 +102,9 @@
         </surface>
       </collision>
     </link>
+    <frame name="lidar_frame" attached_to="laser_frame">
+      <pose>0 0 0.055 0 0 0</pose>
+    </frame>
     <link name='laser_frame'>
       <inertial>
         <mass>0.047</mass>
@@ -496,15 +499,15 @@
       <wheel_radius>0.0325</wheel_radius>
       <topic>/cmd_vel</topic>
       <odom_topic>/odom</odom_topic>
-      <max_velocity>0.2</max_velocity>
+      <max_velocity>0.2</max_velocity>      
     </plugin>
     <plugin
       filename='ignition-gazebo-sensors-system'
       name='gz::sim::systems::Sensors'>
       <render_engine>ogre2</render_engine>
     </plugin>
-    <sensor name='lidar' type='lidar'>"
-      <pose relative_to='laser_frame'>0 0 0.055 0 -0 0</pose>
+    <sensor name='gpu_lidar' type='gpu_lidar'>"
+      <pose relative_to='lidar_frame'>0 0 0.055 0 0 0</pose>
       <topic>/scan</topic>
       <update_rate>10</update_rate>
       <ray>
@@ -529,7 +532,7 @@
         </range>
       </ray>
       <always_on>1</always_on>
-      <visualize>true</visualize>
+      <visualize>1</visualize>
     </sensor>
   </model>
 </sdf>

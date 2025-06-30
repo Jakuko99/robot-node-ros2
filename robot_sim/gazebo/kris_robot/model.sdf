@@ -147,17 +147,17 @@
         <origin xyz='0 0 0.09' rpy='0 0 0'/>
       </visual>
       <sensor name='gpu_lidar' type='gpu_lidar'>
-        <pose>0 0 0 0 -0 0</pose>
+        <pose>0 0 0.055 0 0 0</pose>
         <topic>scan</topic>
-        <update_rate>10</update_rate>
+        <update_rate>5</update_rate>
         <enable_metrics>false</enable_metrics>
         <lidar>
           <scan>
             <horizontal>
               <samples>640</samples>
               <resolution>1</resolution>
-              <min_angle>-3.14</min_angle>
-              <max_angle>3.14</max_angle>
+              <min_angle>0</min_angle>
+              <max_angle>6.28</max_angle>
             </horizontal>
             <vertical>
               <samples>1</samples>

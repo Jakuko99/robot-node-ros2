@@ -25,6 +25,13 @@ def generate_launch_description():
                     "src/robot_sim/gazebo/world.sdf",
                 ],
             ),
+            # ExecuteProcess(
+            #     cmd=[
+            #         "rviz2",
+            #         "-d",
+            #         "src/robot_sim/rviz/gazebo_rviz.rviz",
+            #     ],
+            # ),
             Node(
                 package="ros_gz_bridge",
                 executable="parameter_bridge",

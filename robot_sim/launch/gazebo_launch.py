@@ -17,7 +17,7 @@ def generate_launch_description():
                 default_value="false",
                 description="Use simulation (Gazebo) clock if true",
             ),
-            ExecuteProcess(
+            ExecuteProcess(  # gazebo simulation
                 cmd=[
                     "ign",
                     "gazebo",
@@ -25,24 +25,23 @@ def generate_launch_description():
                     "src/robot_sim/gazebo/world.sdf",
                 ],
             ),
-            ExecuteProcess(
+            ExecuteProcess(  # rviz visualization
                 cmd=[
                     "rviz2",
                     "-d",
                     "src/robot_sim/rviz/gazebo_rviz.rviz",
                 ],
             ),
-            Node(
-                package="ros_gz_bridge",
-                executable="parameter_bridge",
-                name="parameter_bridge_vel",
-                output="screen",
-                parameters=[{"use_sim_time": use_sim_time}],
-                arguments=[
-                    "/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist",
-                    "/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry",
-                    "/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan",
-                ],
+            ExecuteProcess(  # ros gz topic bridge
+                cmd=[
+                    "ros2",
+                    "run",
+                    "ros_gz_bridge",
+                    "parameter_bridge",
+                    "--ros-args",
+                    "-p",
+                    "config_file:=src/robot_sim/gazebo/bridge_config.yaml",
+                ]
             ),
         ]
     )

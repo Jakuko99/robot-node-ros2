@@ -40,7 +40,7 @@
           <specular>0 0 0 1</specular>
           <emissive>0 0 0 1</emissive>
         </material>
-        <pose>0 -0.02 0.01 0 -0 0</pose>
+        <pose>0 -0.02 0.008 0 -0 0</pose>
         <transparency>0</transparency>
         <cast_shadows>1</cast_shadows>
         <origin rpy='0 0 0' xyz='0 0 0.041'/>
@@ -48,7 +48,7 @@
       <collision name='collision'>
         <laser_retro>0</laser_retro>
         <max_contacts>10</max_contacts>
-        <pose>0 -0.02 0.015 0 -0 0</pose>
+        <pose>0 -0.02 0.008 0 -0 0</pose>
         <geometry>
           <cylinder>
             <radius>0.055</radius>
@@ -512,8 +512,8 @@
       <wheel_radius>0.0325</wheel_radius>
       <topic>/cmd_vel</topic>
       <odom_topic>/odom</odom_topic>
-      <frame_id>base_link</frame_id>
-      <child_frame_id>odom</child_frame_id>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
       <max_velocity>0.2</max_velocity>
     </plugin>
   </model>

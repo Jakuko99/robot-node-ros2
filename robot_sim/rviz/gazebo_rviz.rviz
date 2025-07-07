@@ -9,9 +9,7 @@ Panels:
         - /LaserScan1
         - /LaserScan1/Topic1
         - /TF1
-        - /TF1/Status1
         - /Map1
-        - /Map1/Status1
         - /Map1/Topic1
         - /Odometry1
         - /Odometry1/Shape1
@@ -108,10 +106,9 @@ Visualization Manager:
       Show Names: false
       Tree:
         map:
-          {}
-        odom:
-          base_link:
-            {}
+          odom:
+            base_link:
+              {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -174,6 +171,34 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /odom
       Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /plan
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -220,25 +245,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 13.70605182647705
+      Distance: 18.43607521057129
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.26392731070518494
-        Y: 0.041634514927864075
-        Z: -0.17686827480793
+        X: -1.9506900310516357
+        Y: 1.3612873554229736
+        Z: -2.370389223098755
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6503985524177551
+      Pitch: 0.9803982973098755
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.100400686264038
+      Yaw: 2.050400733947754
     Saved: ~
 Window Geometry:
   Displays:

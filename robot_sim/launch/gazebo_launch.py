@@ -7,14 +7,11 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-
-    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "use_sim_time",
-                default_value="false",
+                default_value="true",
                 description="Use simulation (Gazebo) clock if true",
             ),
             ExecuteProcess(  # gazebo simulation
@@ -25,12 +22,13 @@ def generate_launch_description():
                     "src/robot_sim/gazebo/world.sdf",
                 ],
             ),
-            ExecuteProcess(  # rviz visualization
-                cmd=[
-                    "rviz2",
-                    "-d",
-                    "src/robot_sim/rviz/gazebo_rviz.rviz",
-                ],
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2",
+                output="screen",
+                arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
+                parameters=[{"use_sim_time": True}],
             ),
             ExecuteProcess(  # ros gz topic bridge
                 cmd=[
@@ -45,8 +43,3 @@ def generate_launch_description():
             ),
         ]
     )
-
-
-# ros2 run turtlesim turtle_teleop_key --ros-args -r /turtle1/cmd_vel:=/cmd_vel
-# ign gazebo world.sdf
-# ros2 run ros_gz_bridge parameter_bridge /cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist

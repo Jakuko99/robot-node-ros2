@@ -1,19 +1,23 @@
 #include "occupancy_grid_processor.hpp"
 
-OccupancyGridProcessor::OccupancyGridProcessor()
-    : Node("occupancy_grid_processor")
+OccupancyGridProcessor::OccupancyGridProcessor(std::string node_name, std::string plan_topic, std::string odom_topic, std::string cmd_topic)
+    : Node(node_name)
 {
     path_index_ = 0;
     occupancy_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
         "/merge_map", 10,
         std::bind(&OccupancyGridProcessor::occupancyGridCallback, this, std::placeholders::_1));
-    path_publisher_ = this->create_publisher<nav_msgs::msg::Path>("/plan", 10);
+    path_publisher_ = this->create_publisher<nav_msgs::msg::Path>(plan_topic, 10);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 10,
+        odom_topic, 10,
         std::bind(&OccupancyGridProcessor::odomCallback, this, std::placeholders::_1));
 
-    cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+    cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(cmd_topic, 10);
+
+    plan_topic_ = plan_topic;
+    odom_topic_ = odom_topic;
+    cmd_topic_ = cmd_topic;
 }
 
 void OccupancyGridProcessor::followPath()
@@ -21,11 +25,14 @@ void OccupancyGridProcessor::followPath()
     if (current_path_.empty())
     {
         // Stop robot if path complete
-        /*geometry_msgs::msg::Twist stop;
-        cmd_vel_publisher_->publish(stop);*/
+        geometry_msgs::msg::Twist stop;
+        cmd_vel_publisher_->publish(stop);
+        // RCLCPP_INFO(this->get_logger(), "Empty path, stopping robot");
         path_index_ = 0;
         return;
     }
+
+    RCLCPP_INFO(this->get_logger(), "Following path: index=%zu", path_index_);
 
     const auto &target = current_path_[path_index_];
     const auto &pose = current_pose_.pose;
@@ -34,19 +41,31 @@ void OccupancyGridProcessor::followPath()
     double dy = target.pose.position.y - pose.position.y;
     double distance = std::hypot(dx, dy);
 
-    const double position_tolerance = 0.1; // meters
-    const double max_linear_speed = 0.3;
-    const double max_angular_speed = 1.0;
+    const double position_tolerance = 0.15; // meters
+    const double max_linear_speed = 0.07;
+    const double max_angular_speed = 0.5;
 
     if (distance < position_tolerance)
     {
         path_index_++;
         path_finished = (path_index_ >= current_path_.size());
+        RCLCPP_INFO(this->get_logger(), "Reached target: index=%zu/%zu, path finished: %s",
+                    path_index_, current_path_.size(), path_finished ? "true" : "false");
+        auto path = this->aStarPath(current_pose_, last_clicked_); // recalculate path
+        this->publishPath(path);
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Following path: index=%zu",
-                path_index_);
+    if (path_index_ >= this->current_path_.size())
+    {
+        this->current_path_.clear(); // Clear path after reaching target
+        path_index_ = 0;             // Reset index
+        RCLCPP_INFO(this->get_logger(), "Path completed, stopping robot");
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Following path: index: %zu/%zu distance to target=%.2f",
+                path_index_, this->current_path_.size(), distance);
 
     double target_yaw = std::atan2(dy, dx);
 
@@ -153,14 +172,15 @@ std::pair<double, double> OccupancyGridProcessor::gridToWorld(int x, int y) cons
 
 std::vector<geometry_msgs::msg::PoseStamped> OccupancyGridProcessor::aStarPath(
     const geometry_msgs::msg::PoseStamped &start,
-    const geometry_msgs::msg::PoseStamped &goal)
+    const ClickedPoint goal)
 {
     std::vector<geometry_msgs::msg::PoseStamped> path;
     if (!latest_grid_)
         return path;
 
     auto [start_x, start_y] = worldToGrid(start.pose.position.x, start.pose.position.y);
-    auto [goal_x, goal_y] = worldToGrid(goal.pose.position.x, goal.pose.position.y);
+    auto [goal_x, goal_y] = worldToGrid(goal.x, goal.y);
+    last_clicked_ = goal; // Store clicked point
 
     struct Node
     {
@@ -255,5 +275,6 @@ void OccupancyGridProcessor::publishPath(const std::vector<geometry_msgs::msg::P
     path_msg.header.frame_id = latest_grid_->header.frame_id;
     path_msg.poses = path;
 
+    this->current_path_ = path; // Store for following
     path_publisher_->publish(path_msg);
 }

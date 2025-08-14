@@ -9,13 +9,13 @@ int main(int argc, char *argv[])
 {
     std::cout << "Initializing RobotControl node...\n";
     rclcpp::init(argc, argv);
-    auto occupancy_processor = std::make_shared<OccupancyGridProcessor>();
-    auto node = std::make_shared<RobotControl>("robot_control_node", occupancy_processor);
+    auto occupancy_processor = std::make_shared<OccupancyGridProcessor>("occupancy_processor", "/plan", "/odom", "/cmd_vel");    
+    auto node = std::make_shared<RobotControl>("robot_control_node", occupancy_processor, "/goal_pose", "/robot_pos");
     while (rclcpp::ok())
     {
         rclcpp::spin_some(node);
         rclcpp::spin_some(occupancy_processor);
-        node->update_state();
+
         occupancy_processor->followPath();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }

@@ -41,5 +41,21 @@ def generate_launch_description():
                     "config_file:=src/robot_sim/gazebo/bridge_config.yaml",
                 ]
             ),
+            # ExecuteProcess(
+            #     cmd=[
+            #         "ros2",
+            #         "run",
+            #         "tf2_ros",
+            #         "static_transform_publisher",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "base_link",
+            #         "merge_map",
+            #     ]
+            # ),
         ]
     )

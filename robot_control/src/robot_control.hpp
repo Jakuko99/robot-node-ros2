@@ -20,12 +20,6 @@
 
 using namespace std;
 
-struct ClickedPoint
-{
-  double x;
-  double y;
-};
-
 struct RobotPosition
 {
   double x;
@@ -39,35 +33,24 @@ struct RobotPosition
 class RobotControl : public rclcpp::Node
 {
 public:
-  RobotControl(std::string, std::shared_ptr<OccupancyGridProcessor>);
+  RobotControl(std::string, std::shared_ptr<OccupancyGridProcessor>, std::string goal_topic, std::string marker_topic);
   ~RobotControl();
   void update_state();
 
 private:
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void odom1_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void goal_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
   void publish_marker(double x, double y, double z, string name, int32_t id, string frame_id = "map");
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub1;
-  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub;
-
-  /*rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub1;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub2;*/
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub;
-  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub;
 
   ClickedPoint last_clicked;
-  RobotPosition robot_position;
-  RobotPosition robot1_position;
+  RobotPosition robot_position;  
 
   std::shared_ptr<OccupancyGridProcessor> occupancy_grid_processor_;
-  /*AStar::Generator path_planner;
-  AStar::CoordinateList path;*/
   bool path_ready = false;
   bool path_finished = false;
 };

@@ -1,6 +1,6 @@
 #include "occupancy_grid_processor.hpp"
 
-OccupancyGridProcessor::OccupancyGridProcessor(std::string node_name, std::string plan_topic, std::string odom_topic, std::string cmd_topic)
+OccupancyGridProcessor::OccupancyGridProcessor(std::string node_name, std::string plan_topic, std::string odom_topic, std::string cmd_topic, std::string scan_topic)
     : Node(node_name)
 {
     path_index_ = 0;
@@ -12,6 +12,9 @@ OccupancyGridProcessor::OccupancyGridProcessor(std::string node_name, std::strin
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         odom_topic, 10,
         std::bind(&OccupancyGridProcessor::odomCallback, this, std::placeholders::_1));
+    scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+        scan_topic, 10,
+        std::bind(&OccupancyGridProcessor::scanCallback, this, std::placeholders::_1));
 
     cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(cmd_topic, 10);
 
@@ -61,6 +64,18 @@ void OccupancyGridProcessor::followPath()
         this->current_path_.clear(); // Clear path after reaching target
         path_index_ = 0;             // Reset index
         RCLCPP_INFO(this->get_logger(), "Path completed, stopping robot");
+        return;
+    }
+
+    if (isWallAhead(current_pose_))
+    {
+        RCLCPP_WARN(this->get_logger(), "Wall detected ahead, backing up");
+        geometry_msgs::msg::Twist backup_cmd;
+        backup_cmd.linear.x = -0.1; // move backward
+        backup_cmd.angular.z = -0.5; // turn right while backing up
+        cmd_vel_publisher_->publish(backup_cmd);
+        auto path = this->aStarPath(current_pose_, last_clicked_); // recalculate path
+        this->publishPath(path);
         return;
     }
 
@@ -263,6 +278,30 @@ void OccupancyGridProcessor::odomCallback(const nav_msgs::msg::Odometry::SharedP
 {
     current_pose_.header = msg->header;
     current_pose_.pose = msg->pose.pose;
+}
+
+bool OccupancyGridProcessor::isWallAhead(const geometry_msgs::msg::PoseStamped &pose, double distance)
+{
+    if (scan_ranges_.empty())
+        return false;
+
+    double angle_increment = M_PI / 180.0; // Assuming 1 degree increments
+    double robot_angle = std::atan2(pose.pose.orientation.y, pose.pose.orientation.x);
+    int num_ranges = scan_ranges_.size();
+    int front_index = static_cast<int>((robot_angle + M_PI) / angle_increment) % num_ranges;
+
+    for (int i = -num_ranges / 4; i <= num_ranges / 4; ++i)
+    {
+        int index = (front_index + i + num_ranges) % num_ranges;
+        if (scan_ranges_[index] < distance)
+            return true;
+    }
+    return false;
+}
+
+void OccupancyGridProcessor::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+{
+    scan_ranges_ = msg->ranges;
 }
 
 void OccupancyGridProcessor::publishPath(const std::vector<geometry_msgs::msg::PoseStamped> &path)

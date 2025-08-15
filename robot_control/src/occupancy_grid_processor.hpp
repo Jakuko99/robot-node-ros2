@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include "nav_msgs/msg/path.hpp"
 #include <geometry_msgs/msg/twist.hpp>
@@ -22,7 +23,7 @@ struct ClickedPoint
 class OccupancyGridProcessor : public rclcpp::Node
 {
 public:
-    OccupancyGridProcessor(std::string node_name, std::string plan_topic, std::string odom_topic, std::string cmd_topic);
+    OccupancyGridProcessor(std::string node_name, std::string plan_topic, std::string odom_topic, std::string cmd_topic, std::string scan_topic);
 
     // A* pathfinding from start to goal in world coordinates
     std::vector<geometry_msgs::msg::PoseStamped> aStarPath(
@@ -38,6 +39,8 @@ public:
 private:
     void occupancyGridCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+    bool isWallAhead(const geometry_msgs::msg::PoseStamped &pose, double distance = 0.2);
+    void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
 
     bool isCellOccupied(int x, int y) const;
     bool isValidCell(int x, int y) const;
@@ -46,10 +49,11 @@ private:
     std::pair<int, int> worldToGrid(double x, double y) const;
     std::pair<double, double> gridToWorld(int x, int y) const;
     std::vector<int8_t> inflated_grid_;
-    int inflation_radius_ = 6; // in cells
+    int inflation_radius_ = 5; // in cells
 
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr occupancy_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
 
     nav_msgs::msg::OccupancyGrid::SharedPtr latest_grid_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_publisher_;
@@ -60,4 +64,5 @@ private:
     ClickedPoint last_clicked_;
     size_t path_index_ = 0;
     bool path_finished = false;    
+    std::vector<float> scan_ranges_;        
 };

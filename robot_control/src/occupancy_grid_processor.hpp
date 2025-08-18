@@ -64,5 +64,12 @@ private:
     ClickedPoint last_clicked_;
     size_t path_index_ = 0;
     bool path_finished = false;    
-    std::vector<float> scan_ranges_;        
+    std::vector<float> latest_scan_;
+    std::mutex scan_mutex_;      
+
+    double angle_min_;
+    double angle_increment_;
+    double last_distance_to_goal_ = std::numeric_limits<double>::infinity();
+    rclcpp::Time last_progress_time_;
+    bool wall_ahead_ = false;
 };

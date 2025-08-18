@@ -43,6 +43,17 @@ void OccupancyGridProcessor::followPath()
     double dx = target.pose.position.x - pose.position.x;
     double dy = target.pose.position.y - pose.position.y;
     double distance = std::hypot(dx, dy);
+    
+    // --- Track progress ---
+    if (distance < last_distance_to_goal_ - 0.02) {
+        // Progress made (reduced distance > 2 cm)
+        last_progress_time_ = this->now();
+        last_distance_to_goal_ = distance;
+    } else if (last_progress_time_.nanoseconds() == 0) {
+        // First initialization
+        last_progress_time_ = this->now();
+        last_distance_to_goal_ = distance;
+    }
 
     const double position_tolerance = 0.15; // meters
     const double max_linear_speed = 0.07;
@@ -282,26 +293,69 @@ void OccupancyGridProcessor::odomCallback(const nav_msgs::msg::Odometry::SharedP
 
 bool OccupancyGridProcessor::isWallAhead(const geometry_msgs::msg::PoseStamped &pose, double distance)
 {
-    if (scan_ranges_.empty())
-        return false;
+    std::lock_guard<std::mutex> lock(scan_mutex_);
+    if (latest_scan_.empty()) return false;
 
-    double angle_increment = M_PI / 180.0; // Assuming 1 degree increments
-    double robot_angle = std::atan2(pose.pose.orientation.y, pose.pose.orientation.x);
-    int num_ranges = scan_ranges_.size();
-    int front_index = static_cast<int>((robot_angle + M_PI) / angle_increment) % num_ranges;
+    const double narrow_fov = M_PI / 12.0;   // ±15°
+    const double wide_fov   = M_PI / 4.0;    // ±45°
+    const double stop_distance  = 0.35;
+    const double clear_distance = 0.45;
 
-    for (int i = -num_ranges / 4; i <= num_ranges / 4; ++i)
-    {
-        int index = (front_index + i + num_ranges) % num_ranges;
-        if (scan_ranges_[index] < distance)
-            return true;
+    size_t narrow_hits = 0, narrow_total = 0;
+    size_t wide_hits   = 0, wide_total   = 0;
+
+    for (size_t i = 0; i < latest_scan_.size(); ++i) {
+        double angle = angle_min_ + i * angle_increment_;
+        float r = latest_scan_[i];
+        if (!std::isfinite(r)) continue;
+
+        if (std::fabs(angle) < narrow_fov) {
+            narrow_total++;
+            if (r < stop_distance) narrow_hits++;
+        }
+        if (std::fabs(angle) < wide_fov) {
+            wide_total++;
+            if (r < stop_distance) wide_hits++;
+        }
     }
-    return false;
+
+    bool narrow_blocked = (narrow_total > 0 && (double)narrow_hits / narrow_total > 0.5);
+    bool wide_blocked   = (wide_total > 0 && (double)wide_hits / wide_total > 0.7);
+
+    // Progress timeout (e.g. 2 seconds without progress)
+    const double timeout_sec = 2.0;
+    bool no_progress = (this->now() - last_progress_time_).seconds() > timeout_sec;
+
+    // Combine conditions: wall + no progress
+    if ((narrow_blocked || wide_blocked) && no_progress) {
+        wall_ahead_ = true;
+        return true;
+    }
+
+    // Hysteresis reset if area is clear
+    if (wide_total > 0) {
+        size_t safe_count = 0;
+        for (size_t i = 0; i < latest_scan_.size(); ++i) {
+            double angle = angle_min_ + i * angle_increment_;
+            if (std::fabs(angle) < wide_fov &&
+                (latest_scan_[i] > clear_distance || !std::isfinite(latest_scan_[i]))) {
+                safe_count++;
+            }
+        }
+        if ((double)safe_count / wide_total > 0.9) {
+            wall_ahead_ = false;
+        }
+    }
+
+    return wall_ahead_;
 }
 
 void OccupancyGridProcessor::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
-    scan_ranges_ = msg->ranges;
+    std::lock_guard<std::mutex> lock(scan_mutex_);
+    latest_scan_ = msg->ranges;  // copy ranges into vector<float>
+    angle_min_ = msg->angle_min;
+    angle_increment_ = msg->angle_increment;
 }
 
 void OccupancyGridProcessor::publishPath(const std::vector<geometry_msgs::msg::PoseStamped> &path)

@@ -1,7 +1,7 @@
 <?xml version='1.0'?>
 <sdf version='1.7'>
-  <model name='kris_robot'>
-    <link name='base_link'>
+  <model name='kris_robot1'>
+    <link name='kris_robot1_base_link'>
       <pose>0 0.02 -0 0 -0 0</pose>
       <inertial>
         <mass>0.25</mass>
@@ -148,8 +148,8 @@
       </visual>
       <sensor name='gpu_lidar' type='gpu_lidar'>
         <pose>0 0 0.055 0 0 0</pose>
-        <topic>scan</topic>
-        <gz_frame_id>base_link</gz_frame_id>        
+        <topic>/kris_robot1/scan</topic>
+        <gz_frame_id>kris_robot1_base_link</gz_frame_id>
         <update_rate>5</update_rate>
         <enable_metrics>false</enable_metrics>
         <lidar>
@@ -434,12 +434,12 @@
       </collision>
     </link>
     <joint name='laser_joint' type='fixed'>
-      <parent>base_link</parent>
+      <parent>kris_robot1_base_link</parent>
       <child>lidar_link</child>
       <pose>0 0 0.05 0 -0 0</pose>
     </joint>
     <joint name='left_wheel_joint' type='revolute'>
-      <parent>base_link</parent>
+      <parent>kris_robot1_base_link</parent>
       <child>lwheel</child>
       <pose>0 0 0 0 -0 0</pose>
       <axis>
@@ -471,7 +471,7 @@
       </physics>
     </joint>
     <joint name='right_wheel_joint' type='revolute'>
-      <parent>base_link</parent>
+      <parent>kris_robot1_base_link</parent>
       <child>rwheel</child>
       <pose>0 0 0 0 -0 0</pose>
       <axis>
@@ -510,10 +510,10 @@
       <right_joint>right_wheel_joint</right_joint>
       <wheel_separation>0.08</wheel_separation>
       <wheel_radius>0.0325</wheel_radius>
-      <topic>/cmd_vel</topic>
-      <odom_topic>/odom</odom_topic>
-      <frame_id>odom</frame_id>
-      <child_frame_id>base_link</child_frame_id>
+      <topic>/kris_robot1/cmd_vel</topic>
+      <odom_topic>/kris_robot1/odom</odom_topic>
+      <frame_id>kris_robot1_odom</frame_id>
+      <child_frame_id>kris_robot1_base_link</child_frame_id>
       <max_velocity>0.5</max_velocity>
     </plugin>
   </model>

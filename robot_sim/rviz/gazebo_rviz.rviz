@@ -99,13 +99,13 @@ Visualization Manager:
         All Enabled: true
         base_link:
           Value: true
-        base_link1:
+        base_link:
           Value: true
         merge_map:
           Value: true
         odom:
           Value: true
-        odom1:
+        odom:
           Value: true
       Marker Scale: 1
       Name: TF

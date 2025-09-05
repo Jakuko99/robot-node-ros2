@@ -17,4 +17,5 @@ apt install ros-humble-desktop -y
 apt install ros-dev-tools libgazebo-dev gazebo terminator -y
 sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list'
 wget http://packages.osrfoundation.org/gazebo.key -O - | apt-key add -
+apt install libignition-gazebo6 libignition-gazebo6-dev libignition-gazebo6-plugins ros-humble-ros-gz-bridge -y
 apt-get update && apt install libgz-plugin2-dev ros-humble-slam-toolbox ros-humble-navigation2 ros-humble-nav2-bringup ros-humble-turtlebot3* -y

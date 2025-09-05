@@ -24,7 +24,7 @@ def generate_launch_description():
                     os.path.join(launch_dir, "navigation_launch.py")
                 ),
                 launch_arguments={
-                    # "use_sim_time": "true",
+                    "use_sim_time": "true",
                     "autostart": "true",
                     "params_file": "/home/ubuntu/ros_ws/src/robot_sim/config/nav2_params1.yaml",
                     "use_lifecycle_mgr": "true",

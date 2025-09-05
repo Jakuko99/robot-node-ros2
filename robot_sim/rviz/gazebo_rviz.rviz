@@ -270,7 +270,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /robot_pos1
       Value: true
-    - Alpha: 0.699999988079071
+    - Alpha: 0.5
       Class: rviz_default_plugins/Map
       Color Scheme: costmap
       Draw Behind: false

@@ -4,7 +4,7 @@ amcl:
     global_frame_id: map1
     odom_frame_id: kris_robot1_odom
     base_frame_id: kris_robot1_base_link
-    scan_topic: /kris_robot1/scan
+    scan_topic: /kris_robot1/scan    
 
 bt_navigator:
   ros__parameters:
@@ -21,6 +21,7 @@ bt_navigator:
 
 controller_server:
   ros__parameters:
+    use_sim_time: True
     odom_topic: /kris_robot1/odom
     odom_frame_id: kris_robot1_odom
     goal_checker_plugins: ["general_goal_checker"]
@@ -28,21 +29,28 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.30
-      yaw_goal_tolerance: 0.50
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
-      critics: ["GoalAlignCritic", "PathAlignCritic",
-        "PreferForwardCritic", "TwirlingCritic"]
+      critics: ["GoalAlignCritic", "PathAlignCritic", "PreferForwardCritic"]
+      # min_vel_x: 0.05
+      # max_vel_x: 0.75
+      # min_vel_theta: -1.0
+      # max_vel_theta: 1.5
+      # acc_lim_x: 0.75
+      # acc_lim_theta: 2.0
+      vx_samples: 30
+      vtheta_samples: 40
       GoalAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
+        cost_weight: 3.0
         threshold_to_consider: 1.4
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 14.0
+        cost_weight: 6.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 4
         threshold_to_consider: 0.5
@@ -51,12 +59,8 @@ controller_server:
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
+        cost_weight: 10.0
         threshold_to_consider: 0.5
-      TwirlingCritic:
-        enabled: true
-        twirling_cost_power: 1
-        twirling_cost_weight: 10.0
 
 planner_server:
   ros__parameters:
@@ -153,13 +157,13 @@ behavior_server:
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 1.0
-      publish_frequency: 1.0
+      update_frequency: 5.0
+      publish_frequency: 5.0
       global_frame: map1
       map_topic: /map1
       robot_base_frame: kris_robot1_base_link
       use_sim_time: True
-      robot_radius: 0.20
+      robot_radius: 0.08
       resolution: 0.05
       track_unknown_space: false
       rolling_window: false
@@ -180,22 +184,22 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.25
+        inflation_radius: 0.20
       always_send_full_costmap: True
 
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 5.0
-      publish_frequency: 5.0
-      global_frame: kris_robot1_odom
+      update_frequency: 10.0
+      publish_frequency: 10.0
+      global_frame: kris_robot1_odom      
       robot_base_frame: kris_robot1_base_link
-      use_sim_time: True
+      use_sim_time: true
       rolling_window: true
-      width: 1
-      height: 1
+      width: 3
+      height: 3
       resolution: 0.05
-      robot_radius: 0.20
+      robot_radius: 0.08
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -214,5 +218,5 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.25
+        inflation_radius: 0.20
       always_send_full_costmap: True

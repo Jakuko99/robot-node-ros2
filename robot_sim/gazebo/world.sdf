@@ -4654,12 +4654,12 @@
       <self_collide>false</self_collide>
     </model>
     <include>
-      <uri>file:///home/ubuntu/ros_ws/src/robot_sim/gazebo/kris_robot</uri>
+      <uri>file://src/robot_sim/gazebo/kris_robot</uri>
       <name>kris_robot</name>
       <pose>0 0 0.5 0 -0 3.14</pose>
     </include>
     <include>
-      <uri>file:///home/ubuntu/ros_ws/src/robot_sim/gazebo/kris_robot1</uri>
+      <uri>file://src/robot_sim/gazebo/kris_robot1</uri>
       <name>kris_robot1</name>
       <pose>-1.2 0 0.5 0 -0 3.14</pose>
     </include>

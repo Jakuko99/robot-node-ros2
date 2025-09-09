@@ -514,7 +514,8 @@
       <odom_topic>/kris_robot2/odom</odom_topic>
       <frame_id>kris_robot2_odom</frame_id>
       <child_frame_id>kris_robot2_base_link</child_frame_id>
-      <max_velocity>0.5</max_velocity>
+      <max_linear_velocity>0.5</max_linear_velocity>
+      <max_angular_velocity>0.4</max_angular_velocity>
     </plugin>
   </model>
 </sdf>

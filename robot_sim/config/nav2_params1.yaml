@@ -3,8 +3,18 @@ amcl:
     use_sim_time: True
     global_frame_id: map1
     odom_frame_id: kris_robot1_odom
-    base_frame_id: kris_robot1_base_link
-    scan_topic: /kris_robot1/scan    
+    # base_frame_id: kris_robot1_base_link # default: "base_footprint"
+    scan_topic: /kris_robot1/scan
+    map_topic: /map1
+    laser_max_range: 12.0
+    max_beams: 450
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.5
+      yaw: 0.0
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    tf_broadcast: False
 
 bt_navigator:
   ros__parameters:
@@ -69,16 +79,17 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.5
-      use_astar: false
-      allow_unknown: true
+      # tolerance: 0.5
+      # use_astar: false
+      # allow_unknown: true
 
 smoother_server:
   ros__parameters:
     smoother_plugins: ["simple_smoother"]
+    robot_base_frame: kris_robot1_base_link
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
-      tolerance: 1.0e-10
+      # tolerance: 1.0e-10
       max_its: 1000
       do_refinement: True
 
@@ -99,12 +110,12 @@ velocity_smoother:
 
 collision_monitor:
   ros__parameters:
-    base_frame_id: "kris_robot1_base_link"
+    # base_frame_id: "kris_robot1_base_link"
     odom_frame_id: "kris_robot1_odom"
     cmd_vel_in_topic: "/cmd_vel_smoothed"
     cmd_vel_out_topic: "/kris_robot1/cmd_vel"
     state_topic: "collision_monitor_state"
-    transform_tolerance: 0.2
+    transform_tolerance: 0.1
     source_timeout: 1.0
     base_shift_correction: True
     stop_pub_timeout: 2.0
@@ -112,13 +123,13 @@ collision_monitor:
     # and robot footprint for "approach" action type.
     polygons: ["FootprintApproach"]
     FootprintApproach:
-      type: "polygon"
+      type: "polygon"      
       action_type: "approach"
       footprint_topic: "/local_costmap/published_footprint"
       time_before_collision: 0.5
       simulation_time_step: 0.1
       min_points: 3
-      visualize: True
+      visualize: False      
       enabled: True
     observation_sources: ["scan"]
     scan:
@@ -133,7 +144,7 @@ behavior_server:
     local_costmap_topic: local_costmap/costmap_raw
     global_costmap_topic: global_costmap/costmap_raw
     local_footprint_topic: local_costmap/published_footprint
-    global_footprint_topic: global_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint  
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "assisted_teleop", "wait"]
     spin:

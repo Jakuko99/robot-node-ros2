@@ -29,6 +29,7 @@ def generate_launch_description():
                 output="screen",
                 arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
                 parameters=[{"use_sim_time": True}],
+                remappings=[("/kris_robot1/tf", "/tf"), ("/kris_robot1/tf_static", "/tf_static"), ("/kris_robot2/tf", "/tf"), ("/kris_robot2/tf_static", "/tf_static")],
             ),
             ExecuteProcess(  # ros gz topic bridge
                 cmd=[

@@ -28,7 +28,7 @@ def generate_launch_description():
                 launch_arguments={
                     "use_sim_time": "true",
                     "autostart": "true",
-                    "params_file": "/home/ubuntu/ros_ws/src/robot_sim/config/nav2_params1.yaml",
+                    "params_file": "src/robot_sim/config/nav2_params1.yaml",
                     "use_lifecycle_mgr": "true",
                     "map_subscribe_transient_local": "true",
                 }.items(),

@@ -11,8 +11,8 @@ amcl:
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
     do_beamskip: false
-    global_frame_id: "map"
-    map_topic: map
+    global_frame_id: "map1"
+    map_topic: map1
     lambda_short: 0.1
     laser_likelihood_max_dist: 2.0
     laser_max_range: 12.0
@@ -21,7 +21,7 @@ amcl:
     max_beams: 60
     max_particles: 2000
     min_particles: 500
-    odom_frame_id: "odom"
+    odom_frame_id: "kris_robot1_odom"
     pf_err: 0.05
     pf_z: 0.99
     recovery_alpha_fast: 0.0
@@ -38,14 +38,14 @@ amcl:
     z_max: 0.05
     z_rand: 0.5
     z_short: 0.05
-    scan_topic: scan
+    scan_topic: kris_robot1/scan
 
 bt_navigator:
   ros__parameters:
     use_sim_time: True
-    global_frame: map
-    robot_base_frame: base_link
-    odom_topic: /odom
+    global_frame: map1
+    robot_base_frame: kris_robot1_base_link
+    odom_topic: kris_robot1/odom
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
@@ -118,6 +118,7 @@ controller_server:
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
+    odom_topic: kris_robot1/odom
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -146,6 +147,7 @@ controller_server:
       acc_lim_y: 0.0
       acc_lim_theta: 1.0
       decel_lim_x: -2.5
+      decel_lim_y: 0.0
       decel_lim_theta: -3.2
       vx_samples: 20
       vy_samples: 5
@@ -174,9 +176,9 @@ local_costmap:
   local_costmap:
     ros__parameters:
       update_frequency: 10.0
-      publish_frequency: 10.0
-      global_frame: odom
-      robot_base_frame: base_link
+      publish_frequency: 5.0
+      global_frame: kris_robot1_odom
+      robot_base_frame: kris_robot1_base_link
       use_sim_time: True
       rolling_window: true
       width: 3
@@ -187,7 +189,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.20
+        inflation_radius: 0.25
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -199,7 +201,7 @@ local_costmap:
         mark_threshold: 0
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: kris_robot1/scan
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -213,9 +215,9 @@ global_costmap:
     ros__parameters:
       update_frequency: 5.0
       publish_frequency: 5.0
-      global_frame: map
-      map_topic: /map
-      robot_base_frame: base_link
+      global_frame: map1
+      map_topic: /map1
+      robot_base_frame: kris_robot1_base_link
       use_sim_time: True
       robot_radius: 0.08
       resolution: 0.05
@@ -226,7 +228,7 @@ global_costmap:
         enabled: True
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: kris_robot1/scan
           clearing: True
           marking: True
           data_type: "LaserScan"
@@ -235,21 +237,18 @@ global_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
-        enabled: true
-        subscribe_to_updates: true
-        transform_tolerance: 0.1
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.20
+        inflation_radius: 0.25
       always_send_full_costmap: True
 
 map_server:
   ros__parameters:
     use_sim_time: True
-    # Overridden in launch by the "map" launch configuration or provided default value.
-    # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
     yaml_filename: ""
+    topic_name: map1
+    frame_id: map1
 
 map_saver:
   ros__parameters:
@@ -273,6 +272,7 @@ planner_server:
 smoother_server:
   ros__parameters:
     use_sim_time: True
+    robot_base_frame: kris_robot1_base_link
     smoother_plugins: ["simple_smoother"]
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
@@ -285,7 +285,7 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "assisted_teleop", "wait"]    
+    behavior_plugins: ["spin", "backup", "assisted_teleop", "wait"]
     spin:
       plugin: "nav2_behaviors/Spin"
     backup:
@@ -294,8 +294,8 @@ behavior_server:
       plugin: "nav2_behaviors/Wait"
     assisted_teleop:
       plugin: "nav2_behaviors/AssistedTeleop"
-    global_frame: odom
-    robot_base_frame: base_link
+    global_frame: kris_robot1_odom
+    robot_base_frame: kris_robot1_base_link
     transform_tolerance: 0.1
     use_sim_time: true
     simulate_ahead_time: 0.5
@@ -312,11 +312,11 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.5, 0.5, 2.5]
-    min_velocity: [-0.5, -0.5, -2.5]
+    max_velocity: [0.5, 0.5, 1.0]
+    min_velocity: [-0.5, -0.5, -1.0]
     max_accel: [0.3, 0.3, 3.2]
-    max_decel: [-0.5, -0.5, -3.2]
-    odom_topic: "odom"
+    max_decel: [-0.5, 0.0, -3.2]
+    odom_topic: "kris_robot1/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0

@@ -11,6 +11,7 @@ def generate_launch_description():
                 name="slam_toolbox",
                 output="screen",
                 parameters=["src/robot_sim/config/slam_toolbox_params.yaml"],
+                remappings=[("map", "map1")],
             ),
         ]
     )

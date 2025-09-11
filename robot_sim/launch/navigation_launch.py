@@ -20,6 +20,7 @@ def generate_launch_description():
     launch_dir = os.path.join(bringup_dir, "launch")
     return LaunchDescription(
         [
+            SetRemap("cmd_vel", "kris_robot1/cmd_vel"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "navigation_launch.py")

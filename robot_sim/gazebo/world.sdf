@@ -96,8 +96,7 @@
         <real_time_factor>true</real_time_factor>
         <iterations>true</iterations>
       </plugin>
-      <plugin name='Visualize Lidar' filename='VisualizeLidar'/>
-      <plugin name='Visualize Lidar' filename='VisualizeLidar'/>
+      <plugin name='Visualize Lidar' filename='VisualizeLidar'/>      
       <plugin name='Component inspector' filename='ComponentInspector'>
         <ignition-gui>
           <property type='string' key='state'>docked</property>
@@ -4655,8 +4654,23 @@
     </model>
     <include>
       <uri>file://src/robot_sim/gazebo/kris_robot</uri>
-      <name>kris_robot</name>
+      <name>kris_robot1</name>
       <pose>0 0 0.5 0 -0 3.14</pose>
+    </include>
+    <include>
+      <uri>file://src/robot_sim/gazebo/kris_robot1</uri>
+      <name>kris_robot2</name>
+      <pose>-1.2 0 0.5 0 -0 3.14</pose>
+    </include>
+    <include>
+      <uri>file://src/robot_sim/gazebo/kris_robot2</uri>
+      <name>kris_robot3</name>
+      <pose>-1.2 -1.2 0.5 0 -0 3.14</pose>
+    </include>
+    <include>
+      <uri>file://src/robot_sim/gazebo/kris_robot3</uri>
+      <name>kris_robot4</name>
+      <pose>0 -1.2 0.5 0 -0 3.14</pose>
     </include>
     <light name='sun' type='directional'>
       <pose>0 0 10 0 -0 0</pose>

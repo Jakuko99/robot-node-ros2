@@ -1,4 +1,4 @@
-- gz_topic_name: /model/kris_robot/tf
+- gz_topic_name: /model/kris_robot1/tf
   gz_type_name: gz.msgs.Pose_V
   ros_topic_name: /tf
   ros_type_name: tf2_msgs/msg/TFMessage

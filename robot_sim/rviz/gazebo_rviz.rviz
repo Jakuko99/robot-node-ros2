@@ -10,15 +10,11 @@ Panels:
         - /LaserScan1/Topic1
         - /TF1
         - /TF1/Tree1
-        - /TF1/Tree1/map1
-        - /TF1/Tree1/map1/odom1
         - /Map1
         - /Odometry1
         - /Odometry1/Shape1
         - /Path1
-        - /Marker1
         - /Path2
-        - /Marker2
         - /Map2
         - /Map3
       Splitter Ratio: 0.5
@@ -92,7 +88,7 @@ Visualization Manager:
         Filter size: 100
         History Policy: Keep All
         Reliability Policy: Reliable
-        Value: /scan
+        Value: /kris_robot1/scan
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -101,11 +97,11 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        base_link:
+        kris_robot1_base_link:
           Value: true
-        map:
+        kris_robot1_odom:
           Value: true
-        odom:
+        map1:
           Value: true
       Marker Scale: 1
       Name: TF
@@ -113,9 +109,9 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
       Tree:
-        map:
-          odom:
-            base_link:
+        map1:
+          kris_robot1_odom:
+            kris_robot1_base_link:
               {}
       Update Interval: 0
       Value: true
@@ -131,13 +127,13 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /map
+        Value: /map1
       Update Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /map_updates
+        Value: /map1_updates
       Use Timestamp: false
       Value: true
     - Angle Tolerance: 0.10000000149011612
@@ -177,7 +173,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /odom
+        Value: /kris_robot1/odom
       Value: true
     - Alpha: 1
       Buffer Length: 1
@@ -207,19 +203,6 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /plan
       Value: true
-    - Class: rviz_default_plugins/Marker
-      Enabled: true
-      Name: Marker
-      Namespaces:
-        {}
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /robot_pos
-      Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path
@@ -247,19 +230,6 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /plan1
-      Value: true
-    - Class: rviz_default_plugins/Marker
-      Enabled: true
-      Name: Marker
-      Namespaces:
-        {}
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /robot_pos1
       Value: true
     - Alpha: 0.5
       Class: rviz_default_plugins/Map
@@ -306,7 +276,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: map
+    Fixed Frame: map1
     Frame Rate: 30
   Name: root
   Tools:

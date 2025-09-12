@@ -20,7 +20,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 
-add_executable(robot_control src/robot_control.cpp src/main.cpp src/occupancy_grid_processor.cpp)
+add_executable(robot_control src/robot_control.cpp src/main.cpp)
 target_link_libraries(robot_control PRIVATE rclcpp::rclcpp ${sensor_msgs_TARGETS} ${nav_msgs_TARGETS} ${geometry_msgs_TARGETS} ${std_msgs_TARGETS} ${tf2_TARGETS} ${visualization_msgs_TARGETS})
 
 install(TARGETS

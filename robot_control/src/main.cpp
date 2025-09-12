@@ -1,23 +1,19 @@
 #include <chrono>
 #include "rclcpp/rclcpp.hpp"
 #include "robot_control.hpp"
-#include "occupancy_grid_processor.hpp"
 
 using namespace std::chrono_literals;
 
 int main(int argc, char *argv[])
 {
     std::cout << "Initializing RobotControl node...\n";
-    rclcpp::init(argc, argv);
-    auto occupancy_processor = std::make_shared<OccupancyGridProcessor>("occupancy_processor", "/plan", "/odom", "/cmd_vel", "/scan");    
-    auto node = std::make_shared<RobotControl>("robot_control_node", occupancy_processor, "/goal_pose", "/robot_pos");
+    rclcpp::init(argc, argv);    
+    auto node = std::make_shared<RobotControl>("robot_control_node", "/goal_pose", "/kris_robot1/odom", "/map1", "map1");
     while (rclcpp::ok())
     {
         rclcpp::spin_some(node);
-        rclcpp::spin_some(occupancy_processor);
-
-        occupancy_processor->followPath();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        node->update_state();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
     rclcpp::shutdown();
 

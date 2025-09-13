@@ -298,7 +298,7 @@ behavior_server:
     robot_base_frame: kris_robot1_base_link
     transform_tolerance: 0.1
     use_sim_time: true
-    simulate_ahead_time: 0.5
+    simulate_ahead_time: 1.0
     max_rotational_vel: 0.50
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2

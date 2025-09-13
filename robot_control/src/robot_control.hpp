@@ -46,6 +46,8 @@ private:
   std::vector<Frontier> frontiers;
   geometry_msgs::msg::PoseStamped last_pose_msg;
 
-  bool map_received = false;
-  bool robot_moving = false;
+  bool map_received;
+  bool robot_moving;
+  bool goal_set;
+  int robot_stopped_count;
 };

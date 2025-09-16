@@ -49,7 +49,8 @@ void RobotControl::update_state()
                 pose_msg.pose.position.z = 0.0;
 
                 if ((abs(last_pose_msg.pose.position.x - pose_msg.pose.position.x) < 0.5) &&
-                    (abs(last_pose_msg.pose.position.y - pose_msg.pose.position.y) < 0.5))
+                    (abs(last_pose_msg.pose.position.y - pose_msg.pose.position.y) < 0.5) && 
+                    (frontiers.size() > 1))
                 {
                     pose_msg.pose.position.x = frontiers[1][0].first;
                     pose_msg.pose.position.y = frontiers[1][0].second; // use next point if same as last

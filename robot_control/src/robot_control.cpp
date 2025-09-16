@@ -2,7 +2,8 @@
 
 using std::placeholders::_1;
 #define MIN_CLUSTER_SIZE 4
-#define MIN_SAFETY_MARGIN 0.7
+#define MIN_SAFETY_MARGIN 0.8
+#define GOAL_DIFF_RADIUS 0.5
 
 RobotControl::RobotControl(std::string node_name, std::string goal_topic, std::string odom_topic, std::string map_topic, std::string map_frame)
     : rclcpp::Node(node_name),
@@ -27,13 +28,13 @@ void RobotControl::update_state()
 {
     if (map_received)
     {
-        geometry_msgs::msg::PoseStamped pose_msg;
         if (current_map == nullptr)
         {
             RCLCPP_ERROR(this->get_logger(), "Current map is not initialized!");
             return;
         }
 
+        geometry_msgs::msg::PoseStamped pose_msg;
         std::vector<Frontier> frontiers = get_frontiers(current_map);
 
         if (!frontiers.empty() && !robot_moving && !goal_set)
@@ -48,8 +49,8 @@ void RobotControl::update_state()
                 pose_msg.pose.position.y = target[0].second;
                 pose_msg.pose.position.z = 0.0;
 
-                if ((abs(last_pose_msg.pose.position.x - pose_msg.pose.position.x) < 0.5) &&
-                    (abs(last_pose_msg.pose.position.y - pose_msg.pose.position.y) < 0.5) && 
+                if ((abs(last_pose_msg.pose.position.x - pose_msg.pose.position.x) < GOAL_DIFF_RADIUS) &&
+                    (abs(last_pose_msg.pose.position.y - pose_msg.pose.position.y) < GOAL_DIFF_RADIUS) &&
                     (frontiers.size() > 1))
                 {
                     pose_msg.pose.position.x = frontiers[1][0].first;
@@ -86,10 +87,10 @@ void RobotControl::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
         robot_moving = false; // Robot has stopped
         robot_stopped_count++;
 
-        if (robot_stopped_count > 5) // If stopped for several updates, clear
+        if (robot_stopped_count > 5)
         {
-            goal_set = false;        // Clear the goal flag to allow new goals
-            robot_stopped_count = 0; // Reset counter
+            goal_set = false;
+            robot_stopped_count = 0;
             RCLCPP_INFO(this->get_logger(), "Robot has stopped, ready for new goal.");
         }
     }
@@ -108,11 +109,11 @@ void RobotControl::map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr ms
     map_received = true; // set flag indicating map is ready to be processed
 }
 
-std::vector<Frontier> RobotControl::get_frontiers(const nav_msgs::msg::OccupancyGrid::SharedPtr map,
-                                                  double cluster_distance)
+std::vector<Frontier> RobotControl::get_frontiers(
+    const nav_msgs::msg::OccupancyGrid::SharedPtr map,
+    double cluster_distance)
 {
     std::vector<Frontier> frontiers;
-
     if (!map)
         return frontiers;
 

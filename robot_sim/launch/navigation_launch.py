@@ -362,8 +362,8 @@ def generate_launch_description():
                        'waypoint_follower',
                        'velocity_smoother']
 
-    remappings = [('/tf', 'tf'),
-                  ('/tf_static', 'tf_static')]
+    remappings = [((namespace, '/', 'tf'), 'tf'),
+                  ((namespace, '/', 'tf_static'), 'tf_static')]
 
     param_substitutions = {
         'use_sim_time': use_sim_time,

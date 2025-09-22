@@ -1,12 +1,12 @@
 - gz_topic_name: /model/kris_robot/tf
   gz_type_name: gz.msgs.Pose_V
-  ros_topic_name: /kris_robot1/tf
+  ros_topic_name: /tf
   ros_type_name: tf2_msgs/msg/TFMessage
   direction: GZ_TO_ROS
 
 - gz_topic_name: /model/kris_robot1/tf
   gz_type_name: gz.msgs.Pose_V
-  ros_topic_name: /kris_robot2/tf
+  ros_topic_name: /tf
   ros_type_name: tf2_msgs/msg/TFMessage
   direction: GZ_TO_ROS
 

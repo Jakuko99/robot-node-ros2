@@ -1,22 +1,14 @@
-// #include <cstdio>
 #include <string>
 #include <sstream>
 #include <fstream>
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/path.hpp"
-#include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "visualization_msgs/msg/marker.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "tf2/LinearMath/Quaternion.h"
-#include "tf2/convert.h"
 #include <vector>
-
-#include "occupancy_grid_processor.hpp"
+#include <queue>
+#include <cmath>
 
 using namespace std;
 
@@ -30,27 +22,32 @@ struct RobotPosition
   double orientation_w;
 };
 
+using Frontier = std::vector<std::pair<double, double>>;
+
 class RobotControl : public rclcpp::Node
 {
 public:
-  RobotControl(std::string, std::shared_ptr<OccupancyGridProcessor>, std::string goal_topic, std::string marker_topic);
+  RobotControl(std::string node_name, std::string goal_topic, std::string odom_topic, std::string map_topic, std::string map_frame = "map");
   ~RobotControl();
   void update_state();
 
 private:
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void goal_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-
-  void publish_marker(double x, double y, double z, string name, int32_t id, string frame_id = "map");
+  void map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+  std::vector<Frontier> get_frontiers(const nav_msgs::msg::OccupancyGrid::SharedPtr map, double cluster_distance = 0.5);
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub;
 
-  ClickedPoint last_clicked;
   RobotPosition robot_position;  
+  nav_msgs::msg::OccupancyGrid::SharedPtr current_map;
+  std::string map_frame_id;
+  std::vector<Frontier> frontiers;
+  geometry_msgs::msg::PoseStamped last_pose_msg;
 
-  std::shared_ptr<OccupancyGridProcessor> occupancy_grid_processor_;
-  bool path_ready = false;
-  bool path_finished = false;
+  bool map_received;
+  bool robot_moving;
+  bool goal_set;
+  int robot_stopped_count;
 };

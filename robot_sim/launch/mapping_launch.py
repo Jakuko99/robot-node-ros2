@@ -13,8 +13,8 @@ def generate_launch_description():
                 parameters=["src/robot_sim/config/slam_toolbox_params.yaml"],
                 remappings=[
                     ("/map", "/map1"),
-                    ("/tf", "/kris_robot1/tf"),
-                    ("/tf_static", "/kris_robot1/tf_static"),
+                    # ("/tf", "/kris_robot1/tf"),
+                    # ("/tf_static", "/kris_robot1/tf_static"),
                 ],
             ),
             Node(
@@ -25,8 +25,8 @@ def generate_launch_description():
                 parameters=["src/robot_sim/config/slam_toolbox_params1.yaml"],
                 remappings=[
                     ("/map", "/map2"),
-                    ("/tf", "/kris_robot2/tf"),
-                    ("/tf_static", "/kris_robot2/tf_static"),
+                    # ("/tf", "/kris_robot2/tf"),
+                    # ("/tf_static", "/kris_robot2/tf_static"),
                 ],
             ),
             Node(
@@ -35,10 +35,10 @@ def generate_launch_description():
                 output="screen",
                 parameters=[{"use_sim_time": True}],
                 remappings=[
-                    ("/tf", "/kris_robot1/tf"),
-                    ("/tf_static", "/kris_robot1/tf_static"),
-                    ("/tf", "/kris_robot2/tf"),
-                    ("/tf_static", "/kris_robot2/tf_static"),
+                    # ("/tf", "/kris_robot1/tf"),
+                    # ("/tf_static", "/kris_robot1/tf_static"),
+                    # ("/tf", "/kris_robot2/tf"),
+                    # ("/tf_static", "/kris_robot2/tf_static"),
                 ],
             ),
         ]

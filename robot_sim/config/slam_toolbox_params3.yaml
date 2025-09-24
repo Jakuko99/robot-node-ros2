@@ -1,0 +1,7 @@
+slam_toolbox:
+  ros__parameters:
+    map_frame: map4
+    base_frame: kris_robot4_base_link
+    scan_topic: /kris_robot4/scan
+    odom_frame: kris_robot4_odom
+    namespace: /kris_robot4

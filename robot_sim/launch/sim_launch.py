@@ -1,19 +1,18 @@
+"""Launch file to start the robot simulation environment."""
+
 import os
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
-from launch.substitutions import LaunchConfiguration
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch import LaunchDescription
+from launch.actions import ExecuteProcess
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    launch_dir = os.path.join("src/robot_sim", "launch")
     return LaunchDescription(
         [
-            DeclareLaunchArgument(
-                "use_sim_time",
-                default_value="true",
-                description="Use simulation (Gazebo) clock if true",
-            ),
             ExecuteProcess(  # gazebo simulation
                 cmd=[
                     "ign",
@@ -27,9 +26,8 @@ def generate_launch_description():
                 executable="rviz2",
                 name="rviz2",
                 output="screen",
-                arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
+                arguments=["-d", "src/robot_sim/rviz/sim_rviz.rviz"],
                 parameters=[{"use_sim_time": True}],
-                remappings=[("/goal_pose", "/kris_robot1/goal_pose")],                
             ),
             ExecuteProcess(  # ros gz topic bridge
                 cmd=[
@@ -41,7 +39,7 @@ def generate_launch_description():
                     "-p",
                     "config_file:=src/robot_sim/gazebo/bridge_config.yaml",
                 ]
-            ),
+            ), 
             ExecuteProcess(
                 cmd=[
                     "ros2",
@@ -64,7 +62,7 @@ def generate_launch_description():
                     "run",
                     "tf2_ros",
                     "static_transform_publisher",
-                    "1.2",
+                    "-1.2",
                     "0",
                     "0",
                     "0",
@@ -80,8 +78,8 @@ def generate_launch_description():
                     "run",
                     "tf2_ros",
                     "static_transform_publisher",
-                    "1.2",
-                    "0",
+                    "-1.2",
+                    "-1.2",
                     "0",
                     "0",
                     "0",
@@ -96,8 +94,8 @@ def generate_launch_description():
                     "run",
                     "tf2_ros",
                     "static_transform_publisher",
-                    "1.2",
                     "0",
+                    "-1.2",
                     "0",
                     "0",
                     "0",
@@ -105,6 +103,16 @@ def generate_launch_description():
                     "merge_map",
                     "map4",
                 ]
-            ),        
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "mapping_launch.py")
+                ),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "nav_launch.py")
+                ),
+            ),
         ]
     )

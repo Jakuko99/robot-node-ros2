@@ -50,5 +50,11 @@ def generate_launch_description():
                     os.path.join(launch_dir, "navigation_launch.py")
                 ),
             ),
+            Node(
+                package="robot_control",
+                executable="robot_control",
+                name="robot_control_node",
+                output="screen",
+            ),
         ]
     )

@@ -1,16 +1,18 @@
+"""Launch file to start the robot simulation environment."""
+
+import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch import LaunchDescription
+from launch.actions import ExecuteProcess
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    launch_dir = os.path.join("src/robot_sim", "launch")
     return LaunchDescription(
         [
-            DeclareLaunchArgument(
-                "use_sim_time",
-                default_value="true",
-                description="Use simulation (Gazebo) clock if true",
-            ),
             ExecuteProcess(  # gazebo simulation
                 cmd=[
                     "ign",
@@ -70,6 +72,16 @@ def generate_launch_description():
                     "merge_map",
                     "map2",
                 ]
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "mapping_launch.py")
+                ),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "nav_launch.py")
+                ),
             ),
         ]
     )

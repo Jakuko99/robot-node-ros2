@@ -1604,6 +1604,45 @@
             </friction>
           </surface>
         </collision>      
+        <visual name='Wall_23_Visual_1'>
+          <pose frame=''>0.023306 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>0.009483 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Bricks</name>
+            </script>
+            <ambient>1 1 1 1</ambient>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <collision name='Wall_23_Collision_1'>
+          <geometry>
+            <box>
+              <size>0.009483 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose frame=''>0.023306 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
         <visual name='Wall_23_Visual_2'>
           <pose frame=''>1.83902 0 1.25 0 -0 0</pose>
           <geometry>
@@ -1644,10 +1683,10 @@
           </surface>
         </collision>
         <visual name='Wall_23_Visual_3'>
-          <pose frame=''>-0.431435 0 2.25 0 -0 0</pose>
+          <pose frame=''>-0.431435 0 1.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
           <material>
@@ -1664,10 +1703,10 @@
         <collision name='Wall_23_Collision_3'>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
-          <pose frame=''>-0.431435 0 2.25 0 -0 0</pose>
+          <pose frame=''>-0.431435 0 1.25 0 -0 0</pose>
           <max_contacts>10</max_contacts>
           <surface>
             <contact>
@@ -1683,10 +1722,10 @@
           </surface>
         </collision>
         <visual name='Wall_23_Visual_4'>
-          <pose frame=''>0.478048 0 2.25 0 -0 0</pose>
+          <pose frame=''>0.478048 0 1.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
           <material>
@@ -1703,10 +1742,10 @@
         <collision name='Wall_23_Collision_4'>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
-          <pose frame=''>0.478048 0 2.25 0 -0 0</pose>
+          <pose frame=''>0.478048 0 1.25 0 -0 0</pose>
           <max_contacts>10</max_contacts>
           <surface>
             <contact>

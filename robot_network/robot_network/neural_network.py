@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -30,6 +29,7 @@ class RobotSwarmOptimizerNetwork(nn.Module):
 class SwarmMapProcessor(nn.Module):
     """
     Network inputs:
+    - Global map data (occupancy grid) - dynamic size for merging with local map
     - Local map data from individual robots (occupancy grid) - dynamic size
     - Robot's current positions (x, y, theta)
 

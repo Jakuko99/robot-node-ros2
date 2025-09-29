@@ -12,7 +12,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=["src/robot_sim/config/slam_toolbox_params.yaml"],
                 remappings=[
-                    ("/map", "/map1"),
+                    ("/map", "/kris_robot1/map"),
                 ],
             ),
             Node(
@@ -22,7 +22,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=["src/robot_sim/config/slam_toolbox_params1.yaml"],
                 remappings=[
-                    ("/map", "/map2"),
+                    ("/map", "/kris_robot2/map"),
                 ],
             ),
             Node(
@@ -30,6 +30,10 @@ def generate_launch_description():
                 executable="merge_map",
                 output="screen",
                 parameters=[{"use_sim_time": True}],
+                remappings=[
+                    ("/map1", "/kris_robot1/map"),
+                    ("/map2", "/kris_robot2/map"),
+                ],
             ),
         ]
     )

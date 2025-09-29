@@ -94,19 +94,19 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        global_map:
+          Value: true
         kris_robot1_base_link:
+          Value: true
+        kris_robot1_map:
           Value: true
         kris_robot1_odom:
           Value: true
         kris_robot2_base_link:
           Value: true
+        kris_robot2_map:
+          Value: true
         kris_robot2_odom:
-          Value: true
-        map1:
-          Value: true
-        map2:
-          Value: true
-        merge_map:
           Value: true
       Marker Scale: 1
       Name: TF
@@ -114,12 +114,12 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
       Tree:
-        merge_map:
-          map1:
+        global_map:
+          kris_robot1_map:
             kris_robot1_odom:
               kris_robot1_base_link:
                 {}
-          map2:
+          kris_robot2_map:
             kris_robot2_odom:
               kris_robot2_base_link:
                 {}
@@ -137,13 +137,13 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /merge_map
+        Value: /global_map
       Update Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /merge_map_updates
+        Value: /global_map_updates
       Use Timestamp: false
       Value: true
     - Angle Tolerance: 0.10000000149011612
@@ -286,7 +286,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: merge_map
+    Fixed Frame: global_map
     Frame Rate: 30
   Name: root
   Tools:

@@ -1,4 +1,3 @@
-
 import os
 from time import time
 from collections import deque
@@ -33,8 +32,8 @@ class TopicRateMonitor(Node):
         # Load configuration
         self.topics = self.load_config(config_file)
 
-        # sort the topics 
-        self.topics = sorted(self.topics, key=lambda d: d['name'])
+        # sort the topics
+        self.topics = sorted(self.topics, key=lambda d: d["name"])
 
         # Variables to track message timestamps
         self.topic_info = {

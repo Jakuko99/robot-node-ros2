@@ -7,9 +7,9 @@ using namespace std::chrono_literals;
 int main(int argc, char *argv[])
 {
     std::cout << "Initializing RobotControl node...\n";
-    rclcpp::init(argc, argv);    
-    auto node = std::make_shared<RobotControl>("robot_control_node1", "/kris_robot1/goal_pose", "/kris_robot1/odom", "/map1", "map1");
-    auto node1 = std::make_shared<RobotControl>("robot_control_node2", "/kris_robot2/goal_pose", "/kris_robot2/odom", "/map2", "map2");
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<RobotControl>("robot_control_node1", "/kris_robot1/goal_pose", "/kris_robot1/odom", "/kris_robot1/map", "kris_robot1_map");
+    auto node1 = std::make_shared<RobotControl>("robot_control_node2", "/kris_robot2/goal_pose", "/kris_robot2/odom", "/kris_robot2/map", "kris_robot2_map");
     while (rclcpp::ok())
     {
         rclcpp::spin_some(node);

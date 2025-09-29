@@ -1,6 +1,6 @@
 slam_toolbox:
   ros__parameters:
-    map_frame: map2
+    map_frame: kris_robot2_map
     base_frame: kris_robot2_base_link
     scan_topic: /kris_robot2/scan
     odom_frame: kris_robot2_odom

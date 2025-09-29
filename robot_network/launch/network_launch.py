@@ -14,6 +14,11 @@ def generate_launch_description():
                 executable="robot_network",
                 name="robot_network",
                 output="screen",
+                parameters=[
+                    {
+                        "namespace": "kris_robot1",
+                    }
+                ],
             ),
         ]
     )

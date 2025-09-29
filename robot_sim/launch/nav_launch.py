@@ -22,7 +22,6 @@ def generate_launch_description():
                     "autostart": "true",
                     "params_file": "/home/ubuntu/ros_ws/src/robot_sim/config/nav2_params1.yaml",
                     "use_lifecycle_mgr": "true",
-                    # "map_subscribe_transient_local": "true",
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -35,7 +34,6 @@ def generate_launch_description():
                     "autostart": "true",
                     "params_file": "/home/ubuntu/ros_ws/src/robot_sim/config/nav2_params2.yaml",
                     "use_lifecycle_mgr": "true",
-                    # "map_subscribe_transient_local": "true",
                 }.items(),
             ),
         ]

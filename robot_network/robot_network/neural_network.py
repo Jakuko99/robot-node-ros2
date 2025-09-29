@@ -15,7 +15,7 @@ class RobotSwarmOptimizerNetwork(nn.Module):
     Network inputs:
     - Robot's current positions (x, y, theta)
     - Global map data merged from robots (occupancy grid) - dynamic size
-    - Points of interest (Unexplored areas, targets)
+    - Points of interest (unexplored areas, targets)
 
     Network outputs:
     - Next goal position (x, y)

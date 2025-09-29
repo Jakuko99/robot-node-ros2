@@ -8,7 +8,7 @@ from sensor_msgs.msg import LaserScan
 import numpy as np
 from tf2_ros import TransformBroadcaster
 
-from neural_network import RobotSwarmOptimizerNetwork
+from neural_network import RobotSwarmOptimizerNetwork, SwarmMapProcessor
 
 
 class RobotNetwork(Node):

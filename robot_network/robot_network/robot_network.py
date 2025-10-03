@@ -1,20 +1,18 @@
 import rclpy
 from rclpy.node import Node, Publisher
 from geometry_msgs.msg import Twist, Quaternion, TransformStamped, PoseStamped
-from std_msgs.msg import String
-from sensor_msgs.msg import JointState
 from nav_msgs.msg import Odometry, OccupancyGrid
 from sensor_msgs.msg import LaserScan
 import numpy as np
-from tf2_ros import TransformBroadcaster
 
-from neural_network import RobotSwarmOptimizerNetwork, SwarmMapProcessor
+from robot_network.neural_network import RobotSwarmOptimizerNetwork, SwarmMapProcessor
 
 
 class RobotNetwork(Node):
     def __init__(self):
         super().__init__("robot")
         self.declare_parameter("namespace", "kris_robot")
+        self.current_map: np.ndarray = np.array([])
 
         # ----- Subscribers -----
         self.odom_subscriber = self.create_subscription(
@@ -55,16 +53,32 @@ class RobotNetwork(Node):
         )
 
     def odom_callback(self, msg: Odometry):
-        self.get_logger().info(f"Received odometry: {msg}")
+        pass
+        # self.get_logger().info(f"Received odometry: {msg}")
 
     def map_callback(self, msg: OccupancyGrid):
         self.get_logger().info(f"Received map data: {msg.info.width}x{msg.info.height}")
 
+        mat = np.zeros((msg.info.height, msg.info.width), dtype=float)
+
+        l, i = 0, 0
+        for val in msg.data:
+            mat[l, i] = float(0.5 if val == -1 else (1 if val == 0 else 0))
+            # 0.5: unknown, 1: free, 0: occupied
+            i += 1
+            if i >= msg.info.width:
+                i = 0
+                l += 1
+
+        self.current_map: np.ndarray = mat
+
     def scan_callback(self, msg: LaserScan):
-        self.get_logger().info(f"Received laser scan with {len(msg.ranges)} ranges")
+        pass
+        # self.get_logger().info(f"Received laser scan with {len(msg.ranges)} ranges")
 
     def poi_callback(self, msg: PoseStamped):
-        self.get_logger().info(f"Received POI at position: {msg.pose.position}")
+        pass
+        # self.get_logger().info(f"Received POI at position: {msg.pose.position}")
 
 
 def main(args=None):

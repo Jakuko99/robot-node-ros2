@@ -120,9 +120,10 @@ class SwarmMapProcessor(nn.Module):
 
         out = self.out_conv(d2)
         return torch.sigmoid(out)
-    
+
+
 if __name__ == "__main__":
-    model = SwarmMapProcessor()    
+    model = SwarmMapProcessor()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print(model)

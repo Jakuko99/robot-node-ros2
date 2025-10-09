@@ -33,30 +33,21 @@ def load_from_pickle(file: str, output_path: str = None):
     with open(file, "rb") as f:
         data: dict = pkl.load(f)
 
-    # mat_raw: np.ndarray = cv.resize(data["map"], (300, 200), interpolation=cv.INTER_NEAREST)
-    # print(mat_raw.shape)
+    mat: np.ndarray = cv.resize(data["map"], (300, 200), interpolation=cv.INTER_NEAREST)
+    # mat = data["map"]
 
-    mat = data["map"]
-    # count values in mat
-    unique, counts = np.unique(mat, return_counts=True)
-    count_dict = dict(zip(unique, counts))
-    print(f"Value counts in map: {count_dict}")
+    print(mat.shape)
 
-    for l in range(mat.shape[0]):
-        for i in range(mat.shape[1]):
-            if mat[l, i] == 0.5:
-                mat[l, i] = 125
-            elif mat[l, i] == 0.0:
-                mat[l, i] = 255
-            else:
-                mat[l, i] = 0
+    mat[mat == 0.5] = 125
+    mat[mat == 0] = 255
+    mat[mat == 1.0] = 0
 
     plt.figure()
     plt.imshow(mat, cmap="gray", origin="lower")
     plt.axis("off")
 
     if output_path:
-        plt.savefig(output_path, dpi=300, bbox_inches="tight", pad_inches=0.1)
+        plt.savefig(output_path, dpi=300, bbox_inches="tight", pad_inches=0)
 
 
 def parse_map(file: str, compressed_map: np.ndarray, output_path: str = None) -> int:

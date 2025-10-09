@@ -13,7 +13,7 @@ class DatasetNode:
         self.node = rclpy.create_node(f"dataset_node_{namespace}")
         self.map_subscription = self.node.create_subscription(
             OccupancyGrid,
-            f"{namespace}/map",  # Adjust topic name as needed
+            f"{namespace}/map",
             self.handle_map_message,
             10,
         )
@@ -60,20 +60,17 @@ class DatasetNode:
         if not self.map_received:
             return  # Wait until the first map is received
 
-        pos = msg.pose.pose.position
-        ori = msg.pose.pose.orientation
-
         self.odom_dict = {
             "position": {
-                "x": pos.x,
-                "y": pos.y,
-                "z": pos.z,
+                "x": msg.pose.pose.position.x,
+                "y": msg.pose.pose.position.y,
+                "z": msg.pose.pose.position.z,
             },
             "orientation": {
-                "x": ori.x,
-                "y": ori.y,
-                "z": ori.z,
-                "w": ori.w,
+                "x": msg.pose.pose.orientation.x,
+                "y": msg.pose.pose.orientation.y,
+                "z": msg.pose.pose.orientation.z,
+                "w": msg.pose.pose.orientation.w,
             },
         }
 

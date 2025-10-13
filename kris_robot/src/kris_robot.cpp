@@ -18,7 +18,6 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   this->tf_pub = this->create_publisher<geometry_msgs::msg::TransformStamped>("tf", rclcpp::QoS(10));
   this->cmd_vel_sub = this->create_subscription<geometry_msgs::msg::Twist>(
       "cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
-  publish_urdf();
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 }
@@ -158,4 +157,5 @@ void KRISRobot::update_state()
   publish_scan();
   publish_tf();
   publish_joint_state();
+  publish_urdf();
 }

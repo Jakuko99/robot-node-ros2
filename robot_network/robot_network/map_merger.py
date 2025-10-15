@@ -1,7 +1,6 @@
 import numpy as np
 import cv2 as cv
 import json
-import os
 
 
 def merge_maps(map1: np.ndarray, map2: np.ndarray) -> np.ndarray:
@@ -23,8 +22,12 @@ def merge_maps(map1: np.ndarray, map2: np.ndarray) -> np.ndarray:
             good_matches.append(m)
 
     if len(good_matches) > 4:
-        src_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        src_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(
+            -1, 1, 2
+        )
+        dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(
+            -1, 1, 2
+        )
 
         # Find homography
         H, mask = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
@@ -40,6 +43,7 @@ def merge_maps(map1: np.ndarray, map2: np.ndarray) -> np.ndarray:
     else:
         print("Not enough good matches to merge maps.")
         return None
+
 
 def load_map(file: str) -> np.ndarray:
     with open(
@@ -66,9 +70,6 @@ if __name__ == "__main__":
     map2 = load_map(
         "/home/ubuntu/ros_ws/src/robot_network/resource/dataset/kris_robot2/map_data_1759758139.txt"
     )
-    # cv.imshow("Map 1", map1)
-    # cv.imshow("Map 2", map2)
-    # cv.waitKey(0)
 
     if map1.any() and map2.any():
         merged_map = merge_maps(map1, map2)

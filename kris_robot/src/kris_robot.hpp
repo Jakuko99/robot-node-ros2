@@ -2,6 +2,10 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <wiringPi.h>
+#include <linux/i2c-dev.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -11,6 +15,20 @@
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/convert.h"
 
+#define I2C_BUS "/dev/i2c-1"
+
+#define MOTOR1_DIR_PIN 17
+#define MOTOR1_STEP_PIN 27
+#define MOTOR2_DIR_PIN 23
+#define MOTOR2_STEP_PIN 24
+
+#define BUTTON1_PIN 5
+#define BUTTON2_PIN 6
+
+#define ACC_ADDR 0x19
+#define DISP_ADDR 0x3C
+#define BME280_ADDR 0x76
+
 class KRISRobot : public rclcpp::Node
 {
 public:
@@ -19,6 +37,7 @@ public:
   void update_state();
 
 private:
+  void setup_gpio();
   void publish_scan();
   void publish_odometry();
   void publish_urdf();

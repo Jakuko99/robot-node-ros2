@@ -20,7 +20,7 @@ find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 
 add_executable(kris_robot src/kris_robot.cpp src/main.cpp)
-target_link_libraries(kris_robot PRIVATE rclcpp::rclcpp ${sensor_msgs_TARGETS} ${nav_msgs_TARGETS} ${geometry_msgs_TARGETS} ${std_msgs_TARGETS} ${tf2_TARGETS})
+target_link_libraries(kris_robot PRIVATE rclcpp::rclcpp ${sensor_msgs_TARGETS} ${nav_msgs_TARGETS} ${geometry_msgs_TARGETS} ${std_msgs_TARGETS} ${tf2_TARGETS} wiringPi)
 
 install(TARGETS
   kris_robot

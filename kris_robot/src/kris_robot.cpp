@@ -10,6 +10,8 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
                                               v_linear(0.0),
                                               v_angular(0.0)
 {
+  this->setup_gpio();
+
   this->declare_parameter("robot_description", "");
   this->laser_pub = this->create_publisher<sensor_msgs::msg::LaserScan>("scan", rclcpp::QoS(10));
   this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10));
@@ -23,6 +25,19 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
 }
 
 KRISRobot::~KRISRobot() {}
+
+void KRISRobot::setup_gpio()
+{
+  wiringPiSetupGpio(); // init GPIO using BCM numbering
+  pinMode(MOTOR1_DIR_PIN, OUTPUT);
+  pinMode(MOTOR1_STEP_PIN, OUTPUT);
+
+  pinMode(MOTOR2_DIR_PIN, OUTPUT);
+  pinMode(MOTOR2_STEP_PIN, OUTPUT);
+
+  pinMode(BUTTON1_PIN, INPUT);
+  pinMode(BUTTON2_PIN, INPUT);
+}
 
 void KRISRobot::publish_scan()
 {

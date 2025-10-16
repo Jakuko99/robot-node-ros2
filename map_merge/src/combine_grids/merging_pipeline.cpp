@@ -1,9 +1,8 @@
 #include "combine_grids/grid_compositor.h"
 #include "combine_grids/grid_warper.h"
 #include "combine_grids/merging_pipeline.h"
-#include "nav_msgs/msg/occupancy_grid.h"
-#include "geometry_msgs/msg/pose.h"
-#include "geometry_msgs/msg/pose.h"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "geometry_msgs/msg/pose.hpp"
 #include <cassert>
 #include <rclcpp/rclcpp.hpp>
 
@@ -152,50 +151,57 @@ namespace combine_grids
     {
       if (!transforms_[i].empty() && !images_[i].empty())
       {
-        imgs_warped.emplace_back();
-        rois.emplace_back(
-            warper.warp(images_[i], transforms_[i], imgs_warped.back()));
+        for (size_t i = 0; i < images_.size(); ++i)
+        {
+          if (!transforms_[i].empty() && !images_[i].empty())
+          {
+            cv::Mat warped;
+            cv::Rect roi = warper.warp(images_[i], transforms_[i], warped);
+            imgs_warped.push_back(warped);
+            rois.push_back(roi);
+          }
+
+          if (imgs_warped.empty())
+          {
+            return nullptr;
+          }
+
+          RCLCPP_DEBUG(rclcpp::get_logger("MergingPipeline"), "compositing result grid");
+          nav_msgs::msg::OccupancyGrid::SharedPtr result;
+          internal::GridCompositor compositor;
+          result = compositor.compose(imgs_warped, rois);
+
+          // set correct resolution to output grid. use resolution of identity (works
+          // for estimated trasforms), or any resolution (works for know_init_positions)
+          // - in that case all resolutions should be the same.
+          float any_resolution = 0.0;
+          for (size_t i = 0; i < transforms_.size(); ++i)
+          {
+            // check if this transform is the reference frame
+            if (isIdentity(transforms_[i]))
+            {
+              result->info.resolution = grids_[i]->info.resolution;
+              break;
+            }
+            if (grids_[i])
+            {
+              any_resolution = grids_[i]->info.resolution;
+            }
+          }
+          if (result->info.resolution <= 0.f)
+          {
+            result->info.resolution = any_resolution;
+          }
+
+          // set grid origin to its centre
+          result->info.origin.position.x = -(result->info.width / 2.0) * double(result->info.resolution);
+          result->info.origin.position.y = -(result->info.height / 2.0) * double(result->info.resolution);
+          result->info.origin.orientation.w = 1.0;
+
+          return result;
+        }
       }
     }
-
-    if (imgs_warped.empty())
-    {
-      return nullptr;
-    }
-
-    RCLCPP_DEBUG(rclcpp::get_logger("MergingPipeline"), "compositing result grid");
-    nav_msgs::msg::OccupancyGrid result;
-    internal::GridCompositor compositor;
-    result = compositor.compose(imgs_warped, rois);
-
-    // set correct resolution to output grid. use resolution of identity (works
-    // for estimated trasforms), or any resolution (works for know_init_positions)
-    // - in that case all resolutions should be the same.
-    float any_resolution = 0.0;
-    for (size_t i = 0; i < transforms_.size(); ++i)
-    {
-      // check if this transform is the reference frame
-      if (isIdentity(transforms_[i]))
-      {
-        result->info.resolution = grids_[i]->info.resolution;
-        break;
-      }
-      if (grids_[i])
-      {
-        any_resolution = grids_[i]->info.resolution;
-      }
-    }
-    if (result->info.resolution <= 0.f)
-    {
-      result->info.resolution = any_resolution;
-    }
-
-    // set grid origin to its centre
-    result->info.origin.position.x = -(result->info.width / 2.0) * double(result->info.resolution);
-    result->info.origin.position.y = -(result->info.height / 2.0) * double(result->info.resolution);
-    result->info.origin.orientation.w = 1.0;
-
-    return result;
   }
 
   std::vector<geometry_msgs::msg::Pose> MergingPipeline::getTransforms() const
@@ -230,5 +236,4 @@ namespace combine_grids
 
     return result;
   }
-
 } // namespace combine_grids

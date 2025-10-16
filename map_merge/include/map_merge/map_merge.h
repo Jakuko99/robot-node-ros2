@@ -1,7 +1,7 @@
 
-#include "nav_msgs/msg/occupancy_grid.h"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "geometry_msgs/msg/pose.h"
-#include "map_msgs/msg/occupancy_grid_update.h"
+#include "map_msgs/msg/occupancy_grid_update.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <atomic>
 #include <forward_list>
@@ -20,7 +20,7 @@ namespace map_merge
     // also protects reads and writes of shared_ptrs
     std::mutex mutex;
 
-  geometry_msgs::msg::Pose initial_pose;
+    geometry_msgs::msg::Pose initial_pose;
     nav_msgs::msg::OccupancyGrid::SharedPtr writable_map;
     nav_msgs::msg::OccupancyGrid::SharedPtr readonly_map;
 
@@ -56,9 +56,9 @@ namespace map_merge
     std::mutex pipeline_mutex_;
 
     std::string robotNameFromTopic(const std::string &topic);
-  bool isRobotMapTopic(const rclcpp::TopicEndpointInfo &topic);
-  bool isRobotMapTopic(const std::string &topic_name, const std::string &datatype);
-  bool getInitPose(const std::string &name, geometry_msgs::msg::Pose &pose);
+    bool isRobotMapTopic(const rclcpp::TopicEndpointInfo &topic);
+    bool isRobotMapTopic(const std::string &topic_name, const std::string &datatype);
+    bool getInitPose(const std::string &name, geometry_msgs::msg::Pose &pose);
 
     void fullMapUpdate(const nav_msgs::msg::OccupancyGrid::SharedPtr &msg,
                        MapSubscription &map);

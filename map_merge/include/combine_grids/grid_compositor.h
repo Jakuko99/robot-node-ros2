@@ -1,9 +1,10 @@
-#include "nav_msgs/msg/occupancy_grid.h"
+#ifndef GRID_COMPOSITOR_H_
+#define GRID_COMPOSITOR_H_
+
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <vector>
 #include <opencv2/core/utility.hpp>
-#ifndef GRID_COMPOSITOR_H_
-#define GRID_COMPOSITOR_H_
 
 namespace combine_grids
 {

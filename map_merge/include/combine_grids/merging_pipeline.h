@@ -1,10 +1,11 @@
-#include "nav_msgs/msg/occupancy_grid.h"
-#include "geometry_msgs/msg/pose.h"
+#ifndef MERGING_PIPELINE_H_
+#define MERGING_PIPELINE_H_
+
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "geometry_msgs/msg/pose.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <vector>
 #include <opencv2/core/utility.hpp>
-#ifndef MERGING_PIPELINE_H_
-#define MERGING_PIPELINE_H_
 
 namespace combine_grids
 {
@@ -28,9 +29,9 @@ namespace combine_grids
                             double confidence = 1.0);
     nav_msgs::msg::OccupancyGrid::SharedPtr composeGrids();
 
-  std::vector<geometry_msgs::msg::Pose> getTransforms() const;
-  template <typename InputIt>
-  bool setTransforms(InputIt transforms_begin, InputIt transforms_end);
+    std::vector<geometry_msgs::msg::Pose> getTransforms() const;
+    template <typename InputIt>
+    bool setTransforms(InputIt transforms_begin, InputIt transforms_end);
 
   private:
     std::vector<nav_msgs::msg::OccupancyGrid::SharedPtr> grids_;
@@ -41,7 +42,7 @@ namespace combine_grids
   template <typename InputIt>
   void MergingPipeline::feed(InputIt grids_begin, InputIt grids_end)
   {
-    static_assert(std::is_assignable<nav_msgs::msg::OccupancyGrid::SharedPtr&,
+    static_assert(std::is_assignable<nav_msgs::msg::OccupancyGrid::SharedPtr &,
                                      decltype(*grids_begin)>::value,
                   "grids_begin must point to nav_msgs::msg::OccupancyGrid::SharedPtr "
                   "data");
@@ -72,10 +73,10 @@ namespace combine_grids
   bool MergingPipeline::setTransforms(InputIt transforms_begin,
                                       InputIt transforms_end)
   {
-  static_assert(std::is_assignable<geometry_msgs::msg::Pose &,
-                   decltype(*transforms_begin)>::value,
-          "transforms_begin must point to geometry_msgs::msg::Pose "
-          "data");
+    static_assert(std::is_assignable<geometry_msgs::msg::Pose &,
+                                     decltype(*transforms_begin)>::value,
+                  "transforms_begin must point to geometry_msgs::msg::Pose "
+                  "data");
 
     decltype(transforms_) transforms_buf;
     for (InputIt it = transforms_begin; it != transforms_end; ++it)

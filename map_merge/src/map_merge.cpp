@@ -1,8 +1,8 @@
 #include <thread>
 
 #include "map_merge/map_merge.h"
-#include "nav_msgs/msg/occupancy_grid.h"
-#include "geometry_msgs/msg/pose.h"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "geometry_msgs/msg/pose.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include <cassert>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -139,23 +139,16 @@ namespace map_merge
       pipeline_.setTransforms(poses.begin(), poses.end());
     }
 
-    nav_msgs::msg::OccupancyGrid merged_map;
-    {
-      std::lock_guard<std::mutex> lock(pipeline_mutex_);
-      merged_map = pipeline_.composeGrids();
-    }
-    if (!merged_map)
-    {
+    auto merged_map = pipeline_.composeGrids();
+    if (!merged_map) {
       return;
     }
-
     RCLCPP_DEBUG(this->get_logger(), "all maps merged, publishing");
-    merged_map.info.map_load_time = this->now();
-    merged_map.header.stamp = this->now();
-    merged_map.header.frame_id = world_frame_;
-
-    assert(merged_map.info.resolution > 0.f);
-    merged_map_publisher_->publish(merged_map);
+    merged_map->info.map_load_time = this->now();
+    merged_map->header.stamp = this->now();
+    merged_map->header.frame_id = world_frame_;
+    assert(merged_map->info.resolution > 0.f);
+    merged_map_publisher_->publish(*merged_map);
   }
 
   void MapMerge::poseEstimation()
@@ -290,7 +283,7 @@ namespace map_merge
   {
     /* test whether topic is robot_map_topic_ */
     // ROS 2: TopicEndpointInfo is not used for topic discovery in the same way. Use topic name and datatype.
-    return isRobotMapTopic(topic.name, topic.datatype);
+  return isRobotMapTopic(topic.get_topic_name(), topic.get_topic_type());
 
   // New signature for ROS 2
   bool MapMerge::isRobotMapTopic(const std::string &topic_name, const std::string &datatype)
@@ -313,7 +306,7 @@ namespace map_merge
    * Get robot's initial position
    */
   bool MapMerge::getInitPose(const std::string &name,
-                             geometry_msgs::msg::Transform &pose)
+                             geometry_msgs::msg::Pose &pose)
   {
     std::string merging_namespace = name + "/map_merge";
     double yaw = 0.0;

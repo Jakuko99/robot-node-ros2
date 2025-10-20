@@ -51,8 +51,8 @@ def generate_launch_description():
                     "0",
                     "0",
                     "0",
-                    "merge_map",
-                    "map1",
+                    "global_map",
+                    "kris_robot1_map",
                 ]
             ),
             ExecuteProcess(
@@ -67,8 +67,8 @@ def generate_launch_description():
                     "0",
                     "0",
                     "0",
-                    "merge_map",
-                    "map2",
+                    "global_map",
+                    "kris_robot2_map",
                 ]
             ),
         ]

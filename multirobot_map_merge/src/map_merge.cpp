@@ -64,7 +64,7 @@ namespace map_merge
     {
       const std::string &topic_name = topic_info.first;
       const std::vector<std::string> &topic_types = topic_info.second;
-      
+
       // we check only map topic
       if (topic_types.empty() || !isRobotMapTopic(topic_name, topic_types[0]))
       {
@@ -72,19 +72,19 @@ namespace map_merge
       }
 
       robot_name = robotNameFromTopic(topic_name);
-      if (robots_.count(robot_name))
+      if ((robots_.count(robot_name)) || robot_name.find("costmap") != std::string::npos)
       {
-        // we already know this robot
+        // we already know this robot, also ignore costmaps
         continue;
       }
 
       if (have_initial_poses_ && !getInitPose(robot_name, init_pose))
       {
         RCLCPP_WARN(this->get_logger(), "Couldn't get initial position for robot [%s]\n"
-                                        "did you defined parameters map_merge/init_pose_[xyz]? in robot "
+                                        "did you define parameters map_merge/init_pose_[xyz]? in robot "
                                         "namespace? If you want to run merging without known initial "
                                         "positions of robots please set `known_init_poses` parameter "
-                                        "to false. See relavant documentation for details.",
+                                        "to false. See relevant documentation for details.",
                     robot_name.c_str());
         continue;
       }
@@ -95,7 +95,6 @@ namespace map_merge
         subscriptions_.emplace_front();
         ++subscriptions_size_;
       }
-
       // no locking here. robots_ are used only in this procedure
       MapSubscription &subscription = subscriptions_.front();
       robots_.insert({robot_name, &subscription});
@@ -153,10 +152,11 @@ namespace map_merge
     }
 
     auto merged_map = pipeline_.composeGrids();
-    if (!merged_map) {
+    if (!merged_map)
+    {
       return;
     }
-    RCLCPP_DEBUG(this->get_logger(), "all maps merged, publishing");
+    RCLCPP_INFO(this->get_logger(), "all maps merged, publishing");
     merged_map->info.map_load_time = this->now();
     merged_map->header.stamp = this->now();
     merged_map->header.frame_id = world_frame_;
@@ -192,8 +192,8 @@ namespace map_merge
   {
     RCLCPP_DEBUG(this->get_logger(), "received full map update");
     std::lock_guard<std::mutex> lock(subscription.mutex);
-  if (subscription.readonly_map &&
-    rclcpp::Time(subscription.readonly_map->header.stamp) > rclcpp::Time(msg->header.stamp))
+    if (subscription.readonly_map &&
+        rclcpp::Time(subscription.readonly_map->header.stamp) > rclcpp::Time(msg->header.stamp))
     {
       // we have been overrunned by faster update. our work was useless.
       return;
@@ -272,8 +272,8 @@ namespace map_merge
     {
       // store back updated map
       std::lock_guard<std::mutex> lock(subscription.mutex);
-    if (subscription.readonly_map &&
-      rclcpp::Time(subscription.readonly_map->header.stamp) > rclcpp::Time(map->header.stamp))
+      if (subscription.readonly_map &&
+          rclcpp::Time(subscription.readonly_map->header.stamp) > rclcpp::Time(map->header.stamp))
       {
         // we have been overrunned by faster update. our work was useless.
         return;
@@ -285,10 +285,11 @@ namespace map_merge
 
   std::string MapMerge::robotNameFromTopic(const std::string &topic)
   {
-  // ROS 2 does not have rclcpp::names::parentNamespace, so use string manipulation
-  auto pos = topic.find_last_of('/');
-  if (pos == std::string::npos || pos == 0) return "";
-  return topic.substr(0, pos);
+    // ROS 2 does not have rclcpp::names::parentNamespace, so use string manipulation
+    auto pos = topic.find_last_of('/');
+    if (pos == std::string::npos || pos == 0)
+      return "";
+    return topic.substr(0, pos);
   }
 
   /* identifies topic via suffix */
@@ -296,7 +297,7 @@ namespace map_merge
   {
     // Check if topic ends with robot_map_topic_
     bool is_map_topic = topic_name.size() >= robot_map_topic_.size() &&
-      topic_name.compare(topic_name.size() - robot_map_topic_.size(), robot_map_topic_.size(), robot_map_topic_) == 0;
+                        topic_name.compare(topic_name.size() - robot_map_topic_.size(), robot_map_topic_.size(), robot_map_topic_) == 0;
     // Check if topic contains robot_namespace_
     bool contains_robot_namespace = robot_namespace_.empty() || topic_name.find(robot_namespace_) != std::string::npos;
     // Only occupancy grid topics
@@ -316,10 +317,10 @@ namespace map_merge
     std::string merging_namespace = name + "/map_merge";
     double yaw = 0.0;
     bool success =
-      this->get_parameter(merging_namespace + "/init_pose_x", pose.position.x) &&
-      this->get_parameter(merging_namespace + "/init_pose_y", pose.position.y) &&
-      this->get_parameter(merging_namespace + "/init_pose_z", pose.position.z) &&
-      this->get_parameter(merging_namespace + "/init_pose_yaw", yaw);
+        this->get_parameter(merging_namespace + "/init_pose_x", pose.position.x) &&
+        this->get_parameter(merging_namespace + "/init_pose_y", pose.position.y) &&
+        this->get_parameter(merging_namespace + "/init_pose_z", pose.position.z) &&
+        this->get_parameter(merging_namespace + "/init_pose_yaw", yaw);
     tf2::Quaternion q;
     q.setEuler(0., 0., yaw);
     pose.orientation = tf2::toMsg(q);

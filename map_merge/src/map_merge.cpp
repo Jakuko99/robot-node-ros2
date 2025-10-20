@@ -27,6 +27,17 @@ namespace map_merge
     this->declare_parameter("merged_map_topic", "map");
     this->declare_parameter("world_frame", "world");
 
+    // Get parameters
+    merging_rate_ = this->get_parameter("merging_rate").as_double();
+    discovery_rate_ = this->get_parameter("discovery_rate").as_double();
+    estimation_rate_ = this->get_parameter("estimation_rate").as_double();
+    have_initial_poses_ = this->get_parameter("known_init_poses").as_bool();
+    confidence_threshold_ = this->get_parameter("estimation_confidence").as_double();
+    robot_map_topic_ = this->get_parameter("robot_map_topic").as_string();
+    robot_map_updates_topic_ = this->get_parameter("robot_map_updates_topic").as_string();
+    robot_namespace_ = this->get_parameter("robot_namespace").as_string();
+    world_frame_ = this->get_parameter("world_frame").as_string();
+
     /* publishing */
     merged_map_publisher_ =
         this->create_publisher<nav_msgs::msg::OccupancyGrid>(this->get_parameter("merged_map_topic").as_string(), rclcpp::QoS(10));
@@ -39,25 +50,28 @@ namespace map_merge
   {
     RCLCPP_DEBUG(this->get_logger(), "Robot discovery started.");
 
-    rclcpp::TopicEndpointInfo topic_infos;
     geometry_msgs::msg::Pose init_pose;
     std::string robot_name;
     std::string map_topic;
     std::string map_updates_topic;
 
-    rclcpp::getTopics(topic_infos);
+    // Get all topics and types in ROS2
+    auto topic_names_and_types = this->get_topic_names_and_types();
     // default msg constructor does no properly initialize quaternion
     init_pose.orientation.w = 1; // create identity quaternion
 
-    for (const auto &topic : topic_infos)
+    for (const auto &topic_info : topic_names_and_types)
     {
+      const std::string &topic_name = topic_info.first;
+      const std::vector<std::string> &topic_types = topic_info.second;
+      
       // we check only map topic
-      if (!isRobotMapTopic(topic))
+      if (topic_types.empty() || !isRobotMapTopic(topic_name, topic_types[0]))
       {
         continue;
       }
 
-      robot_name = robotNameFromTopic(topic.name);
+      robot_name = robotNameFromTopic(topic_name);
       if (robots_.count(robot_name))
       {
         // we already know this robot
@@ -88,14 +102,13 @@ namespace map_merge
       subscription.initial_pose = init_pose;
 
       /* subscribe callbacks */
-      map_topic = rclcpp::names::append(robot_name, robot_map_topic_);
-      map_updates_topic =
-          rclcpp::names::append(robot_name, robot_map_updates_topic_);
+      map_topic = robot_name + "/" + robot_map_topic_;
+      map_updates_topic = robot_name + "/" + robot_map_updates_topic_;
       RCLCPP_INFO(this->get_logger(), "Subscribing to MAP topic: %s.", map_topic.c_str());
 
       subscription.map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
           map_topic, rclcpp::QoS(50),
-          [this, &subscription](const nav_msgs::msg::OccupancyGrid::SharedPtr &msg)
+          [this, &subscription](nav_msgs::msg::OccupancyGrid::SharedPtr msg)
           {
             fullMapUpdate(msg, subscription);
           });
@@ -104,9 +117,9 @@ namespace map_merge
                   map_updates_topic.c_str());
       subscription.map_updates_sub =
           this->create_subscription<map_msgs::msg::OccupancyGridUpdate>(
-              map_updates_topic, 50,
+              map_updates_topic, rclcpp::QoS(50),
               [this, &subscription](
-                  const map_msgs::msg::OccupancyGridUpdate::SharedPtr &msg)
+                  map_msgs::msg::OccupancyGridUpdate::SharedPtr msg)
               {
                 partialMapUpdate(msg, subscription);
               });
@@ -279,27 +292,19 @@ namespace map_merge
   }
 
   /* identifies topic via suffix */
-  bool MapMerge::isRobotMapTopic(const rclcpp::TopicEndpointInfo &topic)
-  {
-    /* test whether topic is robot_map_topic_ */
-    // ROS 2: TopicEndpointInfo is not used for topic discovery in the same way. Use topic name and datatype.
-  return isRobotMapTopic(topic.get_topic_name(), topic.get_topic_type());
-
-  // New signature for ROS 2
   bool MapMerge::isRobotMapTopic(const std::string &topic_name, const std::string &datatype)
   {
     // Check if topic ends with robot_map_topic_
     bool is_map_topic = topic_name.size() >= robot_map_topic_.size() &&
       topic_name.compare(topic_name.size() - robot_map_topic_.size(), robot_map_topic_.size(), robot_map_topic_) == 0;
     // Check if topic contains robot_namespace_
-    bool contains_robot_namespace = topic_name.find(robot_namespace_) != std::string::npos;
+    bool contains_robot_namespace = robot_namespace_.empty() || topic_name.find(robot_namespace_) != std::string::npos;
     // Only occupancy grid topics
     bool is_occupancy_grid = datatype == "nav_msgs/msg/OccupancyGrid";
     // Don't subscribe to our own published topic
-    // (Assume merged_map_publisher_ topic is stored in merged_map_topic_)
-    bool is_our_topic = topic_name == merged_map_topic_;
+    std::string merged_topic = this->get_parameter("merged_map_topic").as_string();
+    bool is_our_topic = topic_name.find(merged_topic) != std::string::npos;
     return is_occupancy_grid && !is_our_topic && contains_robot_namespace && is_map_topic;
-  }
   }
 
   /*

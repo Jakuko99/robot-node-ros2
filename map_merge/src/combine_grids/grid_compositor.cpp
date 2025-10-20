@@ -1,5 +1,5 @@
 #include "combine_grids/grid_compositor.h"
-#include "nav_msgs/msg/occupancy_grid.h"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 
 #include <opencv2/stitching/detail/util.hpp>
 

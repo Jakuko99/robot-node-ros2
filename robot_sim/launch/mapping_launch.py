@@ -25,15 +25,21 @@ def generate_launch_description():
                     ("/map", "/kris_robot2/map"),
                 ],
             ),
+            # Node(
+            #     package="merge_map",
+            #     executable="merge_map",
+            #     output="screen",
+            #     parameters=[{"use_sim_time": True}],
+            #     remappings=[
+            #         ("/map1", "/kris_robot1/map"),
+            #         ("/map2", "/kris_robot2/map"),
+            #     ],
+            # ),
+
             Node(
-                package="merge_map",
-                executable="merge_map",
-                output="screen",
-                parameters=[{"use_sim_time": True}],
-                remappings=[
-                    ("/map1", "/kris_robot1/map"),
-                    ("/map2", "/kris_robot2/map"),
-                ],
-            ),
+                package="multirobot_map_merge",
+                executable="map_merge",
+                name="map_merge_node",
+            )
         ]
     )

@@ -1,6 +1,6 @@
 
 #include "nav_msgs/msg/occupancy_grid.hpp"
-#include "geometry_msgs/msg/pose.h"
+#include "geometry_msgs/msg/pose.hpp"
 #include "map_msgs/msg/occupancy_grid_update.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <atomic>
@@ -56,7 +56,6 @@ namespace map_merge
     std::mutex pipeline_mutex_;
 
     std::string robotNameFromTopic(const std::string &topic);
-    bool isRobotMapTopic(const rclcpp::TopicEndpointInfo &topic);
     bool isRobotMapTopic(const std::string &topic_name, const std::string &datatype);
     bool getInitPose(const std::string &name, geometry_msgs::msg::Pose &pose);
 

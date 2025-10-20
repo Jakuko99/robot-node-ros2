@@ -163,6 +163,7 @@ namespace combine_grids
 
           if (imgs_warped.empty())
           {
+            RCLCPP_WARN(rclcpp::get_logger("MergingPipeline"), "no grids could be warped, merging failed");
             return nullptr;
           }
 

@@ -52,8 +52,8 @@ def generate_launch_description():
                     "0",
                     "0",
                     "0",
-                    "merge_map1",
-                    "map1",
+                    "global_map",
+                    "kris_robot1_map",
                 ]
             ),
             ExecuteProcess(
@@ -68,8 +68,8 @@ def generate_launch_description():
                     "0",
                     "0",
                     "0",
-                    "merge_map1",
-                    "map2",
+                    "global_map",
+                    "kris_robot2_map",
                 ]
             ),     
             ExecuteProcess(
@@ -84,8 +84,8 @@ def generate_launch_description():
                     "0",
                     "0",
                     "0",
-                    "merge_map2",
-                    "map3",
+                    "global_map",
+                    "kris_robot3_map",
                 ]
             ),    
             ExecuteProcess(
@@ -100,42 +100,42 @@ def generate_launch_description():
                     "0",
                     "0",
                     "0",
-                    "merge_map2",
-                    "map4",
+                    "global_map",
+                    "kris_robot4_map",
                 ]
             ),
-            ExecuteProcess(
-                cmd=[
-                    "ros2",
-                    "run",
-                    "tf2_ros",
-                    "static_transform_publisher",
-                    "0",
-                    "0",
-                    "0",
-                    "0",
-                    "0",
-                    "0",
-                    "merge_map",
-                    "merge_map1",
-                ]
-            ),
-            ExecuteProcess(
-                cmd=[
-                    "ros2",
-                    "run",
-                    "tf2_ros",
-                    "static_transform_publisher",
-                    "0",
-                    "0",
-                    "0",
-                    "0",
-                    "0",
-                    "0",
-                    "merge_map",
-                    "merge_map2",
-                ]
-            ),
+            # ExecuteProcess(
+            #     cmd=[
+            #         "ros2",
+            #         "run",
+            #         "tf2_ros",
+            #         "static_transform_publisher",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "merge_map",
+            #         "merge_map1",
+            #     ]
+            # ),
+            # ExecuteProcess(
+            #     cmd=[
+            #         "ros2",
+            #         "run",
+            #         "tf2_ros",
+            #         "static_transform_publisher",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "0",
+            #         "merge_map",
+            #         "merge_map2",
+            #     ]
+            # ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "mapping_launch.py")

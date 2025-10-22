@@ -1,2 +1,5 @@
 **/test/
 __pycache__/
+
+robot_network/resource/dataset*/
+*.drawio.bkp

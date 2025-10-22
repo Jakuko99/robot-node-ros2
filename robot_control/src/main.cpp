@@ -8,10 +8,10 @@ int main(int argc, char *argv[])
 {
     std::cout << "Initializing RobotControl node...\n";
     rclcpp::init(argc, argv);    
-    auto node = std::make_shared<RobotControl>("robot_control_node1", "/kris_robot1/goal_pose", "/kris_robot1/odom", "/map1", "map1");
-    auto node1 = std::make_shared<RobotControl>("robot_control_node2", "/kris_robot2/goal_pose", "/kris_robot2/odom", "/map2", "map2");
-    auto node2 = std::make_shared<RobotControl>("robot_control_node3", "/kris_robot3/goal_pose", "/kris_robot3/odom", "/map3", "map3");
-    auto node3 = std::make_shared<RobotControl>("robot_control_node4", "/kris_robot4/goal_pose", "/kris_robot4/odom", "/map4", "map4");
+    auto node = std::make_shared<RobotControl>("robot_control_node1", "/kris_robot1/goal_pose", "/kris_robot1/odom", "/kris_robot1/map", "kris_robot1_map");
+    auto node1 = std::make_shared<RobotControl>("robot_control_node2", "/kris_robot2/goal_pose", "/kris_robot2/odom", "/kris_robot2/map", "kris_robot2_map");
+    auto node2 = std::make_shared<RobotControl>("robot_control_node3", "/kris_robot3/goal_pose", "/kris_robot3/odom", "/kris_robot3/map", "kris_robot3_map");
+    auto node3 = std::make_shared<RobotControl>("robot_control_node4", "/kris_robot4/goal_pose", "/kris_robot4/odom", "/kris_robot4/map", "kris_robot4_map");
     while (rclcpp::ok())
     {
         rclcpp::spin_some(node);

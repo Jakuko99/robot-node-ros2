@@ -76,58 +76,61 @@ class MapMerger(Node):
             if sub.map_data is not None
         ]
 
-        if local_maps:
+        if len(local_maps) > 1:  # need at least two maps to merge
             self.get_logger().info(f"Merging {len(local_maps)} maps.")
             merged_map = OccupancyGrid()
 
             min_x = min(map.info.origin.position.x for map in local_maps)
             min_y = min(map.info.origin.position.y for map in local_maps)
 
-            max_x = max(
-                map.info.origin.position.x + map.info.width * map.info.resolution
-                for map in local_maps
-            )
-            max_y = max(
-                map.info.origin.position.y + map.info.height * map.info.resolution
-                for map in local_maps
-            )
-
             merged_map.info.resolution = local_maps[0].info.resolution
-            merged_map.info.width = int((max_x - min_x) / merged_map.info.resolution)
-            merged_map.info.height = int((max_y - min_y) / merged_map.info.resolution)
+            merged_map.info.width = max(map.info.width for map in local_maps)
+            merged_map.info.height = max(map.info.height for map in local_maps)
             merged_map.info.origin.position.x = min_x
             merged_map.info.origin.position.y = min_y
             merged_map.info.origin.position.z = 0.0
             merged_map.info.origin.orientation.w = 1.0
             merged_map.header.frame_id = "global_map"
-            merged_map.data = [-1] * (merged_map.info.width * merged_map.info.height)
+            merged_map.header.stamp = self.get_clock().now().to_msg()
+
+            merged_data = np.full(
+                (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
+            )
+
             for local_map in local_maps:
                 offset_x = int(
                     (local_map.info.origin.position.x - min_x)
-                    / merged_map.info.resolution
+                    / local_map.info.resolution
                 )
                 offset_y = int(
                     (local_map.info.origin.position.y - min_y)
-                    / merged_map.info.resolution
+                    / local_map.info.resolution
                 )
+                print(f"Offset for map: ({offset_x}, {offset_y})")
 
+                local_data = np.array(local_map.data, dtype=np.int8).reshape(
+                    (local_map.info.height, local_map.info.width)
+                )
                 for y in range(local_map.info.height):
                     for x in range(local_map.info.width):
-                        local_index = x + y * local_map.info.width
-                        merged_x = x + offset_x
-                        merged_y = y + offset_y
-                        merged_index = merged_x + merged_y * merged_map.info.width
-
+                        global_x = x + offset_x
+                        global_y = y + offset_y
                         if (
-                            0 <= merged_x < merged_map.info.width
-                            and 0 <= merged_y < merged_map.info.height
+                            0 <= global_x < merged_map.info.width
+                            and 0 <= global_y < merged_map.info.height
                         ):
-                            local_value = local_map.data[local_index]
+                            local_value = local_data[y, x]
                             if local_value != -1:
-                                merged_map.data[merged_index] = local_value
+                                merged_data[global_y, global_x] = local_value
 
+            merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)
-            self.get_logger().info("Published merged map.")
+            self.get_logger().info(
+                f"Published merged map. ({merged_map.info.width} x {merged_map.info.height})"
+            )
+
+            for sub in self.map_subscriptions.values():
+                sub.map_data = None  # reset maps after merging
 
 
 # ziskat minima v x a y , nasledne vypocitat posunutie map a velkost vyslednej mapy a potom cez numpy offsetnut druhu mapu aby boli zarovnane
@@ -138,7 +141,6 @@ def main(args=None):
     merge_map_node = MapMerger()
     while rclpy.ok():
         merge_map_node.discover_robots()
-        # merge_map_node.merge_maps()
         rclpy.spin(merge_map_node)
 
     merge_map_node.destroy_node()

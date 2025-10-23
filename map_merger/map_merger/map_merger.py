@@ -2,8 +2,9 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
+from tf2_msgs.msg import TFMessage
+from geometry_msgs.msg import TransformStamped
 import numpy as np
-from time import sleep
 
 
 class MapSubscription:
@@ -44,30 +45,39 @@ class MapMerger(Node):
     def __init__(self):
         super().__init__("map_merger_node")
         self.publisher = self.create_publisher(OccupancyGrid, "/global_map", 10)
+        self.static_subscription = self.create_subscription(
+            TFMessage, "/tf_static", self.tf_callback, 10
+        )
+        self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
+
+    def tf_callback(self, msg: TFMessage):
+        for transform in msg.transforms:
+            if transform.child_frame_id not in self.static_transforms:
+                self.static_transforms[transform.child_frame_id] = transform
+                print(f"Received new static transform for {transform.child_frame_id}")
+
+        self.discover_robots()
 
     def discover_robots(self):
         topics = self.get_topic_names_and_types()
 
-        robot_namespaces = set()
         for topic, types in topics:
             if (
                 topic.endswith("/map")
                 and "nav_msgs/msg/OccupancyGrid" in types
                 and "costmap" not in topic
             ):
-                robot_name = topic.split("/")[1]
-                robot_namespaces.add(robot_name)
+                robot_name: str = topic.split("/")[1]
 
-        for robot_name in robot_namespaces:
-            if robot_name not in self.map_subscriptions:
-                topic_name = f"/{robot_name}/map"
-                self.map_subscriptions[robot_name] = MapSubscription(
-                    robot_name, self, topic_name
-                )
-                self.get_logger().info(
-                    f"Subscribed to map topic for robot {robot_name} at {topic_name}"
-                )
+                if robot_name not in self.map_subscriptions:
+                    topic_name: str = f"/{robot_name}/map"
+                    self.map_subscriptions[robot_name] = MapSubscription(
+                        robot_name, self, topic_name
+                    )
+                    self.get_logger().info(
+                        f"Subscribed to map topic for robot {robot_name} at {topic_name}"
+                    )
 
     def merge_maps(self):
         local_maps = [
@@ -84,11 +94,17 @@ class MapMerger(Node):
             min_y = min(map.info.origin.position.y for map in local_maps)
 
             merged_map.info.resolution = local_maps[0].info.resolution
-            
+
             # Calculate the maximum extent in x and y directions
-            max_x = max(map.info.origin.position.x + map.info.width * map.info.resolution for map in local_maps)
-            max_y = max(map.info.origin.position.y + map.info.height * map.info.resolution for map in local_maps)
-            
+            max_x = max(
+                map.info.origin.position.x + map.info.width * map.info.resolution
+                for map in local_maps
+            )
+            max_y = max(
+                map.info.origin.position.y + map.info.height * map.info.resolution
+                for map in local_maps
+            )
+
             merged_map.info.width = int((max_x - min_x) / merged_map.info.resolution)
             merged_map.info.height = int((max_y - min_y) / merged_map.info.resolution)
             merged_map.info.origin.position.x = min_x
@@ -103,45 +119,42 @@ class MapMerger(Node):
             )
 
             for local_map in local_maps:
-                offset_x = int(
-                    (local_map.info.origin.position.x - min_x)
-                    / local_map.info.resolution
-                ) // 2
-                offset_y = int(
-                    (local_map.info.origin.position.y - min_y)
-                    / local_map.info.resolution
-                ) // 2
-
-                local_data: np.ndarray = np.array(
-                    local_map.data, dtype=np.int8
-                ).reshape((local_map.info.height, local_map.info.width))
-                # local_data = np.pad(
-                #     local_data,
-                #     (
-                #         (0, merged_map.info.height - local_map.info.height),
-                #         (0, merged_map.info.width - local_map.info.width),
-                #     ),
-                #     mode="constant",
-                #     constant_values=-1,
-                # )
-
-                print(f"Offset for map: ({offset_x}, {offset_y})")
-                print(f"Local map size: ({local_data.shape[1]}, {local_data.shape[0]})")
-                print(
-                    f"Merged map size: ({merged_map.info.width}, {merged_map.info.height})"
+                transform: TransformStamped = self.static_transforms.get(
+                    local_map.header.frame_id, None
                 )
 
-                merged_data[
-                    offset_y : local_data.shape[0] + offset_y,
-                    offset_x : local_data.shape[1] + offset_x,
-                ] = np.where(
-                    local_data != -1,
-                    local_data,
+                if transform:
+                    offset_x = int(
+                        transform.transform.translation.x / merged_map.info.resolution
+                    )
+                    offset_y = int(
+                        transform.transform.translation.y / merged_map.info.resolution
+                    )
+
+                    self.get_logger().info(
+                        f"Merging map from frame {local_map.header.frame_id} at offset ({offset_x}, {offset_y})"
+                    )
+
+                    local_data: np.ndarray = np.array(
+                        local_map.data, dtype=np.int8
+                    ).reshape((local_map.info.height, local_map.info.width))
+
                     merged_data[
                         offset_y : local_data.shape[0] + offset_y,
                         offset_x : local_data.shape[1] + offset_x,
-                    ],
-                )
+                    ] = np.where(
+                        local_data != -1,
+                        local_data,
+                        merged_data[
+                            offset_y : local_data.shape[0] + offset_y,
+                            offset_x : local_data.shape[1] + offset_x,
+                        ],
+                    )
+
+                else:
+                    self.get_logger().warn(
+                        f"No static transform found for frame {local_map.header.frame_id}. Skipping map."
+                    )
 
             merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)

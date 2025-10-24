@@ -61,7 +61,7 @@ def generate_launch_description():
                     "run",
                     "tf2_ros",
                     "static_transform_publisher",
-                    "1.2",
+                    "1.0",
                     "0",
                     "0",
                     "0",

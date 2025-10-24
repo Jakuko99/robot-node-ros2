@@ -280,10 +280,9 @@
         <max_contacts>10</max_contacts>
         <pose>0 0 0 0 0 0</pose>
         <geometry>
-          <cylinder>
+          <sphere>
             <radius>0.0335</radius>
-            <length>0.0265</length>
-          </cylinder>
+          </sphere>
         </geometry>
         <surface>
           <friction>
@@ -381,10 +380,9 @@
         <max_contacts>10</max_contacts>
         <pose>0 0 0 0 0 0</pose>
         <geometry>
-          <cylinder>
+          <sphere>
             <radius>0.0335</radius>
-            <length>0.0265</length>
-          </cylinder>
+          </sphere>
         </geometry>
         <surface>
           <friction>

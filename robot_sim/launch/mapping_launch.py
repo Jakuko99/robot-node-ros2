@@ -51,7 +51,7 @@ def generate_launch_description():
                         "publish_rate": 10.0,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot2_map",
-                        "x": 1.2,
+                        "x": 1.0,
                         "y": 0.0,
                         "z": 0.0,
                     }

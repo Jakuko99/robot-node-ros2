@@ -87,15 +87,11 @@ class MapMerger(Node):
         ]
 
         if len(local_maps) == len(self.map_subscriptions) and len(local_maps) > 1:
-            self.get_logger().info(f"Merging {len(local_maps)} maps.")
-            merged_map: OccupancyGrid = OccupancyGrid()
+            merged_map = OccupancyGrid()
 
             min_x = min(map.info.origin.position.x for map in local_maps)
             min_y = min(map.info.origin.position.y for map in local_maps)
 
-            merged_map.info.resolution = local_maps[0].info.resolution
-
-            # Calculate the maximum extent in x and y directions
             max_x = max(
                 map.info.origin.position.x + map.info.width * map.info.resolution
                 for map in local_maps
@@ -105,6 +101,7 @@ class MapMerger(Node):
                 for map in local_maps
             )
 
+            merged_map.info.resolution = local_maps[0].info.resolution
             merged_map.info.width = int((max_x - min_x) / merged_map.info.resolution)
             merged_map.info.height = int((max_y - min_y) / merged_map.info.resolution)
             merged_map.info.origin.position.x = min_x
@@ -118,26 +115,39 @@ class MapMerger(Node):
                 (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
             )
 
+            merged_center_x, merged_center_y = int(merged_map.info.width / 2.0), int(
+                merged_map.info.height / 2.0
+            )
+            print(
+                f"Merged Map Center X: {merged_center_x}, Center Y: {merged_center_y}"
+            )
+
             for local_map in local_maps:
                 transform: TransformStamped = self.static_transforms.get(
-                    local_map.header.frame_id, None
+                    local_map.header.frame_id
                 )
 
                 if transform:
+                    center_x, center_y = int(local_map.info.width / 2.0), int(
+                        local_map.info.height / 2.0
+                    )
+                    print(
+                        f"Center X: {center_x}, Center Y: {center_y} for frame {local_map.header.frame_id}"
+                    )
+
                     offset_x = int(
-                        transform.transform.translation.x / merged_map.info.resolution
+                        (merged_center_x - center_x) + transform.transform.translation.x
                     )
                     offset_y = int(
-                        transform.transform.translation.y / merged_map.info.resolution
+                        (merged_center_y - center_y) + transform.transform.translation.y
+                    )
+                    print(
+                        f"Offset X: {offset_x}, Offset Y: {offset_y} for frame {local_map.header.frame_id}"
                     )
 
-                    self.get_logger().info(
-                        f"Merging map from frame {local_map.header.frame_id} at offset ({offset_x}, {offset_y})"
+                    local_data = np.array(local_map.data, dtype=np.int8).reshape(
+                        (local_map.info.height, local_map.info.width)
                     )
-
-                    local_data: np.ndarray = np.array(
-                        local_map.data, dtype=np.int8
-                    ).reshape((local_map.info.height, local_map.info.width))
 
                     merged_data[
                         offset_y : local_data.shape[0] + offset_y,

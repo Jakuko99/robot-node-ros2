@@ -1,0 +1,15 @@
+services:
+  ros2-cross-compile:
+    image: arm64v8/ros:humble-ros-base-jammy
+    platform: linux/arm64         # emulate ARM64 on x86_64
+    container_name: ros2-cross-compile
+    volumes:
+      - ~/ros_ws/:/work                  # mount your ROS2 workspace
+    working_dir: /work
+    command: /bin/bash
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - ROS_DISTRO=humble
+    stdin_open: true
+    tty: true
+    privileged: true  

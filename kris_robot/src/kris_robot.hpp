@@ -3,9 +3,12 @@
 #include <sstream>
 #include <fstream>
 #include <wiringPi.h>
-#include <linux/i2c-dev.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <thread>
+#include <chrono>
+#include <cmath>
+#include <mutex>
+#include <atomic>
+#include <csignal>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -17,17 +20,43 @@
 
 #define I2C_BUS "/dev/i2c-1"
 
-#define MOTOR1_DIR_PIN 17
-#define MOTOR1_STEP_PIN 27
-#define MOTOR2_DIR_PIN 23
-#define MOTOR2_STEP_PIN 24
+#define MOTOR_LEFT_DIR_PIN 8
+#define MOTOR_LEFT_STEP_PIN 7
+#define MOTOR_RIGHT_DIR_PIN 23
+#define MOTOR_RIGHT_STEP_PIN 24
 
 #define BUTTON1_PIN 5
 #define BUTTON2_PIN 6
+#define PWM_OUTPUT 18
+
+#define WHEEL_BASE 0.085     // Distance between wheels in meters
+#define WHEEL_DIAMETER 0.066 // Wheel diameter in meters
+#define STEPS_PER_REV 400    // Steps per revolution for the stepper motor
 
 #define ACC_ADDR 0x19
 #define DISP_ADDR 0x3C
 #define BME280_ADDR 0x76
+
+class StepperMotor
+{
+public:
+  StepperMotor(int, int, int, double);
+  void set_speed(double);
+  ~StepperMotor();
+
+private:
+  void run_motor();
+
+  int dir_pin;
+  int step_pin;
+  int steps_per_rev;
+  double wheel_diameter_;
+  double steps_per_meter_;
+  double speed_hz_;
+  bool running_;
+  std::mutex mutex_;
+  std::thread motor_thread_;
+};
 
 class KRISRobot : public rclcpp::Node
 {
@@ -50,6 +79,12 @@ private:
   float theta;
   float v_linear;
   float v_angular;
+
+  std::string base_frame_id = "base_link";
+  std::string odom_frame_id = "odom";
+
+  std::shared_ptr<StepperMotor> left_motor;
+  std::shared_ptr<StepperMotor> right_motor;
 
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr laser_pub;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;

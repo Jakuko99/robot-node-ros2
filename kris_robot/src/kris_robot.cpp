@@ -3,6 +3,73 @@
 using std::placeholders::_1;
 // #define DEBUG
 
+StepperMotor::StepperMotor(int step_pin, int dir_pin, int steps_per_rev = 200, double wheel_diameter = 0.065)
+    : step_pin(step_pin),
+      dir_pin(dir_pin),
+      steps_per_rev(steps_per_rev),
+      wheel_diameter_(wheel_diameter),
+      speed_hz_(0.0),
+      running_(false)
+{
+  steps_per_meter_ = steps_per_rev / (M_PI * wheel_diameter_);
+  pinMode(step_pin, OUTPUT);
+  pinMode(dir_pin, OUTPUT);
+
+  // Start motor thread
+  motor_thread_ = std::thread(&StepperMotor::run_motor, this);
+}
+
+StepperMotor::~StepperMotor()
+{
+  running_ = false;
+  if (motor_thread_.joinable())
+  {
+    motor_thread_.join();
+  }
+}
+
+void StepperMotor::set_speed(double speed_m_s)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (speed_m_s >= 0)
+  {
+    digitalWrite(dir_pin, HIGH);
+  }
+  else
+  {
+    digitalWrite(dir_pin, LOW);
+  }
+  speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
+  running_ = (speed_hz_ > 0);
+}
+
+void StepperMotor::run_motor()
+{
+  while (true)
+  {
+    double local_speed_hz;
+    bool local_running;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      local_speed_hz = speed_hz_;
+      local_running = running_;
+    }
+
+    if (local_running && local_speed_hz > 0)
+    {
+      double delay_s = 1.0 / (2.0 * local_speed_hz);
+      digitalWrite(step_pin, HIGH);
+      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s));
+      digitalWrite(step_pin, LOW);
+      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s));
+    }
+    else
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+}
+
 KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
                                               x(0.0),
                                               y(0.0),
@@ -13,6 +80,8 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   this->setup_gpio();
 
   this->declare_parameter("robot_description", "");
+  this->declare_parameter("base_frame_id", "base_link");
+  this->declare_parameter("odom_frame_id", "odom");
   this->laser_pub = this->create_publisher<sensor_msgs::msg::LaserScan>("scan", rclcpp::QoS(10));
   this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10));
   this->joint_state_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::QoS(10));
@@ -22,48 +91,40 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
       "cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
+
+  this->base_frame_id = this->get_parameter("base_frame_id").as_string();
+  this->odom_frame_id = this->get_parameter("odom_frame_id").as_string();
+
+  left_motor = std::make_shared<StepperMotor>(MOTOR_LEFT_STEP_PIN, MOTOR_LEFT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
+  right_motor = std::make_shared<StepperMotor>(MOTOR_RIGHT_STEP_PIN, MOTOR_RIGHT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
 }
 
-KRISRobot::~KRISRobot() {}
+KRISRobot::~KRISRobot() {
+  pwmWrite(PWM_OUTPUT, 0);
+  left_motor->set_speed(0);
+  right_motor->set_speed(0);
+}
 
 void KRISRobot::setup_gpio()
 {
-  wiringPiSetupGpio(); // init GPIO using BCM numbering
-  pinMode(MOTOR1_DIR_PIN, OUTPUT);
-  pinMode(MOTOR1_STEP_PIN, OUTPUT);
+  if (wiringPiSetupGpio() == -1)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Failed to initialize wiringPi");
+    rclcpp::shutdown();
+    return;
+  }
+  /*pinMode(MOTOR_LEFT_DIR_PIN, OUTPUT);
+  pinMode(MOTOR_LEFT_STEP_PIN, OUTPUT);
 
-  pinMode(MOTOR2_DIR_PIN, OUTPUT);
-  pinMode(MOTOR2_STEP_PIN, OUTPUT);
+  pinMode(MOTOR_RIGHT_DIR_PIN, OUTPUT);
+  pinMode(MOTOR_RIGHT_STEP_PIN, OUTPUT);*/
 
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
-}
+  pinMode(PWM_OUTPUT, OUTPUT);
 
-void KRISRobot::publish_scan()
-{
-  sensor_msgs::msg::LaserScan scan_msg;
-  scan_msg.header.stamp = this->now();
-  scan_msg.header.frame_id = "laser_frame";
-  scan_msg.angle_min = 0;                // Start angle of the scan
-  scan_msg.angle_max = 2 * M_PI;         // End angle of the scan
-  scan_msg.angle_increment = M_PI / 180; // 1 degree increments
-  scan_msg.scan_time = 0.1;              // Time taken to scan
-  scan_msg.time_increment = 0.0002;      // Time between measurements
-  scan_msg.range_min = 0.03;             // Minimum range
-  scan_msg.range_max = 12.0;             // Maximum range
-  scan_msg.ranges.resize(static_cast<size_t>((scan_msg.angle_max - scan_msg.angle_min) / scan_msg.angle_increment));
-  scan_msg.intensities.resize(scan_msg.ranges.size(), 0.0); // Initialize intensities to zero
-  for (size_t i = 0; i < scan_msg.ranges.size(); ++i)
-  {
-    scan_msg.ranges[i] = 2.0;      // Placeholder value for range
-    scan_msg.intensities[i] = 1.0; // Placeholder value for intensity
-  }
-
-  this->laser_pub->publish(scan_msg);
-
-#ifdef DEBUG
-  RCLCPP_INFO(this->get_logger(), "Published laser scan with %zu ranges", scan_msg.ranges.size());
-#endif
+  pwmWrite(PWM_OUTPUT, 80);
+  RCLCPP_INFO(this->get_logger(), "GPIO setup complete");
 }
 
 void KRISRobot::publish_odometry()
@@ -74,8 +135,8 @@ void KRISRobot::publish_odometry()
 
   nav_msgs::msg::Odometry msg = nav_msgs::msg::Odometry();
   msg.header.stamp = this->now();
-  msg.header.frame_id = "odom";
-  msg.child_frame_id = "base_link";
+  msg.header.frame_id = this->odom_frame_id;
+  msg.child_frame_id = this->base_frame_id;
   msg.pose.pose.position.x = this->x;
   msg.pose.pose.position.y = this->y;
   msg.pose.pose.position.z = 0.0;
@@ -115,8 +176,8 @@ void KRISRobot::publish_tf()
 {
   geometry_msgs::msg::TransformStamped tf_msg;
   tf_msg.header.stamp = this->now();
-  tf_msg.header.frame_id = "kris_robot";
-  tf_msg.child_frame_id = "base_link";
+  tf_msg.header.frame_id = this->base_frame_id;
+  tf_msg.child_frame_id = this->odom_frame_id;
   tf_msg.transform.translation.x = this->x;
   tf_msg.transform.translation.y = this->y;
   tf_msg.transform.translation.z = 0.0;
@@ -131,30 +192,20 @@ void KRISRobot::publish_tf()
   this->tf_pub->publish(tf_msg);
 }
 
-void KRISRobot::publish_joint_state()
-{
-  sensor_msgs::msg::JointState joint_state_msg;
-  joint_state_msg.header.stamp = this->now();
-  joint_state_msg.header.frame_id = "base_link";
-  joint_state_msg.name.push_back("lwheel");
-  joint_state_msg.name.push_back("rwheel");
-  joint_state_msg.position.push_back(0.0);            // Placeholder for left wheel position
-  joint_state_msg.position.push_back(0.0);            // Placeholder for right wheel position
-  joint_state_msg.velocity.push_back(this->v_linear); // Placeholder for left wheel velocity
-  joint_state_msg.velocity.push_back(this->v_linear); // Placeholder for right wheel velocity
-  joint_state_msg.effort.push_back(0.0);              // Placeholder for left wheel effort
-  joint_state_msg.effort.push_back(0.0);              // Placeholder for right wheel effort
-
-  this->joint_state_pub->publish(joint_state_msg);
-}
-
 void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
 #ifdef DEBUG
   RCLCPP_INFO(this->get_logger(), "Recieved cmd_vel: linear.x = %f, angular.z = %f\n", msg->linear.x, msg->angular.z);
 #endif
-  this->v_linear = msg->linear.x; // Set linear velocity
+  this->v_linear = msg->linear.x;   // Set linear velocity
   this->v_angular = msg->angular.z; // Set angular velocity
+
+  // Differential drive kinematics
+  double v_left = (v_linear - v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
+  double v_right = (v_linear + v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
+
+  left_motor->set_speed(v_right);
+  right_motor->set_speed(v_right);
 }
 
 void KRISRobot::update_state()
@@ -169,8 +220,6 @@ void KRISRobot::update_state()
   this->y += this->v_linear * sin(this->theta) * dt;
 
   publish_odometry();
-  publish_scan();
   publish_tf();
-  publish_joint_state();
   publish_urdf();
 }

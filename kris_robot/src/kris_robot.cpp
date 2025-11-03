@@ -17,6 +17,7 @@ StepperMotor::StepperMotor(int step_pin, int dir_pin, int steps_per_rev = 200, d
 
   // Start motor thread
   motor_thread_ = std::thread(&StepperMotor::run_motor, this);
+  RCLCPP_INFO(rclcpp::get_logger("KRISRobot"), "StepperMotor initialized on step pin %d and dir pin %d", step_pin, dir_pin);
 }
 
 StepperMotor::~StepperMotor()
@@ -40,6 +41,7 @@ void StepperMotor::set_speed(double speed_m_s)
     digitalWrite(dir_pin, LOW);
   }
   speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
+  RCLCPP_INFO(rclcpp::get_logger("KRISRobot"), "StepperMotor on step pin %d set to speed %.2f m/s (%.2f Hz)", step_pin, speed_m_s, speed_hz_);
   running_ = (speed_hz_ > 0);
 }
 
@@ -57,11 +59,12 @@ void StepperMotor::run_motor()
 
     if (local_running && local_speed_hz > 0)
     {
-      double delay_s = 1.0 / (2.0 * local_speed_hz);
+      double delay_s = 1.0 / local_speed_hz;
       digitalWrite(step_pin, HIGH);
-      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
       digitalWrite(step_pin, LOW);
-      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s));
+
+      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s - 0.00001));
     }
     else
     {
@@ -82,13 +85,13 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   this->declare_parameter("robot_description", "");
   this->declare_parameter("base_frame_id", "base_link");
   this->declare_parameter("odom_frame_id", "odom");
-  this->laser_pub = this->create_publisher<sensor_msgs::msg::LaserScan>("scan", rclcpp::QoS(10));
-  this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10));
-  this->joint_state_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::QoS(10));
-  this->urdf_pub = this->create_publisher<std_msgs::msg::String>("robot_description", 10);
+  this->declare_parameter("robot_namespace", "");
+  this->laser_pub = this->create_publisher<sensor_msgs::msg::LaserScan>(this->get_parameter("robot_namespace").as_string() + "/scan", rclcpp::QoS(10));
+  this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>(this->get_parameter("robot_namespace").as_string() + "/odom", rclcpp::QoS(10));
+  this->urdf_pub = this->create_publisher<std_msgs::msg::String>(this->get_parameter("robot_namespace").as_string() + "/robot_description", 10);
   this->tf_pub = this->create_publisher<geometry_msgs::msg::TransformStamped>("tf", rclcpp::QoS(10));
   this->cmd_vel_sub = this->create_subscription<geometry_msgs::msg::Twist>(
-      "cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
+      this->get_parameter("robot_namespace").as_string() + "/cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 
@@ -99,8 +102,8 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   right_motor = std::make_shared<StepperMotor>(MOTOR_RIGHT_STEP_PIN, MOTOR_RIGHT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
 }
 
-KRISRobot::~KRISRobot() {
-  pwmWrite(PWM_OUTPUT, 0);
+KRISRobot::~KRISRobot()
+{
   left_motor->set_speed(0);
   right_motor->set_speed(0);
 }
@@ -113,17 +116,10 @@ void KRISRobot::setup_gpio()
     rclcpp::shutdown();
     return;
   }
-  /*pinMode(MOTOR_LEFT_DIR_PIN, OUTPUT);
-  pinMode(MOTOR_LEFT_STEP_PIN, OUTPUT);
-
-  pinMode(MOTOR_RIGHT_DIR_PIN, OUTPUT);
-  pinMode(MOTOR_RIGHT_STEP_PIN, OUTPUT);*/
 
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
-  pinMode(PWM_OUTPUT, OUTPUT);
 
-  pwmWrite(PWM_OUTPUT, 80);
   RCLCPP_INFO(this->get_logger(), "GPIO setup complete");
 }
 
@@ -204,7 +200,7 @@ void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
   double v_left = (v_linear - v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
   double v_right = (v_linear + v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
 
-  left_motor->set_speed(v_right);
+  left_motor->set_speed(v_left);
   right_motor->set_speed(v_right);
 }
 
@@ -214,7 +210,7 @@ void KRISRobot::update_state()
   RCLCPP_INFO(this->get_logger(), "Updating node state");
 #endif
 
-  float dt = 0.1; // Time step
+  float dt = 0.20; // Time step
   this->theta += this->v_angular * dt;
   this->x += this->v_linear * cos(this->theta) * dt;
   this->y += this->v_linear * sin(this->theta) * dt;

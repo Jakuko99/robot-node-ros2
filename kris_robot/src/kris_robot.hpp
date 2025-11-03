@@ -20,8 +20,8 @@
 
 #define I2C_BUS "/dev/i2c-1"
 
-#define MOTOR_LEFT_DIR_PIN 8
-#define MOTOR_LEFT_STEP_PIN 7
+#define MOTOR_LEFT_DIR_PIN 17
+#define MOTOR_LEFT_STEP_PIN 27
 #define MOTOR_RIGHT_DIR_PIN 23
 #define MOTOR_RIGHT_STEP_PIN 24
 
@@ -31,7 +31,7 @@
 
 #define WHEEL_BASE 0.085     // Distance between wheels in meters
 #define WHEEL_DIAMETER 0.066 // Wheel diameter in meters
-#define STEPS_PER_REV 400    // Steps per revolution for the stepper motor
+#define STEPS_PER_REV 512    // Steps per revolution for the stepper motor
 
 #define ACC_ADDR 0x19
 #define DISP_ADDR 0x3C
@@ -87,8 +87,7 @@ private:
   std::shared_ptr<StepperMotor> right_motor;
 
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr laser_pub;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;  
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr urdf_pub;
   rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr tf_pub;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;

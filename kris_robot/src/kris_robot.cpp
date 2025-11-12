@@ -40,6 +40,7 @@ void StepperMotor::set_speed(double speed_m_s)
   {
     digitalWrite(dir_pin, LOW);
   }
+  
   speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
   RCLCPP_INFO(rclcpp::get_logger("KRISRobot"), "StepperMotor on step pin %d set to speed %.2f m/s (%.2f Hz)", step_pin, speed_m_s, speed_hz_);
   running_ = (speed_hz_ > 0);
@@ -61,14 +62,14 @@ void StepperMotor::run_motor()
     {
       double delay_s = 1.0 / local_speed_hz;
       digitalWrite(step_pin, HIGH);
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      std::this_thread::sleep_for(std::chrono::milliseconds(T_IMPULSE));
       digitalWrite(step_pin, LOW);
 
-      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s - 0.00001));
+      std::this_thread::sleep_for(std::chrono::duration<double>(delay_s - (T_IMPULSE / 1000.0)));
     }
     else
     {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      std::this_thread::sleep_for(std::chrono::milliseconds(T_IMPULSE));
     }
   }
 }

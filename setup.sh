@@ -13,4 +13,4 @@ curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-a
 apt install /tmp/ros2-apt-source.deb -y
 apt update && apt upgrade -y
 
-apt install ros-humble-ros-base ros-dev-tools ros-humble-slam-toolbox ros-humble-navigation2 ros-humble-nav2-bringup -y
+apt install ros-humble-ros-base ros-dev-tools ros-humble-slam-toolbox ros-humble-navigation2 ros-humble-nav2-bringup i2c-tools libi2c-dev ros-humble-robot-localization -y

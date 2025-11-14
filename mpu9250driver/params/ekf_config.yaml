@@ -35,11 +35,11 @@ ekf_filter_node:
     imu0: kris_robot1/imu
     # The order of the values is x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az.
     # [roll, pitch, yaw, vyaw, ax]
-    imu0_config: [false, false, false,
+    imu0_config: [true, true, false,
                   true,  true,  true,
                   false, false, false,
                   false, false, true,
-                  true, false, false]
+                  true, true, false]
 
     imu0_nodelay: false
     imu0_differential: false

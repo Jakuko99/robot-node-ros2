@@ -42,6 +42,9 @@ def generate_launch_description():
         parameters=[
             ekf_config_file,
         ],
+        remappings=[
+            ("/odometry/filtered", "/kris_robot1/odom"),
+        ],
     )
 
     ld.add_action(params_declare)

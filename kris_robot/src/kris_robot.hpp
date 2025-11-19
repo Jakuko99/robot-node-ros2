@@ -68,16 +68,9 @@ public:
 
 private:
   void setup_gpio();
-  void publish_scan();
-  void publish_odometry();
   void publish_urdf();
-  void publish_tf();
-  void publish_joint_state();
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
-  float x;
-  float y;
-  float theta;
   float v_linear;
   float v_angular;
 
@@ -87,9 +80,6 @@ private:
   std::shared_ptr<StepperMotor> left_motor;
   std::shared_ptr<StepperMotor> right_motor;
 
-  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr laser_pub;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr urdf_pub;
-  rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr tf_pub;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;
 };

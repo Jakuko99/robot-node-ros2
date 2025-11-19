@@ -1,5 +1,10 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch.actions import (
+    IncludeLaunchDescription,
+)
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+import os
 
 
 def generate_launch_description():
@@ -19,6 +24,11 @@ def generate_launch_description():
                         "robot_namespace": "kris_robot1",
                     },
                 ],
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join("install/share/mpu9250driver/launch", "mpu9250driver_launch.py")
+                ),
             ),
             # Node(
             #     package="sllidar_ros2",

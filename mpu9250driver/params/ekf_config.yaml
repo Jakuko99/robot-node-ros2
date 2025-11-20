@@ -38,12 +38,12 @@ ekf_filter_node:
     imu0_config: [true, true, false,
                   true,  true,  true,
                   false, false, false,
-                  false, false, false,
-                  true, true, false]
+                  false, false, true,
+                  true, false, false]
 
     imu0_nodelay: false
     imu0_differential: false
-    imu0_relative: true
+    imu0_relative: false
     imu0_queue_size: 6
 
     imu0_pose_rejection_threshold: 6.283185  # 2 PI

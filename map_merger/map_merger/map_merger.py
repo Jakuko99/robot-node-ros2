@@ -5,7 +5,7 @@ from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped
 import numpy as np
-
+from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
 class MapSubscription:
     def __init__(self, robot_name: str, node: Node, topic_name: str):
@@ -87,19 +87,56 @@ class MapMerger(Node):
         ]
 
         if len(local_maps) == len(self.map_subscriptions) and len(local_maps) > 1:
+            glob2loc1_tf = self.static_transforms.get("kris_robot1_map")
+            glob2loc2_tf = self.static_transforms.get("kris_robot2_map")
+
+            loc1_to_glob_mat = compose_matrix(
+                translate=np.array([
+                    -glob2loc1_tf.transform.translation.x,
+                    -glob2loc1_tf.transform.translation.y,
+                    -glob2loc1_tf.transform.translation.z,
+                ]),
+                angles= euler_from_quaternion([
+                    glob2loc1_tf.transform.rotation.x,
+                    glob2loc1_tf.transform.rotation.y,
+                    glob2loc1_tf.transform.rotation.z,
+                    glob2loc1_tf.transform.rotation.w,
+                ])
+            )
+
+            loc2_to_glob_mat = compose_matrix(
+                translate=np.array([
+                    -glob2loc2_tf.transform.translation.x,
+                    -glob2loc2_tf.transform.translation.y,
+                    -glob2loc2_tf.transform.translation.z,
+                ]),
+                angles= euler_from_quaternion([
+                    glob2loc2_tf.transform.rotation.x,
+                    glob2loc2_tf.transform.rotation.y,
+                    glob2loc2_tf.transform.rotation.z,
+                    glob2loc2_tf.transform.rotation.w,
+                ])
+            )
+
+            map1 = local_maps[0]
+            map2 = local_maps[1]
+
+            s1 = loc1_to_glob_mat @ np.array([-map1.info.origin.position.x, -map1.info.origin.position.y, 0, 1])
+            s2 = loc2_to_glob_mat @ np.array([-map2.info.origin.position.x, -map2.info.origin.position.y, 0, 1])  
+
+            t1 = loc1_to_glob_mat @ np.array([-map1.info.origin.position.x + map1.info.width * map1.info.resolution, -map1.info.origin.position.y + map1.info.height * map1.info.resolution, 0, 1])
+            t2 = loc2_to_glob_mat @ np.array([-map2.info.origin.position.x + map2.info.width * map2.info.resolution, -map2.info.origin.position.y + map2.info.height * map2.info.resolution, 0, 1])
+
+            xmin = min(s1[0], s2[0], t1[0], t2[0])
+            xmax = max(s1[0], s2[0], t1[0], t2[0])
+            ymin = min(s1[1], s2[1], t1[1], t2[1])
+            ymax = max(s1[1], s2[1], t1[1], t2[1])
+
+            print(f"s1: {s1}, s2: {s2}, t1: {t1}, t2: {t2}, xmin: {xmin}, xmax: {xmax}, ymin: {ymin}, ymax: {ymax}")
+
             merged_map = OccupancyGrid()
-
-            min_x = min(map.info.origin.position.x for map in local_maps)
-            min_y = min(map.info.origin.position.y for map in local_maps)
-
-            max_x = max(
-                map.info.origin.position.x + map.info.width * map.info.resolution
-                for map in local_maps
-            )
-            max_y = max(
-                map.info.origin.position.y + map.info.height * map.info.resolution
-                for map in local_maps
-            )
+            min_x, min_y = xmin, ymin
+            max_x, max_y = xmax, ymax   
 
             merged_map.info.resolution = local_maps[0].info.resolution
             merged_map.info.width = int((max_x - min_x) / merged_map.info.resolution)
@@ -115,57 +152,24 @@ class MapMerger(Node):
                 (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
             )
 
-            merged_center_x, merged_center_y = int(merged_map.info.width / 2.0), int(
-                merged_map.info.height / 2.0
-            )
-            print(
-                f"Merged Map Center X: {merged_center_x}, Center Y: {merged_center_y}"
-            )
+            offset_x1 = int((s1[0] - min_x) / merged_map.info.resolution)
+            offset_y1 = int((s1[1] - min_y) / merged_map.info.resolution)
 
-            for local_map in local_maps:
-                transform: TransformStamped = self.static_transforms.get(
-                    local_map.header.frame_id
-                )
+            print(f"Offset1: x={offset_x1}, y={offset_y1}")
 
-                if transform:
-                    center_x, center_y = int(local_map.info.width / 2.0), int(
-                        local_map.info.height / 2.0
-                    )
-                    print(
-                        f"Center X: {center_x}, Center Y: {center_y} for frame {local_map.header.frame_id}"
-                    )
+            merged_data[
+                offset_y1 : (offset_y1 + map1.info.height),
+                offset_x1 : (offset_x1 + map1.info.width),
+            ] = np.array(map1.data).reshape((map1.info.height, map1.info.width))
 
-                    offset_x = int(
-                        (merged_center_x - center_x) + transform.transform.translation.x
-                    )
-                    offset_y = int(
-                        (merged_center_y - center_y) + transform.transform.translation.y
-                    )
-                    print(
-                        f"Offset X: {offset_x}, Offset Y: {offset_y} for frame {local_map.header.frame_id}"
-                    )
+            offset_x2 = int((s2[0] - min_x) / merged_map.info.resolution)
+            offset_y2 = int((s2[1] - min_y) / merged_map.info.resolution)
+            merged_data[
+                offset_y2 : (offset_y2 + map2.info.height),
+                offset_x2 : (offset_x2 + map2.info.width),
+            ] = np.array(map2.data).reshape((map2.info.height, map2.info.width))    
 
-                    local_data = np.array(local_map.data, dtype=np.int8).reshape(
-                        (local_map.info.height, local_map.info.width)
-                    )
-
-                    merged_data[
-                        offset_y : local_data.shape[0] + offset_y,
-                        offset_x : local_data.shape[1] + offset_x,
-                    ] = np.where(
-                        local_data != -1,
-                        local_data,
-                        merged_data[
-                            offset_y : local_data.shape[0] + offset_y,
-                            offset_x : local_data.shape[1] + offset_x,
-                        ],
-                    )
-
-                else:
-                    self.get_logger().warn(
-                        f"No static transform found for frame {local_map.header.frame_id}. Skipping map."
-                    )
-
+            
             merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)
             self.get_logger().info(

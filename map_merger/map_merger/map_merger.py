@@ -7,6 +7,7 @@ from geometry_msgs.msg import TransformStamped
 import numpy as np
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
+
 class MapSubscription:
     def __init__(self, robot_name: str, node: Node, topic_name: str):
         self.robot_name: str = robot_name
@@ -87,62 +88,20 @@ class MapMerger(Node):
         ]
 
         if len(local_maps) == len(self.map_subscriptions) and len(local_maps) > 1:
-            glob2loc1_tf = self.static_transforms.get("kris_robot1_map")
-            glob2loc2_tf = self.static_transforms.get("kris_robot2_map")
-
-            loc1_to_glob_mat = compose_matrix(
-                translate=np.array([
-                    -glob2loc1_tf.transform.translation.x,
-                    -glob2loc1_tf.transform.translation.y,
-                    -glob2loc1_tf.transform.translation.z,
-                ]),
-                angles= euler_from_quaternion([
-                    glob2loc1_tf.transform.rotation.x,
-                    glob2loc1_tf.transform.rotation.y,
-                    glob2loc1_tf.transform.rotation.z,
-                    glob2loc1_tf.transform.rotation.w,
-                ])
+            width, height = max([map.info.width for map in local_maps]), max(
+                [map.info.height for map in local_maps]
             )
 
-            loc2_to_glob_mat = compose_matrix(
-                translate=np.array([
-                    -glob2loc2_tf.transform.translation.x,
-                    -glob2loc2_tf.transform.translation.y,
-                    -glob2loc2_tf.transform.translation.z,
-                ]),
-                angles= euler_from_quaternion([
-                    glob2loc2_tf.transform.rotation.x,
-                    glob2loc2_tf.transform.rotation.y,
-                    glob2loc2_tf.transform.rotation.z,
-                    glob2loc2_tf.transform.rotation.w,
-                ])
-            )
-
-            map1 = local_maps[0]
-            map2 = local_maps[1]
-
-            s1 = loc1_to_glob_mat @ np.array([-map1.info.origin.position.x, -map1.info.origin.position.y, 0, 1])
-            s2 = loc2_to_glob_mat @ np.array([-map2.info.origin.position.x, -map2.info.origin.position.y, 0, 1])  
-
-            t1 = loc1_to_glob_mat @ np.array([-map1.info.origin.position.x + map1.info.width * map1.info.resolution, -map1.info.origin.position.y + map1.info.height * map1.info.resolution, 0, 1])
-            t2 = loc2_to_glob_mat @ np.array([-map2.info.origin.position.x + map2.info.width * map2.info.resolution, -map2.info.origin.position.y + map2.info.height * map2.info.resolution, 0, 1])
-
-            xmin = min(s1[0], s2[0], t1[0], t2[0])
-            xmax = max(s1[0], s2[0], t1[0], t2[0])
-            ymin = min(s1[1], s2[1], t1[1], t2[1])
-            ymax = max(s1[1], s2[1], t1[1], t2[1])
-
-            print(f"s1: {s1}, s2: {s2}, t1: {t1}, t2: {t2}, xmin: {xmin}, xmax: {xmax}, ymin: {ymin}, ymax: {ymax}")
-
-            merged_map = OccupancyGrid()
-            min_x, min_y = xmin, ymin
-            max_x, max_y = xmax, ymax   
-
+            merged_map: OccupancyGrid = OccupancyGrid()
             merged_map.info.resolution = local_maps[0].info.resolution
-            merged_map.info.width = int((max_x - min_x) / merged_map.info.resolution)
-            merged_map.info.height = int((max_y - min_y) / merged_map.info.resolution)
-            merged_map.info.origin.position.x = min_x
-            merged_map.info.origin.position.y = min_y
+            merged_map.info.width = width
+            merged_map.info.height = height
+            merged_map.info.origin.position.x = min(
+                [map.info.origin.position.x for map in local_maps]
+            )
+            merged_map.info.origin.position.y = min(
+                [map.info.origin.position.y for map in local_maps]
+            )
             merged_map.info.origin.position.z = 0.0
             merged_map.info.origin.orientation.w = 1.0
             merged_map.header.frame_id = "global_map"
@@ -152,24 +111,163 @@ class MapMerger(Node):
                 (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
             )
 
-            offset_x1 = int((s1[0] - min_x) / merged_map.info.resolution)
-            offset_y1 = int((s1[1] - min_y) / merged_map.info.resolution)
+            for map in local_maps:
+                transform: TransformStamped = self.static_transforms.get(
+                    f"{map.header.frame_id}"
+                )
 
-            print(f"Offset1: x={offset_x1}, y={offset_y1}")
+                print(
+                    f"transform for {map.header.frame_id}: {transform.transform.translation.x}, {transform.transform.translation.y}"
+                )
+                print(
+                    f"map origin: {map.info.origin.position.x}, {map.info.origin.position.y}"
+                )
 
-            merged_data[
-                offset_y1 : (offset_y1 + map1.info.height),
-                offset_x1 : (offset_x1 + map1.info.width),
-            ] = np.array(map1.data).reshape((map1.info.height, map1.info.width))
+                transform_to_origin_x = (
+                    transform.transform.translation.x - map.info.origin.position.x
+                )
+                transform_to_origin_y = (
+                    transform.transform.translation.y - map.info.origin.position.y
+                )
 
-            offset_x2 = int((s2[0] - min_x) / merged_map.info.resolution)
-            offset_y2 = int((s2[1] - min_y) / merged_map.info.resolution)
-            merged_data[
-                offset_y2 : (offset_y2 + map2.info.height),
-                offset_x2 : (offset_x2 + map2.info.width),
-            ] = np.array(map2.data).reshape((map2.info.height, map2.info.width))    
+                offset_x = int(
+                    merged_map.info.origin.position.x
+                    - transform_to_origin_x / merged_map.info.resolution
+                )
+                offset_y = int(
+                    merged_map.info.origin.position.y
+                    - transform_to_origin_y / merged_map.info.resolution
+                )
+                print(f"Offset for {map.header.frame_id}: x={offset_x}, y={offset_y}")
 
-            
+                merged_data[
+                    offset_y : (offset_y + map.info.height),
+                    offset_x : (offset_x + map.info.width),
+                ] = np.array(map.data).reshape((map.info.height, map.info.width))
+
+
+            # glob2loc1_tf: TransformStamped = self.static_transforms.get(
+            #     "kris_robot1_map"
+            # )
+            # glob2loc2_tf: TransformStamped = self.static_transforms.get(
+            #     "kris_robot2_map"
+            # )
+
+            # loc1_to_glob_mat = compose_matrix(
+            #     translate=np.array(
+            #         [
+            #             -glob2loc1_tf.transform.translation.x,
+            #             -glob2loc1_tf.transform.translation.y,
+            #             -glob2loc1_tf.transform.translation.z,
+            #         ]
+            #     ),
+            #     angles=euler_from_quaternion(
+            #         [
+            #             glob2loc1_tf.transform.rotation.x,
+            #             glob2loc1_tf.transform.rotation.y,
+            #             glob2loc1_tf.transform.rotation.z,
+            #             glob2loc1_tf.transform.rotation.w,
+            #         ]
+            #     ),
+            # )
+
+            # loc2_to_glob_mat = compose_matrix(
+            #     translate=np.array(
+            #         [
+            #             -glob2loc2_tf.transform.translation.x,
+            #             -glob2loc2_tf.transform.translation.y,
+            #             -glob2loc2_tf.transform.translation.z,
+            #         ]
+            #     ),
+            #     angles=euler_from_quaternion(
+            #         [
+            #             glob2loc2_tf.transform.rotation.x,
+            #             glob2loc2_tf.transform.rotation.y,
+            #             glob2loc2_tf.transform.rotation.z,
+            #             glob2loc2_tf.transform.rotation.w,
+            #         ]
+            #     ),
+            # )
+
+            # map1 = local_maps[0]
+            # map2 = local_maps[1]
+
+            # s1 = loc1_to_glob_mat @ np.array(
+            #     [-map1.info.origin.position.x, -map1.info.origin.position.y, 0, 1]
+            # )
+            # s2 = loc2_to_glob_mat @ np.array(
+            #     [-map2.info.origin.position.x, -map2.info.origin.position.y, 0, 1]
+            # )
+
+            # t1 = loc1_to_glob_mat @ np.array(
+            #     [
+            #         -map1.info.origin.position.x
+            #         + map1.info.width * map1.info.resolution,
+            #         -map1.info.origin.position.y
+            #         + map1.info.height * map1.info.resolution,
+            #         0,
+            #         1,
+            #     ]
+            # )
+
+            # t2 = loc2_to_glob_mat @ np.array(
+            #     [
+            #         -map2.info.origin.position.x
+            #         + map2.info.width * map2.info.resolution,
+            #         -map2.info.origin.position.y
+            #         + map2.info.height * map2.info.resolution,
+            #         0,
+            #         1,
+            #     ]
+            # )
+
+            # xmin = min(s1[0], s2[0], t1[0], t2[0])
+            # xmax = max(s1[0], s2[0], t1[0], t2[0])
+            # ymin = min(s1[1], s2[1], t1[1], t2[1])
+            # ymax = max(s1[1], s2[1], t1[1], t2[1])
+
+            # merged_map = OccupancyGrid()
+            # min_x, min_y = xmin, ymin
+            # max_x, max_y = xmax, ymax
+
+            # merged_map.info.resolution = local_maps[0].info.resolution
+            # merged_map.info.width = int((max_x - min_x) / merged_map.info.resolution)
+            # merged_map.info.height = int((max_y - min_y) / merged_map.info.resolution)
+            # merged_map.info.origin.position.x = min_x
+            # merged_map.info.origin.position.y = min_y
+            # merged_map.info.origin.position.z = 0.0
+            # merged_map.info.origin.orientation.w = 1.0
+            # merged_map.header.frame_id = "global_map"
+            # merged_map.header.stamp = self.get_clock().now().to_msg()
+
+            # print(
+            #     f"Merged map size: {merged_map.info.width} x {merged_map.info.height}"
+            # )
+            # print(
+            #     f"map1: {map1.info.width} x {map1.info.height}, map2: {map2.info.width} x {map2.info.height}"
+            # )
+
+            # merged_data = np.full(
+            #     (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
+            # )
+
+            # offset_x1 = int((s1[0] - min_x) / merged_map.info.resolution)
+            # offset_y1 = int((s1[1] - min_y) / merged_map.info.resolution)
+
+            # print(f"Offset1: x={offset_x1}, y={offset_y1}")
+
+            # merged_data[
+            #     offset_y1 : (offset_y1 + map1.info.height),
+            #     offset_x1 : (offset_x1 + map1.info.width),
+            # ] = np.array(map1.data).reshape((map1.info.height, map1.info.width))
+
+            # offset_x2 = int((s2[0] - min_x) / merged_map.info.resolution)
+            # offset_y2 = int((s2[1] - min_y) / merged_map.info.resolution)
+            # merged_data[
+            #     offset_y2 : (offset_y2 + map2.info.height),
+            #     offset_x2 : (offset_x2 + map2.info.width),
+            # ] = np.array(map2.data).reshape((map2.info.height, map2.info.width))
+
             merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)
             self.get_logger().info(
@@ -180,9 +278,6 @@ class MapMerger(Node):
                 sub.map_data = None  # reset maps after merging
 
         self.discover_robots()
-
-
-# ziskat minima v x a y , nasledne vypocitat posunutie map a velkost vyslednej mapy a potom cez numpy offsetnut druhu mapu aby boli zarovnane
 
 
 def main(args=None):

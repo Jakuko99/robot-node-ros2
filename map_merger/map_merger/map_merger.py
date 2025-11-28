@@ -3,7 +3,8 @@ from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, PointStamped
+from visualization_msgs.msg import Marker
 import numpy as np
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
@@ -51,6 +52,12 @@ class MapMerger(Node):
         )
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
+        self.point_publisher = self.create_publisher(
+            PointStamped, "/map_merger/origins", 10
+        )
+        self.global_point_publisher = self.create_publisher(
+            PointStamped, "/map_merger/global_origin", 10
+        )
 
     def tf_callback(self, msg: TFMessage):
         for transform in msg.transforms:
@@ -139,17 +146,57 @@ class MapMerger(Node):
                 for frame_id, map_data in local_maps.items()
             }
 
+            u_dict: dict[str, np.ndarray] = {
+                frame_id: loc_to_glob_mat[frame_id]
+                @ np.array(
+                    [
+                        map_data.info.origin.position.x,
+                        map_data.info.origin.position.y
+                        - map_data.info.height * map_data.info.resolution,
+                        0,
+                        1,
+                    ]
+                )
+                for frame_id, map_data in local_maps.items()
+            }
+
+            v_dict: dict[str, np.ndarray] = {
+                frame_id: loc_to_glob_mat[frame_id]
+                @ np.array(
+                    [
+                        map_data.info.origin.position.x
+                        - map_data.info.width * map_data.info.resolution,
+                        map_data.info.origin.position.y,
+                        0,
+                        1,
+                    ]
+                )
+                for frame_id, map_data in local_maps.items()
+            }
+
             min_x = min(
-                [s[0] for s in s_dict.values()] + [t[0] for t in t_dict.values()]
+                [s[0] for s in s_dict.values()]
+                + [t[0] for t in t_dict.values()]
+                + [u[0] for u in u_dict.values()]
+                + [v[0] for v in v_dict.values()]
             )
             max_x = max(
-                [s[0] for s in s_dict.values()] + [t[0] for t in t_dict.values()]
+                [s[0] for s in s_dict.values()]
+                + [t[0] for t in t_dict.values()]
+                + [u[0] for u in u_dict.values()]
+                + [v[0] for v in v_dict.values()]
             )
             min_y = min(
-                [s[1] for s in s_dict.values()] + [t[1] for t in t_dict.values()]
+                [s[1] for s in s_dict.values()]
+                + [t[1] for t in t_dict.values()]
+                + [u[1] for u in u_dict.values()]
+                + [v[1] for v in v_dict.values()]
             )
             max_y = max(
-                [s[1] for s in s_dict.values()] + [t[1] for t in t_dict.values()]
+                [s[1] for s in s_dict.values()]
+                + [t[1] for t in t_dict.values()]
+                + [u[1] for u in u_dict.values()]
+                + [v[1] for v in v_dict.values()]
             )
 
             merged_map = OccupancyGrid()
@@ -161,14 +208,47 @@ class MapMerger(Node):
             merged_map.info.height = int((max_y - min_y) / merged_map.info.resolution)
             merged_map.info.origin.position.x = min(
                 [m.info.origin.position.x for m in local_maps.values()]
+            ) + max(
+                [tf.transform.translation.x for tf in self.static_transforms.values()]
             )
             merged_map.info.origin.position.y = min(
                 [m.info.origin.position.y for m in local_maps.values()]
+            ) + max(
+                [tf.transform.translation.y for tf in self.static_transforms.values()]
             )
             merged_map.info.origin.position.z = 0.0
             merged_map.info.origin.orientation.w = 1.0
             merged_map.header.frame_id = "global_map"
             merged_map.header.stamp = self.get_clock().now().to_msg()
+
+            map_corners: list[PointStamped] = [
+                (merged_map.info.origin.position.x, merged_map.info.origin.position.y),
+                (
+                    merged_map.info.origin.position.x
+                    + merged_map.info.width * merged_map.info.resolution,
+                    merged_map.info.origin.position.y,
+                ),
+                (
+                    merged_map.info.origin.position.x,
+                    merged_map.info.origin.position.y
+                    + merged_map.info.height * merged_map.info.resolution,
+                ),
+                (
+                    merged_map.info.origin.position.x
+                    + merged_map.info.width * merged_map.info.resolution,
+                    merged_map.info.origin.position.y
+                    + merged_map.info.height * merged_map.info.resolution,
+                ),
+            ]
+
+            for corner in map_corners:
+                merged_origin: PointStamped = PointStamped()
+                merged_origin.header.frame_id = merged_map.header.frame_id
+                merged_origin.header.stamp = merged_map.header.stamp
+                merged_origin.point.x = corner[0]
+                merged_origin.point.y = corner[1]
+                merged_origin.point.z = 0.0
+                self.global_point_publisher.publish(merged_origin)
 
             print(
                 f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
@@ -182,6 +262,14 @@ class MapMerger(Node):
             )
 
             for frame_id, map_data in local_maps.items():
+                origin_point: PointStamped = PointStamped()
+                origin_point.header.frame_id = frame_id
+                origin_point.header.stamp = self.get_clock().now().to_msg()
+                origin_point.point.x = map_data.info.origin.position.x
+                origin_point.point.y = map_data.info.origin.position.y
+                origin_point.point.z = 0.0
+                self.point_publisher.publish(origin_point)
+
                 print(
                     f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
                 )

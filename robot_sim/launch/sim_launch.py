@@ -62,7 +62,7 @@ def generate_launch_description():
                     "run",
                     "tf2_ros",
                     "static_transform_publisher",
-                    "1.2",
+                    "1.0",
                     "0",
                     "0",
                     "0",
@@ -78,8 +78,8 @@ def generate_launch_description():
                     "run",
                     "tf2_ros",
                     "static_transform_publisher",
-                    "1.2",
-                    "1.2",
+                    "1.0",
+                    "1.0",
                     "0",
                     "0",
                     "0",
@@ -95,7 +95,7 @@ def generate_launch_description():
                     "tf2_ros",
                     "static_transform_publisher",
                     "0",
-                    "1.2",
+                    "1.0",
                     "0",
                     "0",
                     "0",
@@ -103,39 +103,7 @@ def generate_launch_description():
                     "global_map",
                     "kris_robot4_map",
                 ]
-            ),
-            # ExecuteProcess(
-            #     cmd=[
-            #         "ros2",
-            #         "run",
-            #         "tf2_ros",
-            #         "static_transform_publisher",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "merge_map",
-            #         "merge_map1",
-            #     ]
-            # ),
-            # ExecuteProcess(
-            #     cmd=[
-            #         "ros2",
-            #         "run",
-            #         "tf2_ros",
-            #         "static_transform_publisher",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "0",
-            #         "merge_map",
-            #         "merge_map2",
-            #     ]
-            # ),
+            ),            
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "mapping_launch.py")

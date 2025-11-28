@@ -45,33 +45,69 @@ def generate_launch_description():
                     ("/map", "/kris_robot4/map"),
                 ],
             ),
-            # Node(
-            #     package="merge_map",
-            #     executable="merge_map",
-            #     output="screen",
-            #     parameters=[{"use_sim_time": True}],
-            #     remappings=[("/merge_map", "/merge_map1")],
-            # ),
-            # Node(
-            #     package="merge_map",
-            #     executable="merge_map",
-            #     output="screen",
-            #     parameters=[{"use_sim_time": True}],
-            #     remappings=[
-            #         ("/merge_map", "/merge_map2"),
-            #         ("/map1", "/map3"),
-            #         ("/map2", "/map4"),
-            #     ],
-            # ),
-            # Node(
-            #     package="merge_map",
-            #     executable="merge_map",
-            #     output="screen",
-            #     parameters=[{"use_sim_time": True}],
-            #     remappings=[
-            #         ("/merge_map1", "/map1"),
-            #         ("/merge_map2", "/map2"),
-            #     ],
-            # ),
+            Node(
+                package="dynamic_tf_publisher",
+                executable="dynamic_tf_publisher",
+                name="dynamic_tf_publisher_robot1",
+                output="screen",
+                parameters=[
+                    {
+                        "publish_rate": 10.0,
+                        "frame_id": "global_map",
+                        "child_frame_id": "kris_robot1_map",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                    }
+                ],
+            ),
+            Node(
+                package="dynamic_tf_publisher",
+                executable="dynamic_tf_publisher",
+                name="dynamic_tf_publisher_robot2",
+                output="screen",
+                parameters=[
+                    {
+                        "publish_rate": 10.0,
+                        "frame_id": "global_map",
+                        "child_frame_id": "kris_robot2_map",
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                    }
+                ],
+            ),     
+            Node(
+                package="dynamic_tf_publisher",
+                executable="dynamic_tf_publisher",
+                name="dynamic_tf_publisher_robot3",
+                output="screen",
+                parameters=[
+                    {
+                        "publish_rate": 10.0,
+                        "frame_id": "global_map",
+                        "child_frame_id": "kris_robot3_map",
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                    }
+                ],
+            ),
+            Node(
+                package="dynamic_tf_publisher",
+                executable="dynamic_tf_publisher",
+                name="dynamic_tf_publisher_robot4",
+                output="screen",
+                parameters=[
+                    {
+                        "publish_rate": 10.0,
+                        "frame_id": "global_map",
+                        "child_frame_id": "kris_robot4_map",
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                    }
+                ],
+            ),       
         ]
     )

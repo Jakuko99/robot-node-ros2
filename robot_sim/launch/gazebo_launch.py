@@ -1,8 +1,5 @@
-import os
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
-from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -29,7 +26,7 @@ def generate_launch_description():
                 output="screen",
                 arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
                 parameters=[{"use_sim_time": True}],
-                remappings=[("/goal_pose", "/kris_robot1/goal_pose")],                
+                remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
             ),
             ExecuteProcess(  # ros gz topic bridge
                 cmd=[
@@ -73,7 +70,7 @@ def generate_launch_description():
                     "merge_map",
                     "map2",
                 ]
-            ),     
+            ),
             ExecuteProcess(
                 cmd=[
                     "ros2",
@@ -89,7 +86,7 @@ def generate_launch_description():
                     "merge_map",
                     "map3",
                 ]
-            ),    
+            ),
             ExecuteProcess(
                 cmd=[
                     "ros2",
@@ -105,6 +102,6 @@ def generate_launch_description():
                     "merge_map",
                     "map4",
                 ]
-            ),        
+            ),
         ]
     )

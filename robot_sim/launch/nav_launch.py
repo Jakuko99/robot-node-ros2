@@ -1,12 +1,6 @@
 import os
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    GroupAction,
-    IncludeLaunchDescription,
-    SetEnvironmentVariable,
-)
+from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
@@ -25,10 +19,9 @@ def generate_launch_description():
                     "autostart": "true",
                     "params_file": f"{config_dir}/nav2_params1.yaml",
                     "use_lifecycle_mgr": "true",
-                    # "map_subscribe_transient_local": "true",                    
+                    # "map_subscribe_transient_local": "true",
                 }.items(),
             ),
-
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "navigation_launch.py")

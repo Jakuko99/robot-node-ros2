@@ -28,6 +28,7 @@ def generate_launch_description():
                 output="screen",
                 arguments=["-d", "src/robot_sim/rviz/sim_rviz.rviz"],
                 parameters=[{"use_sim_time": True}],
+                remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
             ),
             ExecuteProcess(  # ros gz topic bridge
                 cmd=[
@@ -39,7 +40,7 @@ def generate_launch_description():
                     "-p",
                     "config_file:=src/robot_sim/gazebo/bridge_config.yaml",
                 ]
-            ), 
+            ),
             ExecuteProcess(
                 cmd=[
                     "ros2",
@@ -71,7 +72,7 @@ def generate_launch_description():
                     "global_map",
                     "kris_robot2_map",
                 ]
-            ),     
+            ),
             ExecuteProcess(
                 cmd=[
                     "ros2",
@@ -87,7 +88,7 @@ def generate_launch_description():
                     "global_map",
                     "kris_robot3_map",
                 ]
-            ),    
+            ),
             ExecuteProcess(
                 cmd=[
                     "ros2",
@@ -103,7 +104,7 @@ def generate_launch_description():
                     "global_map",
                     "kris_robot4_map",
                 ]
-            ),            
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "mapping_launch.py")

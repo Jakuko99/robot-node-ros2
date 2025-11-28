@@ -76,7 +76,7 @@ def generate_launch_description():
                         "z": 0.0,
                     }
                 ],
-            ),     
+            ),
             Node(
                 package="dynamic_tf_publisher",
                 executable="dynamic_tf_publisher",
@@ -108,6 +108,6 @@ def generate_launch_description():
                         "z": 0.0,
                     }
                 ],
-            ),       
+            ),
         ]
     )

@@ -250,10 +250,11 @@ class MapMerger(Node):
                 merged_origin.point.z = 0.0
                 self.global_point_publisher.publish(merged_origin)
 
-            print(
-                f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
-            )
-            self.get_logger().warning(
+            # print(
+            #     f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
+            # )
+
+            self.get_logger().debug(
                 f"Merged map origin: x={merged_map.info.origin.position.x}, y={merged_map.info.origin.position.y}"
             )
 
@@ -270,9 +271,9 @@ class MapMerger(Node):
                 origin_point.point.z = 0.0
                 self.point_publisher.publish(origin_point)
 
-                print(
-                    f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
-                )
+                # print(
+                #     f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
+                # )                
 
                 offset_x = int(
                     (s_dict[frame_id][0] - min_x) / merged_map.info.resolution
@@ -285,7 +286,7 @@ class MapMerger(Node):
                     (map_data.info.height, map_data.info.width)
                 )
 
-                print(f"Offset: x={offset_x}, y={offset_y}")
+                self.get_logger().debug(f"Offset: x={offset_x}, y={offset_y} frame={frame_id}")
 
                 merged_data[
                     offset_y : local_data.shape[0] + offset_y,

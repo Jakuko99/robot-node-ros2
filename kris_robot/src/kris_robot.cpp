@@ -9,7 +9,10 @@ StepperMotor::StepperMotor(int step_pin, int dir_pin, int steps_per_rev = 200, d
       steps_per_rev(steps_per_rev),
       wheel_diameter_(wheel_diameter),
       speed_hz_(0.0),
-      running_(false)
+      running_(false),
+      impulse_cnt(0),
+      prev_impulse_cnt(0),
+      direction(0)
 {
   steps_per_meter_ = steps_per_rev / (M_PI * wheel_diameter_);
   pinMode(step_pin, OUTPUT);
@@ -32,18 +35,36 @@ StepperMotor::~StepperMotor()
 void StepperMotor::set_speed(double speed_m_s)
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (speed_m_s >= 0)
+  if (speed_m_s > 0)
   {
+    direction = 1;
     digitalWrite(dir_pin, HIGH);
   }
-  else
+  else if (speed_m_s < 0)
   {
+    direction = -1;
     digitalWrite(dir_pin, LOW);
   }
-  
-  speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
-  RCLCPP_INFO(rclcpp::get_logger("KRISRobot"), "StepperMotor on step pin %d set to speed %.2f m/s (%.2f Hz)", step_pin, speed_m_s, speed_hz_);
+  else if (speed_m_s == 0)
+  {
+    direction = 0;
+    running_ = false;
+    speed_hz_ = 0;
+    impulse_cnt = 0;
+    return;
+  }
+
+  //speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
+  speed_hz_ = 99.0;
   running_ = (speed_hz_ > 0);
+}
+
+long int StepperMotor::get_impulse_count()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  long int delta = impulse_cnt - prev_impulse_cnt;
+  prev_impulse_cnt = impulse_cnt;
+  return delta;
 }
 
 void StepperMotor::run_motor()
@@ -61,6 +82,7 @@ void StepperMotor::run_motor()
     if (local_running && local_speed_hz > 0)
     {
       double delay_s = 1.0 / local_speed_hz;
+      impulse_cnt += direction;
       digitalWrite(step_pin, HIGH);
       std::this_thread::sleep_for(std::chrono::milliseconds(T_IMPULSE));
       digitalWrite(step_pin, LOW);
@@ -76,7 +98,10 @@ void StepperMotor::run_motor()
 
 KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
                                               v_linear(0.0),
-                                              v_angular(0.0)
+                                              v_angular(0.0),
+                                              x_pos(0.0),
+                                              y_pos(0.0),
+                                              theta(0.0)
 {
   this->setup_gpio();
 
@@ -84,24 +109,27 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   this->declare_parameter("base_frame_id", "base_link");
   this->declare_parameter("odom_frame_id", "odom");
   this->declare_parameter("robot_namespace", "");
-  
-  this->urdf_pub = this->create_publisher<std_msgs::msg::String>(this->get_parameter("robot_namespace").as_string() + "/robot_description", 10);
-  this->cmd_vel_sub = this->create_subscription<geometry_msgs::msg::Twist>(
-      this->get_parameter("robot_namespace").as_string() + "/cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
 
-  RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
-
+  this->robot_namespace = this->get_parameter("robot_namespace").as_string();
   this->base_frame_id = this->get_parameter("base_frame_id").as_string();
   this->odom_frame_id = this->get_parameter("odom_frame_id").as_string();
 
+  this->urdf_pub = this->create_publisher<std_msgs::msg::String>(robot_namespace + "/robot_description", rclcpp::QoS(RMW_QOS_POLICY_RELIABILITY_RELIABLE));
+  this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>(robot_namespace + "/odom", rclcpp::QoS(10));
+  this->cmd_vel_sub = this->create_subscription<geometry_msgs::msg::Twist>(
+      robot_namespace + "/cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
+
   left_motor = std::make_shared<StepperMotor>(MOTOR_LEFT_STEP_PIN, MOTOR_LEFT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
   right_motor = std::make_shared<StepperMotor>(MOTOR_RIGHT_STEP_PIN, MOTOR_RIGHT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
+  // last_tick = this->now();
+  RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 }
 
 KRISRobot::~KRISRobot()
 {
   left_motor->set_speed(0);
   right_motor->set_speed(0);
+  // analogWrite(PWM_OUTPUT_PIN, 0);
 }
 
 void KRISRobot::setup_gpio()
@@ -115,7 +143,13 @@ void KRISRobot::setup_gpio()
 
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
+  /*pinMode(PWM_OUTPUT_PIN, PWM_OUTPUT);
+  pwmSetMode(PWM_MODE_MS);
+  pwmSetRange(1024);
+  pwmSetClock(32); // 19.2MHz / 32 = 600kHz PWM base frequency
 
+  analogWrite(PWM_OUTPUT_PIN, 512); // 80% duty cycle
+  */
   RCLCPP_INFO(this->get_logger(), "GPIO setup complete");
 }
 
@@ -135,6 +169,53 @@ void KRISRobot::publish_urdf()
   message.data = buffer.str();
 
   urdf_pub->publish(message);
+}
+
+float KRISRobot::time_diff(const builtin_interfaces::msg::Time &start, const builtin_interfaces::msg::Time &end)
+{
+  return (end.sec - start.sec) + (end.nanosec - start.nanosec) / 1e9;
+}
+
+void KRISRobot::publish_odometry()
+{
+  nav_msgs::msg::Odometry odom_msg;
+  builtin_interfaces::msg::Time t = this->now();
+  odom_msg.header.stamp = t;
+  odom_msg.header.frame_id = odom_frame_id;
+  odom_msg.child_frame_id = base_frame_id;
+  odom_msg.pose.pose.position.z = 0.0;
+
+  // float dt = time_diff(last_tick, t);
+  // last_tick = t;
+
+  long int delta_left_cnt = left_motor->get_impulse_count();
+  long int delta_right_cnt = right_motor->get_impulse_count();
+
+  double distance_left = (delta_left_cnt / STEPS_PER_METER);
+  double distance_right = (delta_right_cnt / STEPS_PER_METER);
+  
+  if (fabs(distance_left - distance_right) < FLT_EPSILON)
+  {
+    x_pos += (distance_left + distance_right) / 2.0;
+    y_pos += (pow(distance_left, 2) - pow(distance_right, 2)) / (4 * WHEEL_BASE);    
+  }
+  else
+  {
+    double R_turn = (distance_left + distance_right) / (2 * theta);
+    x_pos += R_turn * sin(theta);
+    y_pos += R_turn * (1 - cos(theta));    
+  }
+
+  theta += (distance_left - distance_right) / (WHEEL_BASE);
+  theta = (theta != 0) ? fmod(theta, 2 * M_PI) : FLT_EPSILON; // Keep theta within [0, 2π]  
+
+  odom_msg.pose.pose.position.x = x_pos;
+  odom_msg.pose.pose.position.y = y_pos;
+  odom_msg.pose.pose.orientation.z = sin(theta / 2.0);
+  odom_msg.pose.pose.orientation.w = cos(theta / 2.0);
+  odom_msg.twist.twist.linear.x = v_linear;
+  odom_msg.twist.twist.angular.z = v_angular;
+  odom_pub->publish(odom_msg);
 }
 
 void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -160,4 +241,5 @@ void KRISRobot::update_state()
 #endif
 
   publish_urdf();
+  publish_odometry();
 }

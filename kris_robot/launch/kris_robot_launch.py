@@ -25,11 +25,11 @@ def generate_launch_description():
                     },
                 ],
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join("install/share/mpu9250driver/launch", "mpu9250driver_launch.py")
-                ),
-            ),
+            # IncludeLaunchDescription(
+            #     PythonLaunchDescriptionSource(
+            #         os.path.join("install/share/mpu9250driver/launch", "mpu9250driver_launch.py")
+            #     ),
+            # ),
             # Node(
             #     package="sllidar_ros2",
             #     executable="sllidar_node",

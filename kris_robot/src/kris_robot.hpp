@@ -27,11 +27,12 @@
 
 #define BUTTON1_PIN 5
 #define BUTTON2_PIN 6
-#define PWM_OUTPUT 18
+#define PWM_OUTPUT_PIN 18
 
 #define WHEEL_BASE 0.085     // Distance between wheels in meters
 #define WHEEL_DIAMETER 0.066 // Wheel diameter in meters
 #define STEPS_PER_REV 512    // Steps per revolution for the stepper motor
+#define STEPS_PER_METER (STEPS_PER_REV / (M_PI * WHEEL_DIAMETER)) // Steps per meter
 #define T_IMPULSE 10         // Stepper motor pulse ON time in milliseconds
 
 #define ACC_ADDR 0x19
@@ -43,6 +44,7 @@ class StepperMotor
 public:
   StepperMotor(int, int, int, double);
   void set_speed(double);
+  long int get_impulse_count();
   ~StepperMotor();
 
 private:
@@ -57,6 +59,10 @@ private:
   bool running_;
   std::mutex mutex_;
   std::thread motor_thread_;
+
+  volatile int direction;
+  volatile long int impulse_cnt;
+  volatile long int prev_impulse_cnt;
 };
 
 class KRISRobot : public rclcpp::Node
@@ -69,17 +75,27 @@ public:
 private:
   void setup_gpio();
   void publish_urdf();
+  void publish_odometry();
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  float time_diff(const builtin_interfaces::msg::Time & start, const builtin_interfaces::msg::Time & end);
 
   float v_linear;
   float v_angular;
 
+  float x_pos;
+  float y_pos;
+  float theta;
+
   std::string base_frame_id = "base_link";
   std::string odom_frame_id = "odom";
+  std::string robot_namespace = "";
 
   std::shared_ptr<StepperMotor> left_motor;
   std::shared_ptr<StepperMotor> right_motor;
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr urdf_pub;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
+
+  //builtin_interfaces::msg::Time last_tick;
 };

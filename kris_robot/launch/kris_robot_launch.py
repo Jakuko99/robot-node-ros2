@@ -8,12 +8,13 @@ import os
 
 
 def generate_launch_description():
+    launch_dir = os.path.join("src/kris_robot", "launch")
     return LaunchDescription(
         [
             Node(
                 package="kris_robot",
                 executable="kris_robot",
-                name="kris_robot",
+                name="kris_robot1_node",
                 output="screen",
                 emulate_tty=True,
                 parameters=[
@@ -25,11 +26,6 @@ def generate_launch_description():
                     },
                 ],
             ),
-            # IncludeLaunchDescription(
-            #     PythonLaunchDescriptionSource(
-            #         os.path.join("install/share/mpu9250driver/launch", "mpu9250driver_launch.py")
-            #     ),
-            # ),
             # Node(
             #     package="sllidar_ros2",
             #     executable="sllidar_node",
@@ -39,7 +35,7 @@ def generate_launch_description():
             #             "channel_type": "serial",
             #             "serial_port": "/dev/serial0",
             #             "serial_baudrate": 115200,
-            #             "frame_id": "laser_frame",
+            #             "frame_id": "kris_robot1_laser_frame",
             #             "inverted": False,
             #             "angle_compensate": True,
             #             "topic_name": "kris_robot1/scan",
@@ -47,21 +43,10 @@ def generate_launch_description():
             #     ],
             #     output="screen",
             # ),
-            # Node(
-            #     package="dynamic_tf_publisher",
-            #     executable="dynamic_tf_publisher",
-            #     output="screen",
-            #     parameters=[
-            #         {
-            #             "use_sim_time": True,
-            #             "publish_rate": 10.0,
-            #             "frame_id": "global_map",
-            #             "child_frame_id": "kris_robot1_map",
-            #             "x": 0.0,
-            #             "y": 0.0,
-            #             "z": 0.0,
-            #         }
-            #     ],
-            # ),
+            # IncludeLaunchDescription(
+            #     PythonLaunchDescriptionSource(
+            #         os.path.join(launch_dir, "nav_launch.py")
+            #     ),
+            # )
         ]
     )

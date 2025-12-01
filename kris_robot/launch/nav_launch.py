@@ -30,6 +30,22 @@ def generate_launch_description():
                 remappings=[
                     ("/map", "/kris_robot1/map"),
                 ],
-            ),          
+            ),
+            Node(
+                package="dynamic_tf_publisher",
+                executable="dynamic_tf_publisher",
+                name="dynamic_tf_publisher_robot1",
+                output="screen",
+                parameters=[
+                    {
+                        "publish_rate": 10.0,
+                        "frame_id": "global_map",
+                        "child_frame_id": "kris_robot1_map",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                    }
+                ],
+            ),
         ]
     )

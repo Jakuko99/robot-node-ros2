@@ -3,6 +3,7 @@
 #include <sstream>
 #include <fstream>
 #include <wiringPi.h>
+#include <softPwm.h>
 #include <thread>
 #include <chrono>
 #include <cmath>
@@ -30,8 +31,8 @@
 #define PWM_OUTPUT_PIN 18
 
 #define WHEEL_BASE 0.085     // Distance between wheels in meters
-#define WHEEL_DIAMETER 0.066 // Wheel diameter in meters
-#define STEPS_PER_REV 512    // Steps per revolution for the stepper motor
+#define WHEEL_DIAMETER 0.067 // Wheel diameter in meters
+#define STEPS_PER_REV 2048    // Steps per revolution for the stepper motor
 #define STEPS_PER_METER (STEPS_PER_REV / (M_PI * WHEEL_DIAMETER)) // Steps per meter
 #define T_IMPULSE 10         // Stepper motor pulse ON time in milliseconds
 

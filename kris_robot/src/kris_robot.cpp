@@ -54,8 +54,12 @@ void StepperMotor::set_speed(double speed_m_s)
     return;
   }
 
-  //speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
-  speed_hz_ = 99.0;
+  speed_hz_ = std::abs(speed_m_s) * steps_per_meter_;
+  if (speed_hz_ > 99.0)
+  {
+    RCLCPP_WARN(rclcpp::get_logger("KRISRobot"), "StepperMotor speed limited to 99 Hz from %f Hz", speed_hz_);
+    speed_hz_ = 99.0; // Limit max speed to 100 Hz
+  }
   running_ = (speed_hz_ > 0);
 }
 
@@ -130,6 +134,8 @@ KRISRobot::~KRISRobot()
   left_motor->set_speed(0);
   right_motor->set_speed(0);
   // analogWrite(PWM_OUTPUT_PIN, 0);
+  softPwmWrite(PWM_OUTPUT_PIN, 0); // Set PWM to 0%
+  RCLCPP_INFO(this->get_logger(), "KRIS Robot node shutting down");
 }
 
 void KRISRobot::setup_gpio()
@@ -143,8 +149,10 @@ void KRISRobot::setup_gpio()
 
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
-  /*pinMode(PWM_OUTPUT_PIN, PWM_OUTPUT);
-  pwmSetMode(PWM_MODE_MS);
+  pinMode(PWM_OUTPUT_PIN, OUTPUT);
+  softPwmCreate(PWM_OUTPUT_PIN, 0, 100);
+  softPwmWrite(PWM_OUTPUT_PIN, 80); // 80% duty cycle
+  /*pwmSetMode(PWM_MODE_MS);
   pwmSetRange(1024);
   pwmSetClock(32); // 19.2MHz / 32 = 600kHz PWM base frequency
 
@@ -193,17 +201,17 @@ void KRISRobot::publish_odometry()
 
   double distance_left = (delta_left_cnt / STEPS_PER_METER);
   double distance_right = (delta_right_cnt / STEPS_PER_METER);
-  
+
   if (fabs(distance_left - distance_right) < FLT_EPSILON)
   {
     x_pos += (distance_left + distance_right) / 2.0;
-    y_pos += (pow(distance_left, 2) - pow(distance_right, 2)) / (4 * WHEEL_BASE);    
+    y_pos += (pow(distance_left, 2) - pow(distance_right, 2)) / (4 * WHEEL_BASE);
   }
   else
   {
     double R_turn = (distance_left + distance_right) / (2 * theta);
     x_pos += R_turn * sin(theta);
-    y_pos += R_turn * (1 - cos(theta));    
+    y_pos += R_turn * (1 - cos(theta));
   }
 
   theta += (distance_left - distance_right) / (WHEEL_BASE);

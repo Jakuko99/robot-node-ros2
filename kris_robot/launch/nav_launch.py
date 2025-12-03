@@ -20,7 +20,7 @@ def generate_launch_description():
                     "params_file": f"{config_dir}/nav2_params1.yaml",
                     "use_lifecycle_mgr": "true",
                 }.items(),
-            ), 
+            ),
             Node(
                 package="slam_toolbox",
                 executable="async_slam_toolbox_node",
@@ -38,7 +38,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5.0,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot1_map",
                         "x": 0.0,

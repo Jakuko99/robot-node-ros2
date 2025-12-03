@@ -9,6 +9,7 @@ import os
 
 def generate_launch_description():
     launch_dir = os.path.join("src/kris_robot", "launch")
+    urdf_dir = os.path.join("src/kris_robot", "urdf")
     return LaunchDescription(
         [
             Node(
@@ -19,18 +20,18 @@ def generate_launch_description():
                 emulate_tty=True,
                 parameters=[
                     {
-                        "robot_description": "/home/ubuntu/ros_ws/src/kris_robot/urdf/kris_robot.urdf",
+                        "robot_description": f"{urdf_dir}/kris_robot.urdf",
                         "base_frame_id": "kris_robot1_base_link",
                         "odom_frame_id": "kris_robot1_odom",
                         "robot_namespace": "kris_robot1",
                     },
                 ],
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    "src/mpu9250driver/launch/mpu9250driver_launch.py"
-                ),
-            ),
+            # IncludeLaunchDescription(
+            #     PythonLaunchDescriptionSource(
+            #         "src/mpu9250driver/launch/mpu9250driver_launch.py"
+            #     ),
+            # ),
             # Node(
             #     package="sllidar_ros2",
             #     executable="sllidar_node",

@@ -5,9 +5,6 @@
 				<cylinder length="0.08" radius="0.055" />
 			</geometry>
 			<origin rpy="0 0 0" xyz="0 0 0.041" />
-			<material name="white">
-				<color rgba="1 1 1 1" />
-			</material>
 		</visual>
 		<inertial>
 			<origin xyz="0 0 0" rpy="0 0 0.041"/>
@@ -23,12 +20,12 @@
 		<child link="lwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02" />
 		<axis>
-          <xyz>0 0 1</xyz>
-          <limit>
-            <lower>-1.79769e+308</lower>
-            <upper>1.79769e+308</upper>
-          </limit>
-        </axis>
+			<xyz>0 0 1</xyz>
+			<limit>
+				<lower>-1.79769e+308</lower>
+				<upper>1.79769e+308</upper>
+			</limit>
+		</axis>
 	</joint>
 	<link name="lwheel">
 		<visual>
@@ -36,9 +33,6 @@
 				<cylinder length="0.025" radius="0.0325" />
 			</geometry>
 			<origin rpy="1.5708 1.5708 0" xyz="0 0.050 0.02" />
-			<material name="black">
-				<color rgba="0 0 0 1" />
-			</material>
 		</visual>
 		<inertial>
 			<origin xyz="1.5708 1.5708 0" rpy="0 0.050 0.02"/>
@@ -54,12 +48,12 @@
 		<child link="rwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02" />
 		<axis>
-          <xyz>0 0 1</xyz>
-          <limit>
-            <lower>-1.79769e+308</lower>
-            <upper>1.79769e+308</upper>
-          </limit>
-        </axis>
+			<xyz>0 0 1</xyz>
+			<limit>
+				<lower>-1.79769e+308</lower>
+				<upper>1.79769e+308</upper>
+			</limit>
+		</axis>
 	</joint>
 	<link name="rwheel">
 		<visual>
@@ -67,9 +61,6 @@
 				<cylinder length="0.025" radius="0.0325" />
 			</geometry>
 			<origin rpy="1.5708 1.5708 0" xyz="0 -0.050 0.02" />
-			<material name="black">
-				<color rgba="0 0 0 1" />
-			</material>
 		</visual>
 		<inertial>
 			<origin xyz="1.5708 1.5708 0" rpy="0 -0.050 0.02"/>
@@ -80,19 +71,16 @@
 				izz="1.0"/>
 		</inertial>
 	</link>
-
 	<joint name="laser_joint" type="fixed">
-        <parent link="kris_robot1_base_link"/>
-        <child link="laser_frame"/>
-        <origin xyz="0.1 0 0.175" rpy="0 0 0"/>
-    </joint>
-
-    <link name="laser_frame">
+		<parent link="kris_robot1_base_link"/>
+		<child link="laser_frame"/>
+		<origin xyz="0.1 0 0.175" rpy="0 0 0"/>
+	</joint>
+	<link name="laser_frame">
 		<visual>
 			<geometry>
 				<cylinder radius="0.035" length="0.034"/>
 			</geometry>
-			<material name="red"/>
 			<origin xyz="0 0 0.09" rpy="0 0 0"/>
 		</visual>
 		<inertial>
@@ -104,8 +92,4 @@
 				izz="1.0"/>
 		</inertial>
 	</link>
-
-	<material name="red">
-    	<color rgba="1 0 0 1"/>
-	</material>
 </robot>

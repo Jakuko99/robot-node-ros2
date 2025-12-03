@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
 {
 	std::cout << "Initializing Robot node...\n";
 	rclcpp::init(argc, argv);
-	auto node = std::make_shared<KRISRobot>("kris_robot1");
+	auto node = std::make_shared<KRISRobot>("kris_robot_node");
 	while (rclcpp::ok())
 	{
 		rclcpp::spin_some(node);

@@ -3,7 +3,6 @@
 #include <sstream>
 #include <fstream>
 #include <wiringPi.h>
-#include <softPwm.h>
 #include <thread>
 #include <chrono>
 #include <cmath>
@@ -15,6 +14,8 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/transform_stamped.hpp"
+#include "tf2_ros/transform_broadcaster.h"
 #include "std_msgs/msg/string.hpp"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/convert.h"
@@ -30,15 +31,32 @@
 #define BUTTON2_PIN 6
 #define PWM_OUTPUT_PIN 18
 
-#define WHEEL_BASE 0.085     // Distance between wheels in meters
-#define WHEEL_DIAMETER 0.067 // Wheel diameter in meters
-#define STEPS_PER_REV 2048    // Steps per revolution for the stepper motor
+#define WHEEL_BASE 0.085                                          // Distance between wheels in meters
+#define WHEEL_DIAMETER 0.067                                      // Wheel diameter in meters
+#define STEPS_PER_REV 2000                                        // Steps per revolution for the stepper motor
 #define STEPS_PER_METER (STEPS_PER_REV / (M_PI * WHEEL_DIAMETER)) // Steps per meter
-#define T_IMPULSE 10         // Stepper motor pulse ON time in milliseconds
+#define T_IMPULSE 10                                              // Stepper motor pulse ON time in milliseconds
 
 #define ACC_ADDR 0x19
 #define DISP_ADDR 0x3C
 #define BME280_ADDR 0x76
+
+class SoftwarePWM
+{
+public:
+  SoftwarePWM(int pin, int frequency);
+  void set_duty_cycle(int duty_cycle);
+  ~SoftwarePWM();
+
+private:
+  void run_pwm();
+  int pin_;
+  int frequency_;
+  int duty_cycle_;
+  bool running_;
+  std::thread pwm_thread_;
+  std::mutex mutex_;
+};
 
 class StepperMotor
 {
@@ -78,7 +96,7 @@ private:
   void publish_urdf();
   void publish_odometry();
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
-  float time_diff(const builtin_interfaces::msg::Time & start, const builtin_interfaces::msg::Time & end);
+  float time_diff(const builtin_interfaces::msg::Time &start, const builtin_interfaces::msg::Time &end);
 
   float v_linear;
   float v_angular;
@@ -93,10 +111,12 @@ private:
 
   std::shared_ptr<StepperMotor> left_motor;
   std::shared_ptr<StepperMotor> right_motor;
+  std::shared_ptr<SoftwarePWM> software_pwm;
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr urdf_pub;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
-  //builtin_interfaces::msg::Time last_tick;
+  // builtin_interfaces::msg::Time last_tick;
 };

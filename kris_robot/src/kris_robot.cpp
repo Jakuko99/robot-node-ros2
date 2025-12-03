@@ -3,6 +3,61 @@
 using std::placeholders::_1;
 // #define DEBUG
 
+SoftwarePWM::SoftwarePWM(int pin, int frequency)
+    : pin_(pin),
+      frequency_(frequency),
+      duty_cycle_(0),
+      running_(true)
+{
+  // pinMode(pin_, OUTPUT);
+  pwm_thread_ = std::thread(&SoftwarePWM::run_pwm, this);
+  RCLCPP_INFO(rclcpp::get_logger("KRISRobot"), "SoftwarePWM initialized on pin %d at %d Hz", pin_, frequency_);
+}
+
+SoftwarePWM::~SoftwarePWM()
+{
+  running_ = false;
+  if (pwm_thread_.joinable())
+  {
+    pwm_thread_.join();
+  }
+}
+
+void SoftwarePWM::set_duty_cycle(int duty_cycle)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  duty_cycle_ = duty_cycle;
+}
+
+void SoftwarePWM::run_pwm()
+{
+  while (running_)
+  {
+    int local_duty_cycle;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      local_duty_cycle = duty_cycle_;
+      // calculcate sleep times based on frequency
+    }
+    int period_ms = 1000 / frequency_;
+    int high_time_ms = (period_ms * local_duty_cycle) / 100;
+    int low_time_ms = period_ms - high_time_ms;
+
+    if (local_duty_cycle > 0)
+    {
+      digitalWrite(pin_, HIGH);
+      std::this_thread::sleep_for(std::chrono::milliseconds(high_time_ms));
+      digitalWrite(pin_, LOW);
+      std::this_thread::sleep_for(std::chrono::milliseconds(low_time_ms));
+    }
+    else
+    {
+      digitalWrite(pin_, LOW);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  }
+}
+
 StepperMotor::StepperMotor(int step_pin, int dir_pin, int steps_per_rev = 200, double wheel_diameter = 0.065)
     : step_pin(step_pin),
       dir_pin(dir_pin),
@@ -122,6 +177,7 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   this->odom_pub = this->create_publisher<nav_msgs::msg::Odometry>(robot_namespace + "/odom", rclcpp::QoS(10));
   this->cmd_vel_sub = this->create_subscription<geometry_msgs::msg::Twist>(
       robot_namespace + "/cmd_vel", rclcpp::QoS(10), std::bind(&KRISRobot::cmd_vel_callback, this, _1));
+  this->tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
   left_motor = std::make_shared<StepperMotor>(MOTOR_LEFT_STEP_PIN, MOTOR_LEFT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
   right_motor = std::make_shared<StepperMotor>(MOTOR_RIGHT_STEP_PIN, MOTOR_RIGHT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
@@ -133,8 +189,13 @@ KRISRobot::~KRISRobot()
 {
   left_motor->set_speed(0);
   right_motor->set_speed(0);
-  // analogWrite(PWM_OUTPUT_PIN, 0);
-  softPwmWrite(PWM_OUTPUT_PIN, 0); // Set PWM to 0%
+  software_pwm->set_duty_cycle(0);
+
+  // properly dealocate objects
+  left_motor.reset();
+  right_motor.reset();
+  software_pwm.reset();
+
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node shutting down");
 }
 
@@ -150,14 +211,8 @@ void KRISRobot::setup_gpio()
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
   pinMode(PWM_OUTPUT_PIN, OUTPUT);
-  softPwmCreate(PWM_OUTPUT_PIN, 0, 100);
-  softPwmWrite(PWM_OUTPUT_PIN, 80); // 80% duty cycle
-  /*pwmSetMode(PWM_MODE_MS);
-  pwmSetRange(1024);
-  pwmSetClock(32); // 19.2MHz / 32 = 600kHz PWM base frequency
-
-  analogWrite(PWM_OUTPUT_PIN, 512); // 80% duty cycle
-  */
+  software_pwm = std::make_shared<SoftwarePWM>(PWM_OUTPUT_PIN, 2500);
+  //software_pwm->set_duty_cycle(70);
   RCLCPP_INFO(this->get_logger(), "GPIO setup complete");
 }
 
@@ -215,7 +270,7 @@ void KRISRobot::publish_odometry()
   }
 
   theta += (distance_left - distance_right) / (WHEEL_BASE);
-  theta = (theta != 0) ? fmod(theta, 2 * M_PI) : FLT_EPSILON; // Keep theta within [0, 2π]  
+  theta = (theta != 0.0) ? fmod(theta, 2 * M_PI) : FLT_EPSILON; // Keep theta within [0, 2π]
 
   odom_msg.pose.pose.position.x = x_pos;
   odom_msg.pose.pose.position.y = y_pos;
@@ -224,6 +279,18 @@ void KRISRobot::publish_odometry()
   odom_msg.twist.twist.linear.x = v_linear;
   odom_msg.twist.twist.angular.z = v_angular;
   odom_pub->publish(odom_msg);
+
+  // Publish TF
+  geometry_msgs::msg::TransformStamped tf_msg;
+  tf_msg.header.stamp = t;
+  tf_msg.header.frame_id = odom_frame_id;
+  tf_msg.child_frame_id = base_frame_id;
+  tf_msg.transform.translation.x = odom_msg.pose.pose.position.x;
+  tf_msg.transform.translation.y = odom_msg.pose.pose.position.y;
+  tf_msg.transform.translation.z = 0.0;
+  tf_msg.transform.rotation.z = odom_msg.pose.pose.orientation.z;
+  tf_msg.transform.rotation.w = odom_msg.pose.pose.orientation.w;
+  tf_broadcaster->sendTransform(tf_msg);
 }
 
 void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)

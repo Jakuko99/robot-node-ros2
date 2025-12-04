@@ -11,17 +11,19 @@ Panels:
         - /TF1/Frames1
         - /TF1/Tree1
         - /Odometry1
-        - /Odometry1/Status1
         - /Odometry1/Shape1
         - /RobotModel1
         - /RobotModel1/Status1
         - /RobotModel1/Description Topic1
         - /Odometry2
-        - /Odometry2/Status1
         - /Map1
+        - /Map1/Status1
         - /LaserScan1
         - /LaserScan1/Status1
         - /LaserScan1/Topic1
+        - /Path1
+        - /Path1/Status1
+        - /Map2
       Splitter Ratio: 0.5
     Tree Height: 549
   - Class: rviz_common/Selection
@@ -70,7 +72,15 @@ Visualization Manager:
         All Enabled: true
         kris_robot1_base_link:
           Value: true
+        kris_robot1_laser_frame:
+          Value: true
+        kris_robot1_lwheel:
+          Value: true
+        kris_robot1_map:
+          Value: true
         kris_robot1_odom:
+          Value: true
+        kris_robot1_rwheel:
           Value: true
       Marker Scale: 1
       Name: TF
@@ -79,7 +89,13 @@ Visualization Manager:
       Show Names: false
       Tree:
         kris_robot1_odom:
-          {}
+          kris_robot1_base_link:
+            kris_robot1_laser_frame:
+              {}
+            kris_robot1_lwheel:
+              {}
+            kris_robot1_rwheel:
+              {}
       Update Interval: 0
       Value: true
     - Angle Tolerance: 0.10000000149011612
@@ -108,10 +124,10 @@ Visualization Manager:
         Axes Length: 1
         Axes Radius: 0.10000000149011612
         Color: 0; 255; 0
-        Head Length: 0.10000000149011612
-        Head Radius: 0.07999999821186066
-        Shaft Length: 0.10000000149011612
-        Shaft Radius: 0.03999999910593033
+        Head Length: 0.05000000074505806
+        Head Radius: 0.03999999910593033
+        Shaft Length: 0.05000000074505806
+        Shaft Radius: 0.019999999552965164
         Value: Arrow
       Topic:
         Depth: 5
@@ -149,12 +165,12 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        lwheel:
+        kris_robot1_lwheel:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        rwheel:
+        kris_robot1_rwheel:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -237,7 +253,7 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz_default_plugins/LaserScan
       Color: 255; 255; 255
-      Color Transformer: Intensity
+      Color Transformer: ""
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
@@ -254,12 +270,61 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
+        Filter size: 50
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /kris_robot1/scan
       Use Fixed Frame: true
       Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 25; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /kris_robot1/plan
+      Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /kris_robot1/global_costmap/costmap
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /kris_robot1/global_costmap/costmap_updates
+      Use Timestamp: false
       Value: true
   Enabled: true
   Global Options:
@@ -307,25 +372,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.6231603622436523
+      Distance: 6.468764305114746
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.5027967095375061
-        Y: 0.2796163558959961
-        Z: 0.12260497361421585
+        X: 0.10779973864555359
+        Y: 0.40407928824424744
+        Z: 0.2191964089870453
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5753982067108154
+      Pitch: 0.7453982830047607
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.5503987073898315
+      Yaw: 2.2604007720947266
     Saved: ~
 Window Geometry:
   Displays:
@@ -343,5 +408,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1197
-  X: 35
-  Y: 99
+  X: 27
+  Y: 81

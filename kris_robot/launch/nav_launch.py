@@ -1,7 +1,12 @@
 import os
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import (
+    IncludeLaunchDescription,
+    ExecuteProcess,
+    RegisterEventHandler,
+)
 from launch_ros.actions import Node
+from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
@@ -10,6 +15,23 @@ def generate_launch_description():
     config_dir = os.path.join("src/kris_robot", "config")
     return LaunchDescription(
         [
+            Node(
+                package="sllidar_ros2",
+                executable="sllidar_node",
+                name="sllidar_node",
+                parameters=[
+                    {
+                        "channel_type": "serial",
+                        "serial_port": "/dev/serial0",
+                        "serial_baudrate": 115200,
+                        "frame_id": "kris_robot1_laser_frame",
+                        "inverted": False,
+                        "angle_compensate": True,
+                        "topic_name": "kris_robot1/scan",
+                    }
+                ],
+                output="screen",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "navigation_launch.py")
@@ -46,6 +68,32 @@ def generate_launch_description():
                         "z": 0.0,
                     }
                 ],
+            ),
+            ExecuteProcess(
+                cmd=[
+                    "gpio",
+                    "-g",
+                    "mode",
+                    "18",
+                    "pwm",
+                    "&&",
+                    "gpio",
+                    "-g",
+                    "pwm",
+                    "18",
+                    "675",
+                ]
+            ),
+            RegisterEventHandler(
+                OnShutdown=ExecuteProcess(
+                    cmd=[
+                        "gpio",
+                        "-g",
+                        "pwm",
+                        "18",
+                        "0",
+                    ]
+                )
             ),
         ]
     )

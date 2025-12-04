@@ -105,7 +105,6 @@ void StepperMotor::set_speed(double speed_m_s)
     direction = 0;
     running_ = false;
     speed_hz_ = 0;
-    impulse_cnt = 0;
     return;
   }
 
@@ -182,6 +181,8 @@ KRISRobot::KRISRobot(std::string node_name) : rclcpp::Node(node_name),
   left_motor = std::make_shared<StepperMotor>(MOTOR_LEFT_STEP_PIN, MOTOR_LEFT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
   right_motor = std::make_shared<StepperMotor>(MOTOR_RIGHT_STEP_PIN, MOTOR_RIGHT_DIR_PIN, STEPS_PER_REV, WHEEL_DIAMETER);
   // last_tick = this->now();
+  this->publish_transforms();
+
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node initialized");
 }
 
@@ -189,12 +190,12 @@ KRISRobot::~KRISRobot()
 {
   left_motor->set_speed(0);
   right_motor->set_speed(0);
-  software_pwm->set_duty_cycle(0);
+  // software_pwm->set_duty_cycle(0);
 
   // properly dealocate objects
   left_motor.reset();
   right_motor.reset();
-  software_pwm.reset();
+  // software_pwm.reset();
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node shutting down");
 }
@@ -210,9 +211,9 @@ void KRISRobot::setup_gpio()
 
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
-  pinMode(PWM_OUTPUT_PIN, OUTPUT);
-  software_pwm = std::make_shared<SoftwarePWM>(PWM_OUTPUT_PIN, 2500);
-  //software_pwm->set_duty_cycle(70);
+  // pinMode(PWM_OUTPUT_PIN, OUTPUT);
+  /*software_pwm = std::make_shared<SoftwarePWM>(PWM_OUTPUT_PIN, 5000);
+  software_pwm->set_duty_cycle(70);*/
   RCLCPP_INFO(this->get_logger(), "GPIO setup complete");
 }
 
@@ -232,6 +233,48 @@ void KRISRobot::publish_urdf()
   message.data = buffer.str();
 
   urdf_pub->publish(message);
+}
+
+void KRISRobot::publish_transforms()
+{
+  geometry_msgs::msg::TransformStamped tf_msg_lidar;
+  tf_msg_lidar.header.stamp = this->now();
+  tf_msg_lidar.header.frame_id = base_frame_id;
+  tf_msg_lidar.child_frame_id = robot_namespace + "_laser_frame";
+  tf_msg_lidar.transform.translation.x = 0.0;
+  tf_msg_lidar.transform.translation.y = 0.0;
+  tf_msg_lidar.transform.translation.z = LIDAR_HEIGHT;
+  tf_msg_lidar.transform.rotation.x = 0.0;
+  tf_msg_lidar.transform.rotation.y = 0.0;
+  tf_msg_lidar.transform.rotation.z = 0.0;
+  tf_msg_lidar.transform.rotation.w = 1.0;
+  tf_broadcaster->sendTransform(tf_msg_lidar);
+
+  geometry_msgs::msg::TransformStamped tf_msg_lwheel;
+  tf_msg_lwheel.header.stamp = this->now();
+  tf_msg_lwheel.header.frame_id = base_frame_id;
+  tf_msg_lwheel.child_frame_id = robot_namespace + "_lwheel";
+  tf_msg_lwheel.transform.translation.x = 0.0;
+  tf_msg_lwheel.transform.translation.y = WHEEL_DISTANCE / 2.0;
+  tf_msg_lwheel.transform.translation.z = 0.0;
+  tf_msg_lwheel.transform.rotation.x = 0.0;
+  tf_msg_lwheel.transform.rotation.y = 0.0;
+  tf_msg_lwheel.transform.rotation.z = 0.0;
+  tf_msg_lwheel.transform.rotation.w = 1.0;
+  tf_broadcaster->sendTransform(tf_msg_lwheel);
+
+  geometry_msgs::msg::TransformStamped tf_msg_rwheel;
+  tf_msg_rwheel.header.stamp = this->now();
+  tf_msg_rwheel.header.frame_id = base_frame_id;
+  tf_msg_rwheel.child_frame_id = robot_namespace + "_rwheel";
+  tf_msg_rwheel.transform.translation.x = 0.0;
+  tf_msg_rwheel.transform.translation.y = -WHEEL_DISTANCE / 2.0;
+  tf_msg_rwheel.transform.translation.z = 0.0;
+  tf_msg_rwheel.transform.rotation.x = 0.0;
+  tf_msg_rwheel.transform.rotation.y = 0.0;
+  tf_msg_rwheel.transform.rotation.z = 0.0;
+  tf_msg_rwheel.transform.rotation.w = 1.0;
+  tf_broadcaster->sendTransform(tf_msg_rwheel);
 }
 
 float KRISRobot::time_diff(const builtin_interfaces::msg::Time &start, const builtin_interfaces::msg::Time &end)
@@ -257,20 +300,27 @@ void KRISRobot::publish_odometry()
   double distance_left = (delta_left_cnt / STEPS_PER_METER);
   double distance_right = (delta_right_cnt / STEPS_PER_METER);
 
-  if (fabs(distance_left - distance_right) < FLT_EPSILON)
+  double d_theta = (distance_left - distance_right) / (WHEEL_BASE);
+
+  float dx, dy;
+
+  if (fabs(d_theta) < FLT_EPSILON)
   {
-    x_pos += (distance_left + distance_right) / 2.0;
-    y_pos += (pow(distance_left, 2) - pow(distance_right, 2)) / (4 * WHEEL_BASE);
+    dx = (distance_left + distance_right) / 2.0;
+    dy = (pow(distance_left, 2) - pow(distance_right, 2)) / (4 * WHEEL_BASE);
   }
   else
   {
-    double R_turn = (distance_left + distance_right) / (2 * theta);
-    x_pos += R_turn * sin(theta);
-    y_pos += R_turn * (1 - cos(theta));
+    double R_turn = (distance_left + distance_right) / (2 * d_theta);
+    dx = R_turn * sin(d_theta);
+    dy = R_turn * (1 - cos(d_theta));
   }
 
-  theta += (distance_left - distance_right) / (WHEEL_BASE);
-  theta = (theta != 0.0) ? fmod(theta, 2 * M_PI) : FLT_EPSILON; // Keep theta within [0, 2π]
+  x_pos += dx * cos(theta) - dy * sin(theta);
+  y_pos += dx * sin(theta) + dy * cos(theta);
+
+  theta += d_theta;
+  theta = fmod(theta, 2 * M_PI);
 
   odom_msg.pose.pose.position.x = x_pos;
   odom_msg.pose.pose.position.y = y_pos;
@@ -316,5 +366,6 @@ void KRISRobot::update_state()
 #endif
 
   publish_urdf();
+  publish_transforms();
   publish_odometry();
 }

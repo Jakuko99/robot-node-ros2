@@ -31,15 +31,15 @@
 #define BUTTON2_PIN 6
 #define PWM_OUTPUT_PIN 18
 
+#define LIDAR_HEIGHT 0.0                                          // Height of the LIDAR from the ground in meters
+#define WHEEL_DISTANCE 0.0                                        // Distance between wheels in meters from base_link center
 #define WHEEL_BASE 0.085                                          // Distance between wheels in meters
 #define WHEEL_DIAMETER 0.067                                      // Wheel diameter in meters
 #define STEPS_PER_REV 2000                                        // Steps per revolution for the stepper motor
 #define STEPS_PER_METER (STEPS_PER_REV / (M_PI * WHEEL_DIAMETER)) // Steps per meter
 #define T_IMPULSE 10                                              // Stepper motor pulse ON time in milliseconds
 
-#define ACC_ADDR 0x19
 #define DISP_ADDR 0x3C
-#define BME280_ADDR 0x76
 
 class SoftwarePWM
 {
@@ -94,6 +94,7 @@ public:
 private:
   void setup_gpio();
   void publish_urdf();
+  void publish_transforms();
   void publish_odometry();
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
   float time_diff(const builtin_interfaces::msg::Time &start, const builtin_interfaces::msg::Time &end);

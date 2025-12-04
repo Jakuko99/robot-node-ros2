@@ -15,9 +15,9 @@
 				izz="1.0"/>
 		</inertial>
 	</link>
-	<joint name="kris_robot1_base_link_to_lwheel" type="continuous">
+	<joint name="kris_robot1_base_link_to_kris_robot1_lwheel" type="continuous">
 		<parent link="kris_robot1_base_link" />
-		<child link="lwheel" />
+		<child link="kris_robot1_lwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02" />
 		<axis>
 			<xyz>0 0 1</xyz>
@@ -27,7 +27,7 @@
 			</limit>
 		</axis>
 	</joint>
-	<link name="lwheel">
+	<link name="kris_robot1_lwheel">
 		<visual>
 			<geometry>
 				<cylinder length="0.025" radius="0.0325" />
@@ -43,9 +43,9 @@
 				izz="1.0"/>
 		</inertial>
 	</link>
-	<joint name="kris_robot1_base_link_to_rwheel" type="continuous">
+	<joint name="kris_robot1_base_link_to_kris_robot1_rwheel" type="continuous">
 		<parent link="kris_robot1_base_link" />
-		<child link="rwheel" />
+		<child link="kris_robot1_rwheel" />
 		<origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02" />
 		<axis>
 			<xyz>0 0 1</xyz>
@@ -55,7 +55,7 @@
 			</limit>
 		</axis>
 	</joint>
-	<link name="rwheel">
+	<link name="kris_robot1_rwheel">
 		<visual>
 			<geometry>
 				<cylinder length="0.025" radius="0.0325" />

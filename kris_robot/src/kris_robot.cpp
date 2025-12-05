@@ -352,8 +352,8 @@ void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
   this->v_angular = msg->angular.z; // Set angular velocity
 
   // Differential drive kinematics
-  double v_left = (v_linear - v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
-  double v_right = (v_linear + v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
+  double v_left = (v_linear + v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
+  double v_right = (v_linear - v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
 
   left_motor->set_speed(v_left);
   right_motor->set_speed(v_right);

@@ -27,6 +27,23 @@ def generate_launch_description():
                     },
                 ],
             ),
+            Node(
+                package="sllidar_ros2",
+                executable="sllidar_node",
+                name="sllidar_node",
+                parameters=[
+                    {
+                        "channel_type": "serial",
+                        "serial_port": "/dev/serial0",
+                        "serial_baudrate": 115200,
+                        "frame_id": "kris_robot1_laser_frame",
+                        "inverted": False,
+                        "angle_compensate": True,
+                        "topic_name": "kris_robot1/scan",
+                    }
+                ],
+                output="screen",
+            ),
             # IncludeLaunchDescription(
             #     PythonLaunchDescriptionSource(
             #         "src/mpu9250driver/launch/mpu9250driver_launch.py"

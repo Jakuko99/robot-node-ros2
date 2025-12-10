@@ -41,23 +41,6 @@
 
 #define DISP_ADDR 0x3C
 
-class SoftwarePWM
-{
-public:
-  SoftwarePWM(int pin, int frequency);
-  void set_duty_cycle(int duty_cycle);
-  ~SoftwarePWM();
-
-private:
-  void run_pwm();
-  int pin_;
-  int frequency_;
-  int duty_cycle_;
-  bool running_;
-  std::thread pwm_thread_;
-  std::mutex mutex_;
-};
-
 class StepperMotor
 {
 public:
@@ -112,7 +95,6 @@ private:
 
   std::shared_ptr<StepperMotor> left_motor;
   std::shared_ptr<StepperMotor> right_motor;
-  std::shared_ptr<SoftwarePWM> software_pwm;
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr urdf_pub;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub;

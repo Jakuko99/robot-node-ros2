@@ -3,61 +3,6 @@
 using std::placeholders::_1;
 // #define DEBUG
 
-SoftwarePWM::SoftwarePWM(int pin, int frequency)
-    : pin_(pin),
-      frequency_(frequency),
-      duty_cycle_(0),
-      running_(true)
-{
-  // pinMode(pin_, OUTPUT);
-  pwm_thread_ = std::thread(&SoftwarePWM::run_pwm, this);
-  RCLCPP_INFO(rclcpp::get_logger("KRISRobot"), "SoftwarePWM initialized on pin %d at %d Hz", pin_, frequency_);
-}
-
-SoftwarePWM::~SoftwarePWM()
-{
-  running_ = false;
-  if (pwm_thread_.joinable())
-  {
-    pwm_thread_.join();
-  }
-}
-
-void SoftwarePWM::set_duty_cycle(int duty_cycle)
-{
-  std::lock_guard<std::mutex> lock(mutex_);
-  duty_cycle_ = duty_cycle;
-}
-
-void SoftwarePWM::run_pwm()
-{
-  while (running_)
-  {
-    int local_duty_cycle;
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      local_duty_cycle = duty_cycle_;
-      // calculcate sleep times based on frequency
-    }
-    int period_ms = 1000 / frequency_;
-    int high_time_ms = (period_ms * local_duty_cycle) / 100;
-    int low_time_ms = period_ms - high_time_ms;
-
-    if (local_duty_cycle > 0)
-    {
-      digitalWrite(pin_, HIGH);
-      std::this_thread::sleep_for(std::chrono::milliseconds(high_time_ms));
-      digitalWrite(pin_, LOW);
-      std::this_thread::sleep_for(std::chrono::milliseconds(low_time_ms));
-    }
-    else
-    {
-      digitalWrite(pin_, LOW);
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-  }
-}
-
 StepperMotor::StepperMotor(int step_pin, int dir_pin, int steps_per_rev = 200, double wheel_diameter = 0.065)
     : step_pin(step_pin),
       dir_pin(dir_pin),
@@ -90,12 +35,12 @@ StepperMotor::~StepperMotor()
 void StepperMotor::set_speed(double speed_m_s)
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (speed_m_s > 0)
+  if (speed_m_s < 0)
   {
     direction = 1;
     digitalWrite(dir_pin, HIGH);
   }
-  else if (speed_m_s < 0)
+  else if (speed_m_s > 0)
   {
     direction = -1;
     digitalWrite(dir_pin, LOW);
@@ -190,12 +135,10 @@ KRISRobot::~KRISRobot()
 {
   left_motor->set_speed(0);
   right_motor->set_speed(0);
-  // software_pwm->set_duty_cycle(0);
 
   // properly dealocate objects
   left_motor.reset();
   right_motor.reset();
-  // software_pwm.reset();
 
   RCLCPP_INFO(this->get_logger(), "KRIS Robot node shutting down");
 }
@@ -211,9 +154,6 @@ void KRISRobot::setup_gpio()
 
   pinMode(BUTTON1_PIN, INPUT);
   pinMode(BUTTON2_PIN, INPUT);
-  // pinMode(PWM_OUTPUT_PIN, OUTPUT);
-  /*software_pwm = std::make_shared<SoftwarePWM>(PWM_OUTPUT_PIN, 5000);
-  software_pwm->set_duty_cycle(70);*/
   RCLCPP_INFO(this->get_logger(), "GPIO setup complete");
 }
 
@@ -352,8 +292,8 @@ void KRISRobot::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
   this->v_angular = msg->angular.z; // Set angular velocity
 
   // Differential drive kinematics
-  double v_left = (v_linear + v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
-  double v_right = (v_linear - v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
+  double v_left = (v_linear - v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
+  double v_right = (v_linear + v_angular * WHEEL_BASE / 2.0) / WHEEL_DIAMETER;
 
   left_motor->set_speed(v_left);
   right_motor->set_speed(v_right);

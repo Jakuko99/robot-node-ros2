@@ -216,7 +216,7 @@ global_costmap:
       update_frequency: 5.0
       publish_frequency: 5.0
       global_frame: kris_robot4_map
-      map_topic: kris_robot4/map
+      map_topic: /kris_robot4/map
       robot_base_frame: kris_robot4_base_link
       use_sim_time: True
       robot_radius: 0.08

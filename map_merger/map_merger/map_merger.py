@@ -1,43 +1,29 @@
 import rclpy
+import numpy as np
 from rclpy.node import Node
+from tf2_msgs.msg import TFMessage
 from nav_msgs.msg import OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
-from tf2_msgs.msg import TFMessage
-from geometry_msgs.msg import TransformStamped, PointStamped
-from visualization_msgs.msg import Marker
-import numpy as np
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
 
 class MapSubscription:
-    def __init__(self, robot_name: str, node: Node, topic_name: str):
+    def __init__(self, robot_name: str, topic_name: str, parent: "MapMerger"):
         self.robot_name: str = robot_name
-        self.node: Node = node
+        self.parent: "MapMerger" = parent
         self.topic_name: str = topic_name
 
-        self.subscription = node.create_subscription(
+        self.subscription = parent.create_subscription(
             OccupancyGrid, topic_name, self.map_callback, 10
         )
-        self.update_subscription = node.create_subscription(
+        self.update_subscription = parent.create_subscription(
             OccupancyGridUpdate, topic_name + "_updates", self.update_map_callback, 10
         )
         self.map_data: OccupancyGrid = None
-        self.map_position_x: float = 0.0
-        self.map_position_y: float = 0.0
-
-        self.map_width: int = 0
-        self.map_height: int = 0
-        self.map_resolution: float = 0.0
 
     def map_callback(self, msg: OccupancyGrid):
         self.map_data: OccupancyGrid = msg
-        self.map_position_x = msg.info.origin.position.x
-        self.map_position_y = msg.info.origin.position.y
-        self.map_width = msg.info.width
-        self.map_height = msg.info.height
-        self.map_resolution = msg.info.resolution
-
-        self.node.merge_maps()
+        self.parent.merge_maps()  # call parent node method to merge maps
 
     def update_map_callback(self, msg):
         pass
@@ -52,12 +38,6 @@ class MapMerger(Node):
         )
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
-        self.point_publisher = self.create_publisher(
-            PointStamped, "/map_merger/origins", 10
-        )
-        self.global_point_publisher = self.create_publisher(
-            PointStamped, "/map_merger/global_origin", 10
-        )
 
     def tf_callback(self, msg: TFMessage):
         for transform in msg.transforms:
@@ -83,14 +63,17 @@ class MapMerger(Node):
                 if robot_name not in self.map_subscriptions:
                     topic_name: str = f"/{robot_name}/map"
                     self.map_subscriptions[robot_name] = MapSubscription(
-                        robot_name, self, topic_name
+                        robot_name=robot_name,
+                        topic_name=topic_name,
+                        parent=self,
                     )
+
                     self.get_logger().info(
                         f"Subscribed to map topic for robot {robot_name} at {topic_name}"
                     )
 
     def merge_maps(self):
-        local_maps = {
+        local_maps: dict[str, OccupancyGrid] = {
             sub.map_data.header.frame_id: sub.map_data
             for sub in self.map_subscriptions.values()
             if sub.map_data is not None
@@ -174,32 +157,32 @@ class MapMerger(Node):
                 for frame_id, map_data in local_maps.items()
             }
 
-            min_x = min(
+            min_x: float = min(
                 [s[0] for s in s_dict.values()]
                 + [t[0] for t in t_dict.values()]
                 + [u[0] for u in u_dict.values()]
                 + [v[0] for v in v_dict.values()]
             )
-            max_x = max(
+            max_x: float = max(
                 [s[0] for s in s_dict.values()]
                 + [t[0] for t in t_dict.values()]
                 + [u[0] for u in u_dict.values()]
                 + [v[0] for v in v_dict.values()]
             )
-            min_y = min(
+            min_y: float = min(
                 [s[1] for s in s_dict.values()]
                 + [t[1] for t in t_dict.values()]
                 + [u[1] for u in u_dict.values()]
                 + [v[1] for v in v_dict.values()]
             )
-            max_y = max(
+            max_y: float = max(
                 [s[1] for s in s_dict.values()]
                 + [t[1] for t in t_dict.values()]
                 + [u[1] for u in u_dict.values()]
                 + [v[1] for v in v_dict.values()]
             )
 
-            merged_map = OccupancyGrid()
+            merged_map: OccupancyGrid = OccupancyGrid()
 
             merged_map.info.resolution = local_maps[
                 list(local_maps.keys())[0]
@@ -221,35 +204,6 @@ class MapMerger(Node):
             merged_map.header.frame_id = "global_map"
             merged_map.header.stamp = self.get_clock().now().to_msg()
 
-            map_corners: list[PointStamped] = [
-                (merged_map.info.origin.position.x, merged_map.info.origin.position.y),
-                (
-                    merged_map.info.origin.position.x
-                    + merged_map.info.width * merged_map.info.resolution,
-                    merged_map.info.origin.position.y,
-                ),
-                (
-                    merged_map.info.origin.position.x,
-                    merged_map.info.origin.position.y
-                    + merged_map.info.height * merged_map.info.resolution,
-                ),
-                (
-                    merged_map.info.origin.position.x
-                    + merged_map.info.width * merged_map.info.resolution,
-                    merged_map.info.origin.position.y
-                    + merged_map.info.height * merged_map.info.resolution,
-                ),
-            ]
-
-            for corner in map_corners:
-                merged_origin: PointStamped = PointStamped()
-                merged_origin.header.frame_id = merged_map.header.frame_id
-                merged_origin.header.stamp = merged_map.header.stamp
-                merged_origin.point.x = corner[0]
-                merged_origin.point.y = corner[1]
-                merged_origin.point.z = 0.0
-                self.global_point_publisher.publish(merged_origin)
-
             # print(
             #     f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
             # )
@@ -263,30 +217,24 @@ class MapMerger(Node):
             )
 
             for frame_id, map_data in local_maps.items():
-                origin_point: PointStamped = PointStamped()
-                origin_point.header.frame_id = frame_id
-                origin_point.header.stamp = self.get_clock().now().to_msg()
-                origin_point.point.x = map_data.info.origin.position.x
-                origin_point.point.y = map_data.info.origin.position.y
-                origin_point.point.z = 0.0
-                self.point_publisher.publish(origin_point)
-
                 # print(
                 #     f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
-                # )                
+                # )
 
-                offset_x = int(
+                offset_x: int = int(
                     (s_dict[frame_id][0] - min_x) / merged_map.info.resolution
                 )
-                offset_y = int(
+                offset_y: int = int(
                     (s_dict[frame_id][1] - min_y) / merged_map.info.resolution
                 )
 
-                local_data = np.array(map_data.data).reshape(
+                local_data: np.ndarray = np.array(map_data.data).reshape(
                     (map_data.info.height, map_data.info.width)
                 )
 
-                self.get_logger().debug(f"Offset: x={offset_x}, y={offset_y} frame={frame_id}")
+                self.get_logger().debug(
+                    f"Offset: x={offset_x}, y={offset_y} frame={frame_id}"
+                )
 
                 merged_data[
                     offset_y : local_data.shape[0] + offset_y,

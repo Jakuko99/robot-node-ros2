@@ -13,8 +13,6 @@ Panels:
         - /Path2
         - /Map2
         - /Map3
-        - /PointStamped1
-        - /PointStamped2
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz_common/Selection
@@ -284,36 +282,6 @@ Visualization Manager:
         Value: /kris_robot2/map_updates
       Use Timestamp: false
       Value: false
-    - Alpha: 1
-      Class: rviz_default_plugins/PointStamped
-      Color: 255; 25; 0
-      Enabled: true
-      History Length: 4
-      Name: PointStamped
-      Radius: 0.20000000298023224
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /map_merger/global_origin
-      Value: true
-    - Alpha: 1
-      Class: rviz_default_plugins/PointStamped
-      Color: 204; 41; 204
-      Enabled: true
-      History Length: 10
-      Name: PointStamped
-      Radius: 0.20000000298023224
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /map_merger/origins
-      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -360,7 +328,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 16.386215209960938
+      Distance: 14.007567405700684
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -378,7 +346,7 @@ Visualization Manager:
       Pitch: 0.915398359298706
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 1.5754021406173706
+      Yaw: 1.580402135848999
     Saved: ~
 Window Geometry:
   Displays:

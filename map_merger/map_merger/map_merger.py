@@ -3,16 +3,14 @@ from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
-from geometry_msgs.msg import TransformStamped, PointStamped
-from visualization_msgs.msg import Marker
 import numpy as np
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
 
 class MapSubscription:
-    def __init__(self, robot_name: str, node: Node, topic_name: str):
+    def __init__(self, robot_name: str, node: "MapMerger", topic_name: str):
         self.robot_name: str = robot_name
-        self.node: Node = node
+        self.node: "MapMerger" = node
         self.topic_name: str = topic_name
 
         self.subscription = node.create_subscription(
@@ -52,12 +50,6 @@ class MapMerger(Node):
         )
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
-        self.point_publisher = self.create_publisher(
-            PointStamped, "/map_merger/origins", 10
-        )
-        self.global_point_publisher = self.create_publisher(
-            PointStamped, "/map_merger/global_origin", 10
-        )
 
     def tf_callback(self, msg: TFMessage):
         for transform in msg.transforms:
@@ -221,35 +213,6 @@ class MapMerger(Node):
             merged_map.header.frame_id = "global_map"
             merged_map.header.stamp = self.get_clock().now().to_msg()
 
-            map_corners: list[PointStamped] = [
-                (merged_map.info.origin.position.x, merged_map.info.origin.position.y),
-                (
-                    merged_map.info.origin.position.x
-                    + merged_map.info.width * merged_map.info.resolution,
-                    merged_map.info.origin.position.y,
-                ),
-                (
-                    merged_map.info.origin.position.x,
-                    merged_map.info.origin.position.y
-                    + merged_map.info.height * merged_map.info.resolution,
-                ),
-                (
-                    merged_map.info.origin.position.x
-                    + merged_map.info.width * merged_map.info.resolution,
-                    merged_map.info.origin.position.y
-                    + merged_map.info.height * merged_map.info.resolution,
-                ),
-            ]
-
-            for corner in map_corners:
-                merged_origin: PointStamped = PointStamped()
-                merged_origin.header.frame_id = merged_map.header.frame_id
-                merged_origin.header.stamp = merged_map.header.stamp
-                merged_origin.point.x = corner[0]
-                merged_origin.point.y = corner[1]
-                merged_origin.point.z = 0.0
-                self.global_point_publisher.publish(merged_origin)
-
             print(
                 f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
             )
@@ -262,14 +225,6 @@ class MapMerger(Node):
             )
 
             for frame_id, map_data in local_maps.items():
-                origin_point: PointStamped = PointStamped()
-                origin_point.header.frame_id = frame_id
-                origin_point.header.stamp = self.get_clock().now().to_msg()
-                origin_point.point.x = map_data.info.origin.position.x
-                origin_point.point.y = map_data.info.origin.position.y
-                origin_point.point.z = 0.0
-                self.point_publisher.publish(origin_point)
-
                 print(
                     f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
                 )

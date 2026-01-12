@@ -1,90 +1,113 @@
 import rclpy
-from rclpy.node import Node, Publisher
-from geometry_msgs.msg import Twist, Quaternion, TransformStamped, PoseStamped
-from nav_msgs.msg import Odometry, OccupancyGrid
-from sensor_msgs.msg import LaserScan
 import numpy as np
+from time import sleep
+from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PointStamped
+from rclpy.node import Node, Publisher, Subscription
 
-from robot_network.neural_network import RobotSwarmOptimizerNetwork, SwarmMapProcessor
+from robot_network.robot_watcher import RobotWatcher
+from robot_network.neural_network import RobotSwarmOptimizerNetwork
 
 
 class RobotNetwork(Node):
     def __init__(self):
-        super().__init__("robot")
-        self.declare_parameter("namespace", "kris_robot")
-        self.current_map: np.ndarray = np.array([])
+        super().__init__("robot_network_node")
+        # ----- Parameters -----
+        self.declare_parameter("train_network", False)
+        self.declare_parameter("network_model_path", "")
+        self.declare_parameter("global_map_topic", "global_map")
+        self.declare_parameter("goal_marker_topic", "mapping_goals")
 
         # ----- Subscribers -----
-        self.odom_subscriber = self.create_subscription(
-            Odometry,
-            f"{self.get_parameter('namespace').value}/odom",
-            self.odom_callback,
-            10,
-        )
-        self.map_subscriber = self.create_subscription(
-            OccupancyGrid,
-            f"{self.get_parameter('namespace').value}/map",
-            self.map_callback,
-            10,
-        )
-        self.scan_subscriber = self.create_subscription(
-            LaserScan,
-            f"{self.get_parameter('namespace').value}/scan",
-            self.scan_callback,
-            10,
-        )
-        self.poi_subscriber = self.create_subscription(
-            PoseStamped,
-            f"{self.get_parameter('namespace').value}/poi",
-            self.poi_callback,
-            10,
+        self.global_map_subscriber: Subscription[OccupancyGrid] = (
+            self.create_subscription(
+                OccupancyGrid,
+                self.get_parameter("global_map_topic")
+                .get_parameter_value()
+                .string_value,
+                self.map_callback,
+                10,
+            )
         )
 
         # ----- Publishers -----
-        self.goal_publisher = self.create_publisher(
-            PoseStamped, f"{self.get_parameter('namespace').value}/goal_pose", 10
-        )
-        self.explored_map_publisher = self.create_publisher(
-            OccupancyGrid, f"{self.get_parameter('namespace').value}/explored_map", 10
-        )
-
-        self.get_logger().info(
-            f"Robot node initialized in namespace: {self.get_parameter('namespace').value}"
+        self.point_publisher: Publisher[PointStamped] = self.create_publisher(
+            PointStamped,
+            self.get_parameter("goal_marker_topic").get_parameter_value().string_value,
+            10,
         )
 
-    def odom_callback(self, msg: Odometry):
-        pass
-        # self.get_logger().info(f"Received odometry: {msg}")
+        # ----- Variables -----
+        self.current_map: OccupancyGrid = None
+        self.current_map_width: int = 0
+        self.current_map_height: int = 0
+        self.robots: dict[str, RobotWatcher] = {}
+        self.train_network: bool = (
+            self.get_parameter("train_network").get_parameter_value().bool_value
+        )
+        self.optimizer_network = RobotSwarmOptimizerNetwork(
+            train=self.train_network,
+            model_path=self.get_parameter("network_model_path")
+            .get_parameter_value()
+            .string_value,
+        )
+
+        self.get_logger().info(f"Robot network node initialized")
 
     def map_callback(self, msg: OccupancyGrid):
         self.get_logger().info(f"Received map data: {msg.info.width}x{msg.info.height}")
+        self.current_map = msg
+        self.current_map_width = msg.info.width
+        self.current_map_height = msg.info.height
 
-        mat = np.zeros((msg.info.height, msg.info.width), dtype=float)
+        self.get_logger().info(
+            f"Frontier count: {self.optimizer_network._count_frontiers(msg)}"
+        )
 
-        l, i = 0, 0
-        for val in msg.data:
-            mat[l, i] = float(0.5 if val == -1 else (1 if val == 0 else 0))
-            # 0.5: unknown, 1: free, 0: occupied
-            i += 1
-            if i >= msg.info.width:
-                i = 0
-                l += 1
+        self.process_goals()
 
-        self.current_map: np.ndarray = mat
+    def process_goals(self):
+        if self.current_map:
+            width, height = self.current_map_width, self.current_map_height
 
-    def scan_callback(self, msg: LaserScan):
-        pass
-        # self.get_logger().info(f"Received laser scan with {len(msg.ranges)} ranges")
+            if self.train_network:
+                self.optimizer_network.train()
 
-    def poi_callback(self, msg: PoseStamped):
-        pass
-        # self.get_logger().info(f"Received POI at position: {msg.pose.position}")
+            else:
+                self.optimizer_network.eval()
+
+        self.discover_robots()
+        for watcher_node in self.robots.values():
+            rclpy.spin_once(watcher_node, timeout_sec=0.5)
+
+    def discover_robots(self):
+        topics: list[tuple[str, list[str]]] = self.get_topic_names_and_types()
+
+        for topic, types in topics:
+            if (topic.endswith("/odom")) and ("nav_msgs/msg/Odometry" in types):
+                robot_name = topic.split("/")[1]
+                if robot_name not in self.robots:
+                    self.robots[robot_name] = RobotWatcher(robot_name)
+                    self.get_logger().info(f"Discovered robot: {robot_name}")
+
+    def publish_point(self, x: float, y: float):
+        point_msg: PointStamped = PointStamped()
+        point_msg.header.stamp = self.get_clock().now().to_msg()
+        point_msg.header.frame_id = "global_map"
+        point_msg.point.x = x
+        point_msg.point.y = y
+        point_msg.point.z = 0.0
+
+        self.point_publisher.publish(point_msg)
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = RobotNetwork()
-    rclpy.spin(node)
+    while rclpy.ok():
+        node.discover_robots()
+        rclpy.spin(node)
+
     node.destroy_node()
     rclpy.shutdown()
 

@@ -6,7 +6,7 @@ from geometry_msgs.msg import Twist, PoseStamped
 class RobotWatcher(Node):
     def __init__(self, robot_name: str):
         super().__init__(f"robot_watcher_{robot_name}")
-        self.namespace = robot_name
+        self.namespace: str = robot_name
 
         # ----- Subscribers -----
         self.odom_subscriber: Subscription[Odometry] = self.create_subscription(
@@ -57,7 +57,7 @@ class RobotWatcher(Node):
         self.current_map = msg
 
     def cmd_vel_callback(self, msg: Twist):
-        self.last_cmd_vel = msg        
+        self.last_cmd_vel = msg
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         msg: PoseStamped = PoseStamped()

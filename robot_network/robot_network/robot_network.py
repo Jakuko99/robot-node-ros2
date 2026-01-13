@@ -72,6 +72,8 @@ class RobotNetwork(Node):
 
             if self.train_network:
                 self.optimizer_network.train()
+                reward = self.optimizer_network.train_network(self.current_map)
+                self.get_logger().info(f"Training reward: {reward}")
 
             else:
                 self.optimizer_network.eval()
@@ -88,6 +90,10 @@ class RobotNetwork(Node):
                 robot_name = topic.split("/")[1]
                 if robot_name not in self.robots:
                     self.robots[robot_name] = RobotWatcher(robot_name)
+                    self.optimizer_network.add_robot(
+                        robot_name, self.robots[robot_name]
+                    )
+
                     self.get_logger().info(f"Discovered robot: {robot_name}")
 
     def publish_point(self, x: float, y: float):

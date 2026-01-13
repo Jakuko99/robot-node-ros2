@@ -14,7 +14,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "train_network": False,
+                        "train_network": True,
                         "network_model_path": f"{resource_dir}/robot_swarm_optimizer.pth",
                         "global_map_topic": "global_map",
                         "goal_marker_topic": "mapping_goals",

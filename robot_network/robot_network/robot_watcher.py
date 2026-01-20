@@ -44,6 +44,7 @@ class RobotWatcher(Node):
         self.x: float = 0.0
         self.y: float = 0.0
         self.theta: float = 0.0
+        self.moving: bool = False
 
         self.get_logger().info(f"RobotWatcher initialized for robot: {self.namespace}")
 
@@ -52,6 +53,11 @@ class RobotWatcher(Node):
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
         self.theta = msg.pose.pose.orientation.z
+
+        if msg.twist.twist.linear.x != 0.0 or msg.twist.twist.angular.z != 0.0:
+            self.moving = True
+        else:
+            self.moving = False
 
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg
@@ -70,4 +76,10 @@ class RobotWatcher(Node):
 
         self.last_goal = msg
         self.goal_publisher.publish(msg)
-        self.get_logger().info(f"Published new goal for {self.namespace}")
+        self.get_logger().info(
+            f"Published new goal for {self.namespace} [{x}, {y}, {theta}]"
+        )
+
+    @property
+    def is_moving(self) -> bool:
+        return self.moving

@@ -10,6 +10,7 @@ from collections import deque
 import numpy as np
 
 from nav_msgs.msg import OccupancyGrid
+from std_srvs.srv._trigger import Trigger_Request, Trigger_Response
 from robot_network.robot_watcher import RobotWatcher
 
 # ----- Hyperparameters -----
@@ -34,12 +35,13 @@ class RobotSwarmOptimizerNetwork(nn.Module):
     - Mapping priorities for unexplored areas
     """
 
-    def __init__(self, train: bool = False, model_path: str = ""):
+    def __init__(self, train: bool = False, model_path: str = "", parent=None):
         super(RobotSwarmOptimizerNetwork, self).__init__()
         self._train: bool = train
         self.model_path: str = model_path
         self.previous_state: OccupancyGrid = None
         self.robots: dict[str, RobotWatcher] = {}
+        self.parent = parent
 
         self.model = nn.Sequential(
             nn.Linear(100, 256),
@@ -50,6 +52,20 @@ class RobotSwarmOptimizerNetwork(nn.Module):
         )
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.loss_fn = nn.MSELoss()
+
+    def save_model(
+        self, request: Trigger_Request, response: Trigger_Response
+    ) -> Trigger_Response:
+        try:
+            torch.save(self.model.state_dict(), self.model_path)
+        except Exception as e:
+            response.success = False
+            response.message = f"Failed to save model: {str(e)}"
+            return response
+
+        response.success = True
+        response.message = f"Model saved to {self.model_path}"
+        return response
 
     def add_robot(self, robot_name: str, robot_watcher: RobotWatcher):
         if robot_name not in self.robots:
@@ -69,42 +85,74 @@ class RobotSwarmOptimizerNetwork(nn.Module):
             self.previous_state = grid
             return None
 
-        robot_positions: list[tuple[float, float]] = [
-            (watcher.x, watcher.y) for watcher in self.robots.values()
-        ]
-        reward: float = 0.0
+        # Track explored cells for reward
+        current_explored = np.sum(np.array(grid.data) != -1)
+        previous_explored = np.sum(np.array(self.previous_state.data) != -1)
+        exploration_progress = current_explored - previous_explored
+
+        # Base reward on exploration progress
+        reward = float(exploration_progress) / max(current_explored, 1)
+
+        # Get frontiers from current map
+        frontiers = self._get_frontiers(grid)
+
+        if len(frontiers) == 0 or len(self.robots) == 0:
+            self.previous_state = grid
+            return reward
 
         # Prepare training data
-        inputs = []
-        targets = []
-        for pos in robot_positions:
-            input_tensor = torch.tensor(pos, dtype=torch.float32)
+        inputs: list[torch.Tensor] = []
+        targets: list[torch.Tensor] = []
+        total_reward: float = 0.0
+
+        for _, watcher in self.robots.items():
+            # Input: robot position (x, y) + padding to match network input size
+            pos = [watcher.x, watcher.y]
+            # Pad to 100 features (as network expects)
+            input_features = pos + [0.0] * 98
+            input_tensor = torch.tensor(input_features, dtype=torch.float32)
             inputs.append(input_tensor)
-            next_goal = pos
-            target_tensor = torch.tensor(next_goal, dtype=torch.float32)
+
+            # Target: nearest frontier to this robot
+            robot_pos = np.array([watcher.x, watcher.y])
+            frontier_array = np.array(frontiers)
+            distances = np.linalg.norm(frontier_array - robot_pos, axis=1)
+            nearest_frontier_idx = np.argmin(distances)
+            target_goal = frontiers[nearest_frontier_idx]
+            target_tensor = torch.tensor(target_goal, dtype=torch.float32)
             targets.append(target_tensor)
 
+        # Train network
         inputs_tensor = torch.stack(inputs)
         targets_tensor = torch.stack(targets)
+
         self.optimizer.zero_grad()
         outputs = self.forward(inputs_tensor)
-        loss = self.loss_fn(outputs, targets_tensor)
+        loss: torch.Tensor = self.loss_fn(outputs, targets_tensor)
         loss.backward()
         self.optimizer.step()
-        self.previous_state = grid
 
-        # compute reward
-        for i, pos in enumerate(robot_positions):
-            action = outputs[i].detach().numpy()
-            reward = self.reward_criterion(pos, self.previous_state, action, grid)
-            reward += reward
-
-        # send goals to robots
+        # Send predicted goals to robots and calculate rewards
         for i, (_, watcher) in enumerate(self.robots.items()):
             goal = outputs[i].detach().numpy()
-            watcher.publish_goal(goal[0], goal[1])
+            position = (watcher.x, watcher.y)
+            action = (float(goal[0]), float(goal[1]))
 
-        return reward
+            # Calculate reward using reward_criterion method
+            robot_reward = self.reward_criterion(
+                position, self.previous_state, action, grid
+            )
+            total_reward += robot_reward
+
+            if not watcher.is_moving:  # only publish if robot is stationary
+                watcher.publish_goal(*action)
+                self.parent.publish_point(*action)
+
+        # Average reward across all robots
+        avg_reward = total_reward / len(self.robots)
+
+        self.previous_state = grid
+        return avg_reward
 
     def reward_criterion(
         self,

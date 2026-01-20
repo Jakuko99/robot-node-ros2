@@ -7,16 +7,34 @@ from rclpy.node import Node, Publisher, Subscription
 
 from robot_network.robot_watcher import RobotWatcher
 from robot_network.neural_network import RobotSwarmOptimizerNetwork
+from std_srvs.srv import Trigger
 
 
 class RobotNetwork(Node):
     def __init__(self):
         super().__init__("robot_network_node")
+
         # ----- Parameters -----
         self.declare_parameter("train_network", False)
         self.declare_parameter("network_model_path", "")
         self.declare_parameter("global_map_topic", "global_map")
         self.declare_parameter("goal_marker_topic", "mapping_goals")
+
+        # ----- Variables -----
+        self.current_map: OccupancyGrid = None
+        self.current_map_width: int = 0
+        self.current_map_height: int = 0
+        self.robots: dict[str, RobotWatcher] = {}
+        self.train_network: bool = (
+            self.get_parameter("train_network").get_parameter_value().bool_value
+        )
+        self.optimizer_network = RobotSwarmOptimizerNetwork(
+            train=self.train_network,
+            model_path=self.get_parameter("network_model_path")
+            .get_parameter_value()
+            .string_value,
+            parent=self,
+        )
 
         # ----- Subscribers -----
         self.global_map_subscriber: Subscription[OccupancyGrid] = (
@@ -37,20 +55,13 @@ class RobotNetwork(Node):
             10,
         )
 
-        # ----- Variables -----
-        self.current_map: OccupancyGrid = None
-        self.current_map_width: int = 0
-        self.current_map_height: int = 0
-        self.robots: dict[str, RobotWatcher] = {}
-        self.train_network: bool = (
-            self.get_parameter("train_network").get_parameter_value().bool_value
+        # ----- Services -----
+        self.save_model_service = self.create_service(
+            Trigger,
+            "save_model",
+            self.optimizer_network.save_model,
         )
-        self.optimizer_network = RobotSwarmOptimizerNetwork(
-            train=self.train_network,
-            model_path=self.get_parameter("network_model_path")
-            .get_parameter_value()
-            .string_value,
-        )
+        # ros2 service call /save_model std_srvs/srv/Trigger
 
         self.get_logger().info(f"Robot network node initialized")
 
@@ -68,8 +79,6 @@ class RobotNetwork(Node):
 
     def process_goals(self):
         if self.current_map:
-            width, height = self.current_map_width, self.current_map_height
-
             if self.train_network:
                 self.optimizer_network.train()
                 reward = self.optimizer_network.train_network(self.current_map)

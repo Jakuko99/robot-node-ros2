@@ -223,6 +223,13 @@ class MapMerger(Node):
             merged_data = np.full(
                 (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
             )
+            vote_count = np.zeros_like(merged_data, dtype=np.int16)
+            agreement_score = np.zeros_like(merged_data, dtype=np.int16)
+
+            known_count = np.zeros(
+                (merged_map.info.height, merged_map.info.width), dtype=np.int16
+            )
+            conflict_count = np.zeros_like(known_count)
 
             for frame_id, map_data in local_maps.items():
                 print(
@@ -242,22 +249,42 @@ class MapMerger(Node):
 
                 print(f"Offset: x={offset_x}, y={offset_y}")
 
-                merged_data[
-                    offset_y : local_data.shape[0] + offset_y,
-                    offset_x : local_data.shape[1] + offset_x,
-                ] = np.where(
-                    local_data != -1,
+                ys = slice(offset_y, offset_y + local_data.shape[0])
+                xs = slice(offset_x, offset_x + local_data.shape[1])
+
+                local_known = local_data != -1
+                merged_known = merged_data[ys, xs] != -1
+
+                # Count overlaps
+                overlap = local_known & merged_known
+                conflict = overlap & (local_data != merged_data[ys, xs])
+
+                conflict_count[ys, xs][conflict] += 1
+                known_count[ys, xs][local_known] += 1
+
+                # Original overwrite logic
+                merged_data[ys, xs] = np.where(
+                    local_known,
                     local_data,
-                    merged_data[
-                        offset_y : local_data.shape[0] + offset_y,
-                        offset_x : local_data.shape[1] + offset_x,
-                    ],
+                    merged_data[ys, xs],
                 )
 
             merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)
+
+            overlap_cells = known_count >= 2
+            if np.any(overlap_cells):
+                agreement = 1.0 - (
+                    conflict_count[overlap_cells] / known_count[overlap_cells]
+                )
+                merge_confidence = float(np.mean(agreement))
+            else:
+                merge_confidence = 1.0  # no overlap → no conflict
+
             self.get_logger().info(
-                f"Published merged map. ({merged_map.info.width} x {merged_map.info.height})"
+                f"Published merged map. "
+                f"({merged_map.info.width} x {merged_map.info.height}) | "
+                f"merge confidence: {merge_confidence:.3f}"
             )
 
             for sub in self.map_subscriptions.values():

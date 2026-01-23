@@ -2,7 +2,8 @@ import rclpy
 import numpy as np
 from time import sleep
 from nav_msgs.msg import OccupancyGrid
-from geometry_msgs.msg import PointStamped
+from tf2_msgs.msg import TFMessage
+from geometry_msgs.msg import PointStamped, TransformStamped
 from rclpy.node import Node, Publisher, Subscription
 
 from robot_network.robot_watcher import RobotWatcher
@@ -28,6 +29,8 @@ class RobotNetwork(Node):
         self.train_network: bool = (
             self.get_parameter("train_network").get_parameter_value().bool_value
         )
+        self.static_transforms: dict[str, TFMessage] = {}
+
         self.optimizer_network = RobotSwarmOptimizerNetwork(
             train=self.train_network,
             model_path=self.get_parameter("network_model_path")
@@ -46,6 +49,13 @@ class RobotNetwork(Node):
                 self.map_callback,
                 10,
             )
+        )
+
+        self.tf_subscriber: Subscription[TFMessage] = self.create_subscription(
+            TFMessage,
+            "/tf_static",
+            self.store_transforms,
+            10,
         )
 
         # ----- Publishers -----
@@ -76,6 +86,14 @@ class RobotNetwork(Node):
         )
 
         self.process_goals()
+
+    def store_transforms(self, msg: TFMessage):
+        for transform in msg.transforms:
+            if transform.child_frame_id not in self.static_transforms:
+                self.static_transforms[transform.child_frame_id] = transform
+                self.get_logger().info(
+                    f"Received new static transform for {transform.child_frame_id}"
+                )
 
     def process_goals(self):
         if self.current_map:
@@ -114,6 +132,19 @@ class RobotNetwork(Node):
         point_msg.point.z = 0.0
 
         self.point_publisher.publish(point_msg)
+
+    def apply_transform(
+        self, robot_name: str, point: list[float, float]
+    ) -> list[float, float]:  # Apply static transform to point
+        if robot_name + "_map" in self.static_transforms:
+            transform: TransformStamped = self.static_transforms[robot_name + "_map"]
+            point[0] += transform.transform.translation.x
+            point[1] += transform.transform.translation.y
+            self.get_logger().error(f"Transformed point for {robot_name}: {point}")
+            return point
+        else:
+            self.get_logger().warn(f"No static transform found for {robot_name}_map")
+            return point
 
 
 def main(args=None):

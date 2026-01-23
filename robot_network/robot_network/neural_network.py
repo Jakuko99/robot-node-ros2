@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision import datasets, transforms
-import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from math import exp, sqrt, ceil
 from collections import deque
@@ -35,7 +33,9 @@ class RobotSwarmOptimizerNetwork(nn.Module):
     - Mapping priorities for unexplored areas
     """
 
-    def __init__(self, train: bool = False, model_path: str = "", parent=None):
+    def __init__(
+        self, train: bool = False, model_path: str = "", parent = None
+    ):
         super(RobotSwarmOptimizerNetwork, self).__init__()
         self._train: bool = train
         self.model_path: str = model_path
@@ -145,8 +145,11 @@ class RobotSwarmOptimizerNetwork(nn.Module):
             total_reward += robot_reward
 
             if not watcher.is_moving:  # only publish if robot is stationary
-                watcher.publish_goal(*action)
-                self.parent.publish_point(*action)
+                transformed_action: list[float, float] = self.parent.apply_transform(
+                    watcher.namespace, list(action)
+                )
+                watcher.publish_goal(*transformed_action)
+                self.parent.publish_point(*transformed_action)
 
         # Average reward across all robots
         avg_reward = total_reward / len(self.robots)

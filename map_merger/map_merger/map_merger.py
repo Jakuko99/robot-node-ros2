@@ -289,6 +289,8 @@ class MapMerger(Node):
                 f"({merged_map.info.width} x {merged_map.info.height}) | "
                 f"merge confidence: {merge_confidence:.3f}"
             )
+
+            # publish confidence to topic 
             confidence_msg = Float32()
             confidence_msg.data = merge_confidence
             self.confidence_publisher.publish(confidence_msg)

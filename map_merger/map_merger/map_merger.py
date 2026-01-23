@@ -3,6 +3,7 @@ from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
+from std_msgs.msg import Float32
 import numpy as np
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
@@ -48,6 +49,10 @@ class MapMerger(Node):
         self.static_subscription = self.create_subscription(
             TFMessage, "/tf_static", self.tf_callback, 10
         )
+        self.confidence_publisher = self.create_publisher(
+            Float32, "/merge_confidence", 10
+        )
+
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
 
@@ -223,8 +228,6 @@ class MapMerger(Node):
             merged_data = np.full(
                 (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
             )
-            vote_count = np.zeros_like(merged_data, dtype=np.int16)
-            agreement_score = np.zeros_like(merged_data, dtype=np.int16)
 
             known_count = np.zeros(
                 (merged_map.info.height, merged_map.info.width), dtype=np.int16
@@ -279,13 +282,16 @@ class MapMerger(Node):
                 )
                 merge_confidence = float(np.mean(agreement))
             else:
-                merge_confidence = 1.0  # no overlap → no conflict
+                merge_confidence = 0.0  # no overlap → conflict
 
             self.get_logger().info(
                 f"Published merged map. "
                 f"({merged_map.info.width} x {merged_map.info.height}) | "
                 f"merge confidence: {merge_confidence:.3f}"
             )
+            confidence_msg = Float32()
+            confidence_msg.data = merge_confidence
+            self.confidence_publisher.publish(confidence_msg)
 
             for sub in self.map_subscriptions.values():
                 sub.map_data = None  # reset maps after merging

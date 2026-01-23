@@ -1,29 +1,42 @@
 import rclpy
-import numpy as np
 from rclpy.node import Node
-from tf2_msgs.msg import TFMessage
 from nav_msgs.msg import OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
+from tf2_msgs.msg import TFMessage
+from std_msgs.msg import Float32
+import numpy as np
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
 
 
 class MapSubscription:
-    def __init__(self, robot_name: str, topic_name: str, parent: "MapMerger"):
+    def __init__(self, robot_name: str, node: "MapMerger", topic_name: str):
         self.robot_name: str = robot_name
-        self.parent: "MapMerger" = parent
+        self.node: "MapMerger" = node
         self.topic_name: str = topic_name
 
-        self.subscription = parent.create_subscription(
+        self.subscription = node.create_subscription(
             OccupancyGrid, topic_name, self.map_callback, 10
         )
-        self.update_subscription = parent.create_subscription(
+        self.update_subscription = node.create_subscription(
             OccupancyGridUpdate, topic_name + "_updates", self.update_map_callback, 10
         )
         self.map_data: OccupancyGrid = None
+        self.map_position_x: float = 0.0
+        self.map_position_y: float = 0.0
+
+        self.map_width: int = 0
+        self.map_height: int = 0
+        self.map_resolution: float = 0.0
 
     def map_callback(self, msg: OccupancyGrid):
         self.map_data: OccupancyGrid = msg
-        self.parent.merge_maps()  # call parent node method to merge maps
+        self.map_position_x = msg.info.origin.position.x
+        self.map_position_y = msg.info.origin.position.y
+        self.map_width = msg.info.width
+        self.map_height = msg.info.height
+        self.map_resolution = msg.info.resolution
+
+        self.node.merge_maps()
 
     def update_map_callback(self, msg):
         pass
@@ -36,6 +49,10 @@ class MapMerger(Node):
         self.static_subscription = self.create_subscription(
             TFMessage, "/tf_static", self.tf_callback, 10
         )
+        self.confidence_publisher = self.create_publisher(
+            Float32, "/merge_confidence", 10
+        )
+
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
 
@@ -63,17 +80,14 @@ class MapMerger(Node):
                 if robot_name not in self.map_subscriptions:
                     topic_name: str = f"/{robot_name}/map"
                     self.map_subscriptions[robot_name] = MapSubscription(
-                        robot_name=robot_name,
-                        topic_name=topic_name,
-                        parent=self,
+                        robot_name, self, topic_name
                     )
-
                     self.get_logger().info(
                         f"Subscribed to map topic for robot {robot_name} at {topic_name}"
                     )
 
     def merge_maps(self):
-        local_maps: dict[str, OccupancyGrid] = {
+        local_maps = {
             sub.map_data.header.frame_id: sub.map_data
             for sub in self.map_subscriptions.values()
             if sub.map_data is not None
@@ -157,32 +171,32 @@ class MapMerger(Node):
                 for frame_id, map_data in local_maps.items()
             }
 
-            min_x: float = min(
+            min_x = min(
                 [s[0] for s in s_dict.values()]
                 + [t[0] for t in t_dict.values()]
                 + [u[0] for u in u_dict.values()]
                 + [v[0] for v in v_dict.values()]
             )
-            max_x: float = max(
+            max_x = max(
                 [s[0] for s in s_dict.values()]
                 + [t[0] for t in t_dict.values()]
                 + [u[0] for u in u_dict.values()]
                 + [v[0] for v in v_dict.values()]
             )
-            min_y: float = min(
+            min_y = min(
                 [s[1] for s in s_dict.values()]
                 + [t[1] for t in t_dict.values()]
                 + [u[1] for u in u_dict.values()]
                 + [v[1] for v in v_dict.values()]
             )
-            max_y: float = max(
+            max_y = max(
                 [s[1] for s in s_dict.values()]
                 + [t[1] for t in t_dict.values()]
                 + [u[1] for u in u_dict.values()]
                 + [v[1] for v in v_dict.values()]
             )
 
-            merged_map: OccupancyGrid = OccupancyGrid()
+            merged_map = OccupancyGrid()
 
             merged_map.info.resolution = local_maps[
                 list(local_maps.keys())[0]
@@ -204,11 +218,10 @@ class MapMerger(Node):
             merged_map.header.frame_id = "global_map"
             merged_map.header.stamp = self.get_clock().now().to_msg()
 
-            # print(
-            #     f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
-            # )
-
-            self.get_logger().debug(
+            print(
+                f"Merged map size: {merged_map.info.height} x {merged_map.info.width}"
+            )
+            self.get_logger().warning(
                 f"Merged map origin: x={merged_map.info.origin.position.x}, y={merged_map.info.origin.position.y}"
             )
 
@@ -216,43 +229,69 @@ class MapMerger(Node):
                 (merged_map.info.height, merged_map.info.width), -1, dtype=np.int8
             )
 
-            for frame_id, map_data in local_maps.items():
-                # print(
-                #     f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
-                # )
+            known_count = np.zeros(
+                (merged_map.info.height, merged_map.info.width), dtype=np.int16
+            )
+            conflict_count = np.zeros_like(known_count)
 
-                offset_x: int = int(
+            for frame_id, map_data in local_maps.items():
+                print(
+                    f"frame: {frame_id} size: {map_data.info.height} x {map_data.info.width}"
+                )
+
+                offset_x = int(
                     (s_dict[frame_id][0] - min_x) / merged_map.info.resolution
                 )
-                offset_y: int = int(
+                offset_y = int(
                     (s_dict[frame_id][1] - min_y) / merged_map.info.resolution
                 )
 
-                local_data: np.ndarray = np.array(map_data.data).reshape(
+                local_data = np.array(map_data.data).reshape(
                     (map_data.info.height, map_data.info.width)
                 )
 
-                self.get_logger().debug(
-                    f"Offset: x={offset_x}, y={offset_y} frame={frame_id}"
-                )
+                print(f"Offset: x={offset_x}, y={offset_y}")
 
-                merged_data[
-                    offset_y : local_data.shape[0] + offset_y,
-                    offset_x : local_data.shape[1] + offset_x,
-                ] = np.where(
-                    local_data != -1,
+                ys = slice(offset_y, offset_y + local_data.shape[0])
+                xs = slice(offset_x, offset_x + local_data.shape[1])
+
+                local_known = local_data != -1
+                merged_known = merged_data[ys, xs] != -1
+
+                # Count overlaps
+                overlap = local_known & merged_known
+                conflict = overlap & (local_data != merged_data[ys, xs])
+
+                conflict_count[ys, xs][conflict] += 1
+                known_count[ys, xs][local_known] += 1
+
+                # Original overwrite logic
+                merged_data[ys, xs] = np.where(
+                    local_known,
                     local_data,
-                    merged_data[
-                        offset_y : local_data.shape[0] + offset_y,
-                        offset_x : local_data.shape[1] + offset_x,
-                    ],
+                    merged_data[ys, xs],
                 )
 
             merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)
+
+            overlap_cells = known_count >= 2
+            if np.any(overlap_cells):
+                agreement = 1.0 - (
+                    conflict_count[overlap_cells] / known_count[overlap_cells]
+                )
+                merge_confidence = float(np.mean(agreement))
+            else:
+                merge_confidence = 0.0  # no overlap → conflict
+
             self.get_logger().info(
-                f"Published merged map. ({merged_map.info.width} x {merged_map.info.height})"
+                f"Published merged map. "
+                f"({merged_map.info.width} x {merged_map.info.height}) | "
+                f"merge confidence: {merge_confidence:.3f}"
             )
+            confidence_msg = Float32()
+            confidence_msg.data = merge_confidence
+            self.confidence_publisher.publish(confidence_msg)
 
             for sub in self.map_subscriptions.values():
                 sub.map_data = None  # reset maps after merging

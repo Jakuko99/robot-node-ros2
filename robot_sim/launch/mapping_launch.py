@@ -109,5 +109,10 @@ def generate_launch_description():
                     }
                 ],
             ),
+            Node(
+                package="map_merger",
+                executable="map_merger",
+                output="screen"
+            ),
         ]
     )

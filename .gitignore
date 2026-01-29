@@ -5,3 +5,4 @@ robot_network/__pycache__/
 robot_network/resource/dataset/
 robot_network/resource/dataset_compressed/
 robot_network/robot_network/build/
+robot_sim/gazebo/random_environment.sdf

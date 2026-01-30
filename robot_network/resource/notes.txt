@@ -2,3 +2,11 @@
 - 3d embedovanie pomocou tranformera, prva veryia s fixnym ucenim a jednym agentom
 - deep research cez chatgpt
 - torchRL framework, PPO metoda, pozicne embedovania
+- riesenie pomocou attention criterion
+
+https://arxiv.org/abs/2301.03398?utm_source=chatgpt.com
+https://arxiv.org/abs/2412.20049?utm_source=chatgpt.com
+https://arxiv.org/abs/2601.01139?utm_source=chatgpt.com
+https://arxiv.org/abs/2502.20217?utm_source=chatgpt.com
+https://arxiv.org/abs/2412.20049?utm_source=chatgpt.com
+https://www.mdpi.com/1424-8220/24/16/5083?utm_source=chatgpt.com

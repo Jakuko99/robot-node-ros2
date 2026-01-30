@@ -1,0 +1,4 @@
+- tramnsformer, spracovanie vrstiev sekvencne, dalsia sekvenvcia sa pozera na vypstup tej predoslej
+- 3d embedovanie pomocou tranformera, prva veryia s fixnym ucenim a jednym agentom
+- deep research cez chatgpt
+- torchRL framework, PPO metoda, pozicne embedovania

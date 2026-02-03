@@ -16,6 +16,7 @@ def generate_launch_description():
                     {
                         "train_network": True,
                         "network_model_path": f"{resource_dir}/robot_swarm_optimizer.pth",
+                        # "trained_model_path": f"{resource_dir}/robot_swarm_optimizer1.pth",
                         "global_map_topic": "global_map",
                         "goal_marker_topic": "mapping_goals",
                     }

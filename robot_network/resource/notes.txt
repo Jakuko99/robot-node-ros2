@@ -1,7 +1,8 @@
-- tramnsformer, spracovanie vrstiev sekvencne, dalsia sekvenvcia sa pozera na vypstup tej predoslej
-- 3d embedovanie pomocou tranformera, prva veryia s fixnym ucenim a jednym agentom
+- transformer, spracovanie vrstiev sekvencne, dalsia sekvenvcia sa pozera na vystup tej predoslej
+- 3d embedovanie pomocou tranformera, prva verzia s fixnym ucenim a jednym agentom
+- priradzovanie cielov s kontrolou predosleho cielu pre prevenciu backtrackingu
 - deep research cez chatgpt
-- torchRL framework, PPO metoda, pozicne embedovania
+- torchRL framework, PPO (Proximal Policy Optimization) metoda, pozicne embedovania
 - riesenie pomocou attention criterion
 
 https://arxiv.org/abs/2301.03398?utm_source=chatgpt.com
@@ -10,8 +11,3 @@ https://arxiv.org/abs/2601.01139?utm_source=chatgpt.com
 https://arxiv.org/abs/2502.20217?utm_source=chatgpt.com
 https://arxiv.org/abs/2412.20049?utm_source=chatgpt.com
 https://www.mdpi.com/1424-8220/24/16/5083?utm_source=chatgpt.com
-
-- generovanie prostredia pomocou algoritmu ako bludisko, ...
-- definovanie priestoru ako 2D, nasledny prevod do Gazebo pridanim ich vysky
-- vstup poloh robotov do siete ako transformer, pre zjednodusenie vstupov
-- priradzovanie cielov s kontrolou predosleho cielu pre prevenciu backtrackingu

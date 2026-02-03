@@ -8,6 +8,7 @@ from rclpy.node import Node, Publisher, Subscription
 
 from robot_network.robot_watcher import RobotWatcher
 from robot_network.neural_network import RobotSwarmOptimizerNetwork
+from robot_network.reinforcement_network import ReinforcementSwarmNetwork
 from std_srvs.srv import Trigger
 
 
@@ -18,6 +19,7 @@ class RobotNetwork(Node):
         # ----- Parameters -----
         self.declare_parameter("train_network", False)
         self.declare_parameter("network_model_path", "")
+        self.declare_parameter("trained_model_path", "")
         self.declare_parameter("global_map_topic", "global_map")
         self.declare_parameter("goal_marker_topic", "mapping_goals")
 
@@ -31,9 +33,12 @@ class RobotNetwork(Node):
         )
         self.static_transforms: dict[str, TFMessage] = {}
 
-        self.optimizer_network = RobotSwarmOptimizerNetwork(
+        self.optimizer_network = ReinforcementSwarmNetwork(
             train=self.train_network,
             model_path=self.get_parameter("network_model_path")
+            .get_parameter_value()
+            .string_value,
+            trained_model_path=self.get_parameter("trained_model_path")
             .get_parameter_value()
             .string_value,
             parent=self,
@@ -104,6 +109,7 @@ class RobotNetwork(Node):
 
             else:
                 self.optimizer_network.eval()
+                self.optimizer_network.train_network(self.current_map)
 
         self.discover_robots()
         for watcher_node in self.robots.values():

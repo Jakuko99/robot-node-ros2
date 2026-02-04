@@ -1643,10 +1643,10 @@
           </surface>
         </collision>
         <visual name='Wall_23_Visual_3'>
-          <pose frame=''>-0.431435 0 2.25 0 -0 0</pose>
+          <pose frame=''>-0.431435 0 1.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
           <material>
@@ -1663,10 +1663,10 @@
         <collision name='Wall_23_Collision_3'>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
-          <pose frame=''>-0.431435 0 2.25 0 -0 0</pose>
+          <pose frame=''>-0.431435 0 1.25 0 -0 0</pose>
           <max_contacts>10</max_contacts>
           <surface>
             <contact>
@@ -1682,10 +1682,10 @@
           </surface>
         </collision>
         <visual name='Wall_23_Visual_4'>
-          <pose frame=''>0.478048 0 2.25 0 -0 0</pose>
+          <pose frame=''>0.478048 0 1.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
           <material>
@@ -1702,10 +1702,10 @@
         <collision name='Wall_23_Collision_4'>
           <geometry>
             <box>
-              <size>0.9 0.15 0.5</size>
+              <size>0.9 0.15 2.5</size>
             </box>
           </geometry>
-          <pose frame=''>0.478048 0 2.25 0 -0 0</pose>
+          <pose frame=''>0.478048 0 1.25 0 -0 0</pose>
           <max_contacts>10</max_contacts>
           <surface>
             <contact>
@@ -4023,7 +4023,7 @@
       <name>kris_robot1</name>
       <pose>0 0 0.5 0 -0 3.14</pose>
     </include>
-    <include>
+    <!--<include>
       <uri>file://src/robot_sim/gazebo/kris_robot1</uri>
       <name>kris_robot2</name>
       <pose>-1.2 0 0.5 0 -0 3.14</pose>
@@ -4037,7 +4037,7 @@
       <uri>file://src/robot_sim/gazebo/kris_robot3</uri>
       <name>kris_robot4</name>
       <pose>0 -1.2 0.5 0 -0 3.14</pose>
-    </include>
+    </include> -->
     <light name='sun' type='directional'>
       <pose>0 0 10 0 -0 0</pose>
       <cast_shadows>true</cast_shadows>

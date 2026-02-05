@@ -6,18 +6,12 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /LaserScan1
         - /LaserScan1/Topic1
-        - /TF1
         - /TF1/Tree1
         - /Map1
-        - /Odometry1
         - /Odometry1/Shape1
-        - /Path1
-        - /Path2
         - /Map2
         - /Map3
-        - /PointStamped1
       Splitter Ratio: 0.5
     Tree Height: 814
   - Class: rviz_common/Selection
@@ -204,34 +198,6 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /plan
       Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz_default_plugins/Path
-      Color: 26; 95; 180
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.029999999329447746
-      Name: Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /plan1
-      Value: true
     - Alpha: 0.5
       Class: rviz_default_plugins/Map
       Color Scheme: costmap
@@ -278,7 +244,7 @@ Visualization Manager:
       Class: rviz_default_plugins/PointStamped
       Color: 255; 25; 0
       Enabled: true
-      History Length: 10
+      History Length: 50
       Name: PointStamped
       Radius: 0.20000000298023224
       Topic:

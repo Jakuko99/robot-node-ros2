@@ -12,7 +12,7 @@ from std_srvs.srv._trigger import Trigger_Request, Trigger_Response
 from robot_network.robot_watcher import RobotWatcher
 
 # ----- Hyperparameters -----
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 NUM_EPOCHS = 10
 LEARNING_RATE = 0.0003
 GAMMA = 0.99  # Discount factor for PPO
@@ -718,16 +718,24 @@ class ReinforcementSwarmNetwork(nn.Module):
                 entropy = -new_log_prob
                 entropy_loss = -ENTROPY_COEF * entropy
 
-                # Total loss
-                total_loss = actor_loss + VALUE_COEF * value_loss + entropy_loss
+                try:
+                    # Total loss
+                    total_loss = actor_loss + VALUE_COEF * value_loss + entropy_loss
 
-                # Update networks
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
-                total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=0.5)
-                self.actor_optimizer.step()
-                self.critic_optimizer.step()
+                    # Update networks
+                    self.actor_optimizer.zero_grad()
+                    self.critic_optimizer.zero_grad()
+                    total_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=0.5)
+                    self.actor_optimizer.step()
+                    self.critic_optimizer.step()
+                except RuntimeError as e:
+                    if self.parent:
+                        self.parent.get_logger().warn(
+                            f"Training step {epoch}, experience {i}: "
+                            f"RuntimeError during backpropagation: {str(e)}"
+                        )
+                    continue
 
         # Clear experience buffer
         self.states.clear()

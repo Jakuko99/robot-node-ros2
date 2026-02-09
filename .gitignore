@@ -1,2 +1,4 @@
 **/test/
 __pycache__/
+*.pth
+random_environment.sdf

@@ -15,12 +15,14 @@ from launch_ros.actions import PushRosNamespace, SetRemap
 
 # logging.root.setLevel(logging.WARN)
 
+
 def generate_launch_description():
     bringup_dir = get_package_share_directory("nav2_bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
     return LaunchDescription(
         [
             SetRemap("cmd_vel", "kris_robot1/cmd_vel"),
+            SetRemap("goal_pose", "kris_robot1/goal_pose"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "navigation_launch.py")

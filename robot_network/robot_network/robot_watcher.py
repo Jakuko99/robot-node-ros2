@@ -1,9 +1,11 @@
 from rclpy.action import ActionClient
 from rclpy.task import Future
-from nav2_msgs.action import FollowWaypoints
+from nav2_msgs.action import NavigateToPose
 from rclpy.node import Node, Publisher, Subscription
 from nav_msgs.msg import OccupancyGrid, Odometry
+from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Twist, PoseStamped
+import math
 
 
 class RobotWatcher(Node):
@@ -12,7 +14,7 @@ class RobotWatcher(Node):
         self.namespace: str = robot_name
 
         self.nav_client: ActionClient = ActionClient(
-            self, FollowWaypoints, f"follow_waypoints"
+            self, NavigateToPose, f"navigate_to_pose"
         )
         self.send_goal_future = None
         self.get_logger().info(
@@ -87,23 +89,46 @@ class RobotWatcher(Node):
         msg.pose.position.x = x
         msg.pose.position.y = y
         msg.pose.position.z = 0.0
-        msg.pose.orientation.z = theta
+
+        if theta == 0.0:
+            dx = x - self.x
+            dy = y - self.y
+            theta = math.atan2(dy, dx)
+
+        # Convert theta to quaternion for orientation
+        qz = math.sin(theta / 2.0)
+        qw = math.cos(theta / 2.0)
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
 
         self.last_goal = msg
         # self.goal_publisher.publish(msg)
+
         self.send_goal_future: Future = self.nav_client.send_goal_async(
-            FollowWaypoints.Goal(poses=[msg])
+            NavigateToPose.Goal(pose=msg)
         )
-        self.send_goal_future.add_done_callback(self.goal_done_callback)
+        self.send_goal_future.add_done_callback(self.goal_response_callback)
         self.get_logger().info(
             f"Published new goal for {self.namespace} [{x}, {y}, {theta}]"
         )
         self.moving = True
 
-    def goal_done_callback(self, future):
+    def goal_response_callback(self, future: Future):
+        result = future.result()  # get result of sending the goal
+        result_future = result.get_result_async()
+        result_future.add_done_callback(self.goal_done_callback)
+
+    def goal_done_callback(self, future: Future):
         result = future.result()
-        self.get_logger().info(f"Goal completed with result: {result}")
-        self.moving = False
+        if result.status == GoalStatus.STATUS_SUCCEEDED:  # SUCCEEDED
+            self.get_logger().info(f"Goal completed successfully for {self.namespace}")
+        elif result.status == GoalStatus.STATUS_ABORTED:  # ABORTED
+            self.get_logger().warn(f"Goal was aborted for {self.namespace}")
+        else:
+            self.get_logger().warn(
+                f"Goal failed with status {result.status} for {self.namespace}"
+            )
+        self.moving = False  # goal is done, so we are no longer moving
 
     @property
     def is_moving(self) -> bool:

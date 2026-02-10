@@ -501,17 +501,18 @@ class ReinforcementSwarmNetwork(nn.Module):
         advantages = []
         gae = 0
 
-        values = [v.item() for v in values]
+        # Convert values to scalars, handling None values
+        values_scalar = [v.item() if v is not None else 0.0 for v in values]
         next_value = 0
 
         for t in reversed(range(len(rewards))):
-            delta = rewards[t] + GAMMA * next_value * (1 - dones[t]) - values[t]
+            delta = rewards[t] + GAMMA * next_value * (1 - dones[t]) - values_scalar[t]
             gae = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
             advantages.insert(0, gae)
-            next_value = values[t]
+            next_value = values_scalar[t]
 
         advantages = torch.tensor(advantages, dtype=torch.float32)
-        returns = advantages + torch.tensor(values, dtype=torch.float32)
+        returns = advantages + torch.tensor(values_scalar, dtype=torch.float32)
 
         return advantages, returns
 
@@ -641,13 +642,13 @@ class ReinforcementSwarmNetwork(nn.Module):
                     f"avg_reward={avg_reward:.3f}, consecutive_zeros={self.consecutive_zero_rewards}"
                 )
 
-            # Store experience
+            # Store experience (detach tensors to avoid graph reuse)
             self.states.append((robot_positions, frontiers))
             self.actions.append(goals)
             self.rewards.append(reward)
-            self.values.append(value)
+            self.values.append(value.detach() if value is not None else None)
             if log_prob is not None:
-                self.log_probs.append(log_prob)
+                self.log_probs.append(log_prob.detach())
             self.dones.append(False)
 
             # Train after collecting enough experiences
@@ -681,7 +682,7 @@ class ReinforcementSwarmNetwork(nn.Module):
                 robot_positions, frontiers = self.states[i]
                 old_action = self.actions[i]
 
-                # Prepare tensors
+                # Prepare tensors (fresh tensors for each forward pass)
                 robot_tensor = torch.tensor(
                     robot_positions, dtype=torch.float32
                 ).unsqueeze(0)
@@ -692,14 +693,17 @@ class ReinforcementSwarmNetwork(nn.Module):
                     old_action, dtype=torch.float32
                 ).unsqueeze(0)
 
-                # Forward pass
+                # Forward pass (creates fresh computation graph)
                 new_action, new_value, _ = self.forward(robot_tensor, frontier_tensor)
 
                 # Compute ratios for PPO
                 new_log_prob = -F.mse_loss(new_action, old_action_tensor)
-                old_log_prob = (
-                    self.log_probs[i] if i < len(self.log_probs) else new_log_prob
-                )
+
+                # Use detached old_log_prob (no graph attached)
+                if i < len(self.log_probs):
+                    old_log_prob = self.log_probs[i]  # Already detached when stored
+                else:
+                    old_log_prob = new_log_prob.detach()  # Detach if not available
 
                 ratio = torch.exp(new_log_prob - old_log_prob)
 
@@ -718,24 +722,16 @@ class ReinforcementSwarmNetwork(nn.Module):
                 entropy = -new_log_prob
                 entropy_loss = -ENTROPY_COEF * entropy
 
-                try:
-                    # Total loss
-                    total_loss = actor_loss + VALUE_COEF * value_loss + entropy_loss
+                # Total loss
+                total_loss = actor_loss + VALUE_COEF * value_loss + entropy_loss
 
-                    # Update networks
-                    self.actor_optimizer.zero_grad()
-                    self.critic_optimizer.zero_grad()
-                    total_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=0.5)
-                    self.actor_optimizer.step()
-                    self.critic_optimizer.step()
-                except RuntimeError as e:
-                    if self.parent:
-                        self.parent.get_logger().warn(
-                            f"Training step {epoch}, experience {i}: "
-                            f"RuntimeError during backpropagation: {str(e)}"
-                        )
-                    continue
+                # Update networks
+                self.actor_optimizer.zero_grad()
+                self.critic_optimizer.zero_grad()
+                total_loss.backward()  # Fresh graph each time, safe to backward
+                torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=0.5)
+                self.actor_optimizer.step()
+                self.critic_optimizer.step()
 
         # Clear experience buffer
         self.states.clear()

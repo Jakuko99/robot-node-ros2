@@ -1,4 +1,4 @@
 **/test/
 __pycache__/
-*.pth
+*.pt
 robot_sim/gazebo/random_environment.sdf

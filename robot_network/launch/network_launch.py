@@ -1,5 +1,4 @@
 import os
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -15,10 +14,10 @@ def generate_launch_description():
                 parameters=[
                     {
                         "train_network": True,
-                        "network_model_path": f"{resource_dir}/robot_swarm_optimizer.pth",
-                        # "trained_model_path": f"{resource_dir}/robot_swarm_optimizer1.pth",
+                        "network_model_path": f"{resource_dir}",
                         "global_map_topic": "global_map",
                         "goal_marker_topic": "mapping_goals",
+                        "goal_frame_id": "global_map",
                     }
                 ],
             ),

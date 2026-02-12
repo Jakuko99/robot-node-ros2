@@ -1,6 +1,7 @@
 **/test/
 __pycache__/
 *.bkp
+*.pt
 robot_network/__pycache__/
 robot_network/resource/dataset/
 robot_network/resource/dataset_compressed/

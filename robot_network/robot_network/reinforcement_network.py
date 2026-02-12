@@ -6,13 +6,14 @@ from scipy.spatial import cKDTree
 from math import exp, sqrt, ceil
 from collections import deque
 import numpy as np
+import os
 
 from nav_msgs.msg import OccupancyGrid
 from std_srvs.srv._trigger import Trigger_Request, Trigger_Response
 from robot_network.robot_watcher import RobotWatcher
 
 # ----- Hyperparameters -----
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 NUM_EPOCHS = 10
 LEARNING_RATE = 0.0003
 GAMMA = 0.99  # Discount factor for PPO
@@ -20,6 +21,8 @@ LAMBDA = 0.95  # GAE parameter
 CLIP_EPSILON = 0.2  # PPO clipping parameter
 VALUE_COEF = 0.5  # Value loss coefficient
 ENTROPY_COEF = 0.01  # Entropy bonus coefficient
+MAX_REGENERATION_ATTEMPTS = 3  # Maximum attempts to regenerate output if reward is zero
+NO_PROGRESS_PENALTY = -2.0  # Penalty for no exploration progress
 
 # ----- Frontier Detection Parameters -----
 MIN_SAFETY_MARGIN = 0.5
@@ -237,19 +240,18 @@ class ReinforcementSwarmNetwork(nn.Module):
 
     def __init__(
         self,
+        robot_watcher: RobotWatcher,
         train: bool = False,
         model_path: str = "",
-        trained_model_path: str = "",
         parent=None,
     ):
         super(ReinforcementSwarmNetwork, self).__init__()
 
         self._train: bool = train
         self.model_path: str = model_path
-        self.trained_model_path: str = trained_model_path
         self.previous_state: OccupancyGrid = None
-        self.previous_goals: dict[str, tuple[float, float]] = {}  # Track previous goals
-        self.robots: dict[str, RobotWatcher] = {}
+        self.previous_goal: tuple[float, float] = None  # Track previous goal
+        self.robot: RobotWatcher = robot_watcher
         self.parent = parent
 
         # Embedding layers
@@ -291,18 +293,23 @@ class ReinforcementSwarmNetwork(nn.Module):
         self.log_probs = []
         self.dones = []
 
+        # Training statistics
+        self.consecutive_zero_rewards = 0
+        self.total_training_reward = 0.0
+        self.training_steps = 0
+
         # Load pretrained model if provided
-        if self.trained_model_path and self.trained_model_path != "":
+        if os.path.exists(self.model_path) and self.model_path != "":
             try:
-                self.load_model(self.trained_model_path)
+                self.load_model(self.model_path)
                 if parent:
                     parent.get_logger().info(
-                        f"Loaded pretrained model from {self.trained_model_path}"
+                        f"Loaded pretrained model from {self.model_path}"
                     )
             except Exception as e:
                 if parent:
                     parent.get_logger().warn(
-                        f"Failed to load model from {self.trained_model_path}: {str(e)}"
+                        f"Failed to load model from {self.model_path}: {str(e)}"
                     )
 
     def save_model(
@@ -340,11 +347,6 @@ class ReinforcementSwarmNetwork(nn.Module):
         self.attention_criterion.load_state_dict(checkpoint["attention_criterion"])
         self.actor.load_state_dict(checkpoint["actor"])
         self.critic.load_state_dict(checkpoint["critic"])
-
-    def add_robot(self, robot_name: str, robot_watcher: RobotWatcher):
-        if robot_name not in self.robots:
-            self.robots[robot_name] = robot_watcher
-            self.previous_goals[robot_name] = None
 
     def forward(
         self,
@@ -400,25 +402,29 @@ class ReinforcementSwarmNetwork(nn.Module):
         return goal_positions, state_value, attention_weights
 
     def select_action(
-        self, robot_positions: np.ndarray, frontiers: list[tuple[float, float]]
-    ) -> tuple[list[tuple[float, float]], torch.Tensor, torch.Tensor]:
+        self,
+        robot_position: tuple[float, float, float],
+        frontiers: list[tuple[float, float]],
+        add_exploration_noise: bool = False,
+    ) -> tuple[tuple[float, float], torch.Tensor, torch.Tensor]:
         """
-        Select actions (goals) for robots with backtracking prevention.
+        Select action (goal) for the robot with backtracking prevention.
 
         Args:
-            robot_positions: List of (x, y, theta) for each robot
+            robot_position: (x, y, theta) for the robot
             frontiers: List of frontier centroids (x, y)
+            add_exploration_noise: If True, add noise to encourage exploration (used when regenerating)
 
         Returns:
-            goals: List of (x, y) goals for each robot
+            goal: (x, y) goal for the robot
             log_prob: Log probability of the action
             value: State value estimate
         """
-        if len(robot_positions) == 0 or len(frontiers) == 0:
-            return [], None, None
+        if len(frontiers) == 0:
+            return None, None, None
 
         # Prepare tensors
-        robot_tensor = torch.tensor(robot_positions, dtype=torch.float32).unsqueeze(0)
+        robot_tensor = torch.tensor([robot_position], dtype=torch.float32).unsqueeze(0)
         frontier_tensor = torch.tensor(frontiers, dtype=torch.float32).unsqueeze(0)
 
         # Forward pass
@@ -427,45 +433,46 @@ class ReinforcementSwarmNetwork(nn.Module):
                 robot_tensor, frontier_tensor
             )
 
-        # Convert to list of goals
-        goals = goal_positions[0].detach().numpy().tolist()
+            # Add exploration noise if regenerating due to zero reward
+            if add_exploration_noise:
+                noise = torch.randn_like(goal_positions) * 0.5
+                goal_positions = goal_positions + noise
+
+        # Convert to goal (single robot)
+        goal = tuple(goal_positions[0, 0].detach().numpy().tolist())
 
         # Backtracking prevention: check if goal is too close to previous goal
-        robot_names = list(self.robots.keys())
-        for i, robot_name in enumerate(robot_names[: len(goals)]):
-            prev_goal = self.previous_goals.get(robot_name)
-            if prev_goal is not None:
-                current_goal = goals[i]
-                distance = sqrt(
-                    (current_goal[0] - prev_goal[0]) ** 2
-                    + (current_goal[1] - prev_goal[1]) ** 2
-                )
+        if self.previous_goal is not None:
+            distance = sqrt(
+                (goal[0] - self.previous_goal[0]) ** 2
+                + (goal[1] - self.previous_goal[1]) ** 2
+            )
 
-                # If new goal is too close to previous goal, find alternative
-                if distance < 0.5:  # Threshold for backtracking
-                    # Find next best frontier from attention weights
-                    attn = attention_weights[0, i].detach().numpy()
-                    sorted_indices = np.argsort(attn)[::-1]
+            # If new goal is too close to previous goal, find alternative
+            if distance < 0.5:  # Threshold for backtracking
+                # Find next best frontier from attention weights
+                attn = attention_weights[0, 0].detach().numpy()
+                sorted_indices = np.argsort(attn)[::-1]
 
-                    for idx in sorted_indices[1:]:  # Skip the top choice
-                        alternative_goal = frontiers[idx]
-                        alt_distance = sqrt(
-                            (alternative_goal[0] - prev_goal[0]) ** 2
-                            + (alternative_goal[1] - prev_goal[1]) ** 2
-                        )
-                        if alt_distance >= 0.5:
-                            goals[i] = alternative_goal
-                            break
+                for idx in sorted_indices[1:]:  # Skip the top choice
+                    alternative_goal = frontiers[idx]
+                    alt_distance = sqrt(
+                        (alternative_goal[0] - self.previous_goal[0]) ** 2
+                        + (alternative_goal[1] - self.previous_goal[1]) ** 2
+                    )
+                    if alt_distance >= 0.5:
+                        goal = alternative_goal
+                        break
 
-            # Update previous goal
-            self.previous_goals[robot_name] = tuple(goals[i])
+        # Update previous goal
+        self.previous_goal = goal
 
         # Compute log probability (simplified for continuous actions)
         log_prob = -torch.nn.functional.mse_loss(
             goal_positions, goal_positions.detach()
         )
 
-        return goals, log_prob, state_value
+        return goal, log_prob, state_value
 
     def compute_gae(
         self, rewards: list[float], values: list[torch.Tensor], dones: list[bool]
@@ -485,17 +492,18 @@ class ReinforcementSwarmNetwork(nn.Module):
         advantages = []
         gae = 0
 
-        values = [v.item() for v in values]
+        # Convert values to scalars, handling None values
+        values_scalar = [v.item() if v is not None else 0.0 for v in values]
         next_value = 0
 
         for t in reversed(range(len(rewards))):
-            delta = rewards[t] + GAMMA * next_value * (1 - dones[t]) - values[t]
+            delta = rewards[t] + GAMMA * next_value * (1 - dones[t]) - values_scalar[t]
             gae = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
             advantages.insert(0, gae)
-            next_value = values[t]
+            next_value = values_scalar[t]
 
         advantages = torch.tensor(advantages, dtype=torch.float32)
-        returns = advantages + torch.tensor(values, dtype=torch.float32)
+        returns = advantages + torch.tensor(values_scalar, dtype=torch.float32)
 
         return advantages, returns
 
@@ -516,55 +524,113 @@ class ReinforcementSwarmNetwork(nn.Module):
         # Get frontiers
         frontiers = self._get_frontiers(grid)
 
-        if len(frontiers) == 0 or len(self.robots) == 0:
+        if len(frontiers) == 0:
             self.previous_state = grid
             return None
 
-        # Prepare robot positions
-        robot_positions = []
-        robot_names = []
-        for name, watcher in self.robots.items():
-            robot_positions.append([watcher.x, watcher.y, watcher.theta])
-            robot_names.append(name)
+        # Get robot position
+        robot_position = (self.robot.x, self.robot.y, self.robot.theta)
 
-        # Select actions
-        goals, log_prob, value = self.select_action(robot_positions, frontiers)
+        # Attempt to generate actions with good reward
+        best_goal = None
+        best_reward = float("-inf")
+        best_log_prob = None
+        best_value = None
 
-        if goals is None:
+        for attempt in range(MAX_REGENERATION_ATTEMPTS):
+            # Add exploration noise for regeneration attempts after the first
+            add_noise = attempt > 0
+            goal, log_prob, value = self.select_action(
+                robot_position, frontiers, add_noise
+            )
+
+            if goal is None:
+                continue
+
+            # Calculate potential reward for these goals
+            if self._train:
+                # Calculate exploration reward
+                current_explored = np.sum(np.array(grid.data) != -1)
+                previous_explored = np.sum(np.array(self.previous_state.data) != -1)
+                exploration_progress = current_explored - previous_explored
+
+                # Reward based on percentage increase in explored area
+                total_cells = len(grid.data)
+                reward = float(exploration_progress) / max(total_cells, 1) * 100.0
+
+                # Apply negative reward for no progress
+                if exploration_progress <= 0:
+                    reward = NO_PROGRESS_PENALTY
+                    # Increase penalty for consecutive zero rewards
+                    reward -= self.consecutive_zero_rewards * 0.5
+
+                # Additional reward shaping for better exploration
+                reward += self._compute_potential_reward(
+                    robot_position, goal, frontiers, grid
+                )
+
+                # Keep track of best attempt
+                if reward > best_reward:
+                    best_reward = reward
+                    best_goal = goal
+                    best_log_prob = log_prob
+                    best_value = value
+
+                # If we got a positive reward, use this goal
+                if reward > 0:
+                    break
+            else:
+                # In inference mode, use first attempt
+                best_goal = goal
+                best_log_prob = log_prob
+                best_value = value
+                break
+
+        # Use the best goal found
+        goal = best_goal
+        log_prob = best_log_prob
+        value = best_value
+        reward = best_reward if self._train else None
+
+        if goal is None:
             self.previous_state = grid
             return None
 
-        # Publish goals to robots
-        for i, robot_name in enumerate(robot_names):
-            if i < len(goals):
-                watcher = self.robots[robot_name]
-                goal = goals[i]
+        # Publish goal to robot
+        if not self.robot.is_moving:
+            transformed_action = self.parent.apply_transform(
+                self.robot.namespace, list(goal)
+            )
+            self.robot.publish_goal(*transformed_action)
+            self.parent.publish_point(*transformed_action)
 
-                if not watcher.is_moving:
-                    transformed_action = self.parent.apply_transform(
-                        watcher.namespace, list(goal)
-                    )
-                    watcher.publish_goal(*transformed_action)
-                    self.parent.publish_point(*transformed_action)
-
-        # Training mode: calculate reward, store experience, and update policy
+        # Training mode: store experience and update policy
         if self._train:
-            # Calculate exploration reward
-            current_explored = np.sum(np.array(grid.data) != -1)
-            previous_explored = np.sum(np.array(self.previous_state.data) != -1)
-            exploration_progress = current_explored - previous_explored
+            # Track consecutive zero rewards
+            if reward <= 0:
+                self.consecutive_zero_rewards += 1
+            else:
+                self.consecutive_zero_rewards = 0
 
-            # Reward based on percentage increase in explored area
-            total_cells = len(grid.data)
-            reward = float(exploration_progress) / max(total_cells, 1) * 100.0
+            # Update training statistics
+            self.total_training_reward += reward
+            self.training_steps += 1
 
-            # Store experience
-            self.states.append((robot_positions, frontiers))
-            self.actions.append(goals)
+            # Log progress periodically
+            if self.parent and self.training_steps % 10 == 0:
+                avg_reward = self.total_training_reward / self.training_steps
+                self.parent.get_logger().info(
+                    f"Training step {self.training_steps}: reward={reward:.3f}, "
+                    f"avg_reward={avg_reward:.3f}, consecutive_zeros={self.consecutive_zero_rewards}"
+                )
+
+            # Store experience (detach tensors to avoid graph reuse)
+            self.states.append((robot_position, frontiers))
+            self.actions.append(goal)
             self.rewards.append(reward)
-            self.values.append(value)
+            self.values.append(value.detach() if value is not None else None)
             if log_prob is not None:
-                self.log_probs.append(log_prob)
+                self.log_probs.append(log_prob.detach())
             self.dones.append(False)
 
             # Train after collecting enough experiences
@@ -595,28 +661,31 @@ class ReinforcementSwarmNetwork(nn.Module):
         for epoch in range(NUM_EPOCHS):
             # For each experience in the buffer
             for i in range(len(self.states)):
-                robot_positions, frontiers = self.states[i]
+                robot_position, frontiers = self.states[i]
                 old_action = self.actions[i]
 
-                # Prepare tensors
+                # Prepare tensors (fresh tensors for each forward pass)
                 robot_tensor = torch.tensor(
-                    robot_positions, dtype=torch.float32
+                    [robot_position], dtype=torch.float32
                 ).unsqueeze(0)
                 frontier_tensor = torch.tensor(
                     frontiers, dtype=torch.float32
                 ).unsqueeze(0)
                 old_action_tensor = torch.tensor(
-                    old_action, dtype=torch.float32
+                    [old_action], dtype=torch.float32
                 ).unsqueeze(0)
 
-                # Forward pass
+                # Forward pass (creates fresh computation graph)
                 new_action, new_value, _ = self.forward(robot_tensor, frontier_tensor)
 
                 # Compute ratios for PPO
                 new_log_prob = -F.mse_loss(new_action, old_action_tensor)
-                old_log_prob = (
-                    self.log_probs[i] if i < len(self.log_probs) else new_log_prob
-                )
+
+                # Use detached old_log_prob (no graph attached)
+                if i < len(self.log_probs):
+                    old_log_prob = self.log_probs[i]  # Already detached when stored
+                else:
+                    old_log_prob = new_log_prob.detach()  # Detach if not available
 
                 ratio = torch.exp(new_log_prob - old_log_prob)
 
@@ -641,7 +710,7 @@ class ReinforcementSwarmNetwork(nn.Module):
                 # Update networks
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
-                total_loss.backward()
+                total_loss.backward()  # Fresh graph each time, safe to backward
                 torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=0.5)
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
@@ -671,7 +740,7 @@ class ReinforcementSwarmNetwork(nn.Module):
             next_state: Current occupancy grid
 
         Returns:
-            reward: Exploration reward
+            reward: Exploration reward (negative if no progress)
         """
         reward = 0.0
 
@@ -681,36 +750,48 @@ class ReinforcementSwarmNetwork(nn.Module):
         total_cells = len(state.data)
 
         exploration_increase = (after_explored - before_explored) / max(total_cells, 1)
-        reward += exploration_increase * 100.0  # Scale to reasonable range
 
-        # Frontier proximity reward
-        frontiers = self._get_frontiers(state)
-        if frontiers:
-            fx, fy = zip(*frontiers)
-            fx = np.array(fx)
-            fy = np.array(fy)
+        # Strong penalty for no progress, reward for exploration
+        if exploration_increase > 0:
+            reward += exploration_increase * 100.0  # Scale to reasonable range
+        else:
+            # Apply negative reward for no progress
+            reward += NO_PROGRESS_PENALTY
 
-            gx, gy = action
-            dists = np.sqrt((fx - gx) ** 2 + (fy - gy) ** 2)
-            min_dist = np.min(dists)
+        # Additional penalty if exploration is decreasing (should not happen but just in case)
+        if exploration_increase < 0:
+            reward += exploration_increase * 50.0  # Additional penalty
 
-            sigma = 5.0
-            reward += exp(-min_dist / sigma)
+        # Frontier proximity reward (only if making progress)
+        if exploration_increase > 0:
+            frontiers = self._get_frontiers(state)
+            if frontiers:
+                fx, fy = zip(*frontiers)
+                fx = np.array(fx)
+                fy = np.array(fy)
 
-        # Frontier reduction reward
-        reward += 0.5 * (
-            self._count_frontiers(state) - self._count_frontiers(next_state)
+                gx, gy = action
+                dists = np.sqrt((fx - gx) ** 2 + (fy - gy) ** 2)
+                min_dist = np.min(dists)
+
+                sigma = 5.0
+                reward += exp(-min_dist / sigma)
+
+        # Frontier reduction reward (more frontiers explored is good)
+        frontier_reduction = self._count_frontiers(state) - self._count_frontiers(
+            next_state
         )
+        if frontier_reduction > 0:
+            reward += 0.5 * frontier_reduction
+        elif frontier_reduction < 0:
+            # Penalty if frontiers increased (might indicate backtracking)
+            reward -= 0.3 * abs(frontier_reduction)
 
-        # Motion cost penalty
+        # Motion cost penalty (encourage efficient movement)
         px, py = position
         ax, ay = action
         travel_cost = sqrt((ax - px) ** 2 + (ay - py) ** 2)
         reward -= 0.1 * travel_cost
-
-        # Penalty for no progress
-        if after_explored == before_explored:
-            reward -= 1.0
 
         return reward
 
@@ -913,3 +994,62 @@ class ReinforcementSwarmNetwork(nn.Module):
                 frontiers.append((float(centroid[0]), float(centroid[1])))
 
         return frontiers
+
+    def _compute_potential_reward(
+        self,
+        robot_positions: list[tuple[float, float, float]],
+        goals: list[tuple[float, float]],
+        frontiers: list[tuple[float, float]],
+        grid: OccupancyGrid,
+    ) -> float:
+        """
+        Compute potential-based reward shaping to encourage better exploration.
+
+        Args:
+            robot_positions: Current robot positions
+            goals: Selected goals for robots
+            frontiers: Available frontier centroids
+            grid: Current occupancy grid
+
+        Returns:
+            Shaped reward value
+        """
+        reward = 0.0
+
+        # Reward for goal diversity (robots should spread out)
+        goal_distances = []
+        # Reward for targeting far frontiers (encourage exploration)
+        if isinstance(robot_positions, tuple):
+            robot_pos = robot_positions
+        else:
+            robot_pos = robot_positions[0]
+        
+        if isinstance(goals, tuple):
+            goal = goals
+        else:
+            goal = goals[0]
+        
+        dist_to_goal = sqrt(
+            (goal[0] - robot_pos[0]) ** 2 + (goal[1] - robot_pos[1]) ** 2
+        )
+        # Small reward for distance (encourages exploring further areas)
+        reward += min(dist_to_goal * 0.05, 0.5)
+
+        # Penalty if goal is too close to frontiers (prefer distant exploration)
+        goal_set = set()
+        duplicates = 0
+        for frontier in frontiers:
+            dist_to_frontier = sqrt(
+                (goal[0] - frontier[0]) ** 2 + (goal[1] - frontier[1]) ** 2
+            )
+            # Penalty if goal is very close to a frontier
+            if dist_to_frontier < 1.0:
+                reward -= 0.1
+        
+        goal_tuple = (round(goal[0], 2), round(goal[1], 2))
+        if goal_tuple in goal_set:
+            duplicates += 1
+        goal_set.add(goal_tuple)
+        reward -= duplicates * 0.5
+
+        return reward

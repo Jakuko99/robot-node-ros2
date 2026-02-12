@@ -141,7 +141,9 @@ class RobotNetwork(Node):
                     network.train()
                     reward = network.train_network(self.current_map)
                     if reward is not None:
-                        self.get_logger().info(f"{robot_name} training reward: {reward}")
+                        self.get_logger().info(
+                            f"{robot_name} training reward: {reward}"
+                        )
                 else:
                     network.eval()
                     network.train_network(self.current_map)
@@ -163,7 +165,7 @@ class RobotNetwork(Node):
                                 f"Map topic {map_topic} not found for {robot_name}, skipping for now"
                             )
                             continue
-                    
+
                     # Create robot watcher
                     robot_watcher = RobotWatcher(robot_name)
                     self.robots[robot_name] = robot_watcher

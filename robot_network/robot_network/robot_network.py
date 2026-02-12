@@ -130,20 +130,23 @@ class RobotNetwork(Node):
                 )
 
     def process_goals(self):
+        # First, spin all robot watchers to process any pending messages
+        for watcher_node in self.robots.values():
+            rclpy.spin_once(watcher_node, timeout_sec=0.1)
+
         if self.current_map:
             # Process each robot's network
             for robot_name, network in self.optimizer_networks.items():
                 if self.train_network:
                     network.train()
                     reward = network.train_network(self.current_map)
-                    self.get_logger().info(f"{robot_name} training reward: {reward}")
+                    if reward is not None:
+                        self.get_logger().info(f"{robot_name} training reward: {reward}")
                 else:
                     network.eval()
                     network.train_network(self.current_map)
 
         self.discover_robots()
-        for watcher_node in self.robots.values():
-            rclpy.spin_once(watcher_node, timeout_sec=0.5)
 
     def discover_robots(self):
         topics: list[tuple[str, list[str]]] = self.get_topic_names_and_types()
@@ -152,9 +155,22 @@ class RobotNetwork(Node):
             if (topic.endswith("/odom")) and ("nav_msgs/msg/Odometry" in types):
                 robot_name = topic.split("/")[1]
                 if robot_name not in self.robots:
+                    # Check if map topic exists when using local maps
+                    if self.use_local_map:
+                        map_topic = f"/{robot_name}/map"
+                        if map_topic not in [t for t, _ in topics]:
+                            self.get_logger().warn(
+                                f"Map topic {map_topic} not found for {robot_name}, skipping for now"
+                            )
+                            continue
+                    
                     # Create robot watcher
                     robot_watcher = RobotWatcher(robot_name)
                     self.robots[robot_name] = robot_watcher
+
+                    # Spin the new watcher multiple times to establish subscriptions
+                    for _ in range(15):
+                        rclpy.spin_once(robot_watcher, timeout_sec=0.2)
 
                     # Create dedicated network for this robot
                     model_path = (

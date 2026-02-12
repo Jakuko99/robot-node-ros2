@@ -521,6 +521,9 @@ class ReinforcementSwarmNetwork(nn.Module):
         """
         if self.use_local_map:
             grid = self.robot.get_local_map()
+            # Don't proceed if local map is not available yet
+            if grid is None or len(grid.data) == 0:
+                return None
 
         if self.previous_state is None:
             self.previous_state = grid

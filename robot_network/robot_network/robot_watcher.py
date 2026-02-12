@@ -2,6 +2,12 @@ from rclpy.action import ActionClient
 from rclpy.task import Future
 from nav2_msgs.action import NavigateToPose
 from rclpy.node import Node, Publisher, Subscription
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSHistoryPolicy,
+    QoSDurabilityPolicy,
+)
 from nav_msgs.msg import OccupancyGrid, Odometry
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Twist, PoseStamped
@@ -41,11 +47,19 @@ class RobotWatcher(Node):
             10,
         )
 
+        # Create QoS profile for map subscription to match typical map publishers
+        map_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+
         self.map_subscriber: Subscription[OccupancyGrid] = self.create_subscription(
             OccupancyGrid,
             f"{self.namespace}/map",
             self.map_callback,
-            10,
+            map_qos,
         )
 
         self.cmd_vel_subscriber: Subscription[Twist] = self.create_subscription(
@@ -146,5 +160,8 @@ class RobotWatcher(Node):
         if self.current_map:
             return self.current_map
 
-        self.get_logger().warn(f"No map received yet for {self.namespace}")
+        self.get_logger().warn(
+            f"No map received yet for {self.namespace}",
+            throttle_duration_sec=10.0,  # Only warn every 10 seconds
+        )
         return OccupancyGrid()

@@ -14,6 +14,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "train_network": True,
+                        "use_local_map": True,
                         "network_model_path": f"{resource_dir}",
                         "global_map_topic": "global_map",
                         "goal_marker_topic": "mapping_goals",

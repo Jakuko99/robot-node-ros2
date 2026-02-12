@@ -16,7 +16,7 @@ class RobotWatcher(Node):
         self.nav_client: ActionClient = ActionClient(
             self, NavigateToPose, f"{self.namespace}/navigate_to_pose"
         )
-        self.send_goal_future = None
+        self.send_goal_future: Future = None
         self.get_logger().info(
             f"Waiting for navigation action server for {self.namespace}..."
         )
@@ -141,3 +141,10 @@ class RobotWatcher(Node):
     @property
     def is_moving(self) -> bool:
         return self.moving
+
+    def get_local_map(self) -> OccupancyGrid:
+        if self.current_map:
+            return self.current_map
+
+        self.get_logger().warn(f"No map received yet for {self.namespace}")
+        return OccupancyGrid()

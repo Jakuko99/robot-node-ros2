@@ -18,6 +18,7 @@ class RobotNetwork(Node):
 
         # ----- Parameters -----
         self.declare_parameter("train_network", False)
+        self.declare_parameter("use_local_map", False)
         self.declare_parameter("network_model_path", "")
         self.declare_parameter("trained_model_path", "")
         self.declare_parameter("global_map_topic", "global_map")
@@ -32,6 +33,9 @@ class RobotNetwork(Node):
         self.optimizer_networks: dict[str, ReinforcementSwarmNetwork] = {}
         self.train_network: bool = (
             self.get_parameter("train_network").get_parameter_value().bool_value
+        )
+        self.use_local_map: bool = (
+            self.get_parameter("use_local_map").get_parameter_value().bool_value
         )
         self.goal_frame_id: str = (
             self.get_parameter("goal_frame_id").get_parameter_value().string_value
@@ -162,6 +166,7 @@ class RobotNetwork(Node):
                     network = ReinforcementSwarmNetwork(
                         robot_watcher=robot_watcher,
                         train=self.train_network,
+                        use_local_map=self.use_local_map,
                         model_path=model_path,
                         parent=self,
                     )

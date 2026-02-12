@@ -95,7 +95,7 @@ class RobotNetwork(Node):
                     return response
 
             response.success = True
-            response.message = f"Saved {len(self.optimizer_networks)} robot models"
+            response.message = f"Saved {len(self.optimizer_networks)} robot model(s)"
             return response
         except Exception as e:
             response.success = False
@@ -139,7 +139,7 @@ class RobotNetwork(Node):
 
         self.discover_robots()
         for watcher_node in self.robots.values():
-            rclpy.spin_once(watcher_node, timeout_sec=0.5)
+            rclpy.spin_once(watcher_node, timeout_sec=1.0)
 
     def discover_robots(self):
         topics: list[tuple[str, list[str]]] = self.get_topic_names_and_types()

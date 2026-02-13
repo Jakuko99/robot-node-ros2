@@ -20,9 +20,11 @@ class RobotWatcher(Node):
         self.namespace: str = robot_name
 
         self.nav_client: ActionClient = ActionClient(
-            self, NavigateToPose, f"{self.namespace}/navigate_to_pose"
+            self, NavigateToPose, f"/{self.namespace}/navigate_to_pose"
         )
         self.send_goal_future: Future = None
+        self.result_future: Future = None
+        self.goal_handle = None
         self.get_logger().info(
             f"Waiting for navigation action server for {self.namespace}..."
         )
@@ -87,7 +89,7 @@ class RobotWatcher(Node):
         self.linear_x: float = 0.0
         self.angular_z: float = 0.0
 
-        self.get_logger().info(f"RobotWatcher initialized for robot: {self.namespace}")
+        self.get_logger().debug(f"RobotWatcher initialized for robot: {self.namespace}")
 
     def odom_callback(self, msg: Odometry):
         self.last_odom = msg
@@ -130,26 +132,37 @@ class RobotWatcher(Node):
             NavigateToPose.Goal(pose=msg)
         )
         self.send_goal_future.add_done_callback(self.goal_response_callback)
-        self.get_logger().info(
+        self.get_logger().debug(
             f"Published new goal for {self.namespace} [{x}, {y}, {theta}]"
         )
         self.moving = True
 
     def goal_response_callback(self, future: Future):
-        result = future.result()  # get result of sending the goal
-        result_future = result.get_result_async()
-        result_future.add_done_callback(self.goal_done_callback)
+        self.get_logger().warn(
+            f"Goal response received for {self.namespace}, waiting for result..."
+        )
+        self.goal_handle = future.result()  # get the goal handle
+        if not self.goal_handle.accepted:
+            self.get_logger().error(f"Goal rejected for {self.namespace}")
+            self.moving = False
+            return
+
+        self.result_future: Future = self.goal_handle.get_result_async()
+        self.result_future.add_done_callback(self.goal_done_callback)
 
     def goal_done_callback(self, future: Future):
         result = future.result()
         if result.status == GoalStatus.STATUS_SUCCEEDED:  # SUCCEEDED
             self.get_logger().info(f"Goal completed successfully for {self.namespace}")
+
         elif result.status == GoalStatus.STATUS_ABORTED:  # ABORTED
             self.get_logger().warn(f"Goal was aborted for {self.namespace}")
+
         else:
-            self.get_logger().warn(
+            self.get_logger().error(
                 f"Goal failed with status {result.status} for {self.namespace}"
             )
+
         self.moving = False  # goal is done, so we are no longer moving
 
     @property

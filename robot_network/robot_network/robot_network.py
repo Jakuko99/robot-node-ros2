@@ -1,6 +1,6 @@
 import rclpy
-import numpy as np
-from time import sleep
+import threading
+from rclpy.executors import MultiThreadedExecutor
 from nav_msgs.msg import OccupancyGrid
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import PointStamped, TransformStamped
@@ -107,7 +107,9 @@ class RobotNetwork(Node):
             return response
 
     def map_callback(self, msg: OccupancyGrid):
-        self.get_logger().info(f"Received map data: {msg.info.width}x{msg.info.height}")
+        self.get_logger().debug(
+            f"Received map data: {msg.info.width}x{msg.info.height}"
+        )
         self.current_map = msg
         self.current_map_width = msg.info.width
         self.current_map_height = msg.info.height
@@ -115,7 +117,7 @@ class RobotNetwork(Node):
         # Log frontier count (using first network if available, or create temporary one)
         if self.optimizer_networks:
             first_network = next(iter(self.optimizer_networks.values()))
-            self.get_logger().info(
+            self.get_logger().debug(
                 f"Frontier count: {first_network._count_frontiers(msg)}"
             )
 
@@ -125,14 +127,14 @@ class RobotNetwork(Node):
         for transform in msg.transforms:
             if transform.child_frame_id not in self.static_transforms:
                 self.static_transforms[transform.child_frame_id] = transform
-                self.get_logger().info(
+                self.get_logger().debug(
                     f"Received new static transform for {transform.child_frame_id}"
                 )
 
     def process_goals(self):
-        # First, spin all robot watchers to process any pending messages
-        for watcher_node in self.robots.values():
-            rclpy.spin_once(watcher_node, timeout_sec=0.1)
+        for _ in range(3):  # Multiple passes to catch all callbacks
+            for watcher_node in self.robots.values():
+                rclpy.spin_once(watcher_node, timeout_sec=0.0)  # Non-blocking
 
         if self.current_map:
             # Process each robot's network
@@ -171,7 +173,7 @@ class RobotNetwork(Node):
                     self.robots[robot_name] = robot_watcher
 
                     # Spin the new watcher multiple times to establish subscriptions
-                    for _ in range(15):
+                    for _ in range(5):
                         rclpy.spin_once(robot_watcher, timeout_sec=0.2)
 
                     # Create dedicated network for this robot
@@ -209,12 +211,12 @@ class RobotNetwork(Node):
     ) -> list[float, float]:  # Apply static transform to point
         if robot_name + "_map" in self.static_transforms:
             transform: TransformStamped = self.static_transforms[robot_name + "_map"]
-            point[0] += transform.transform.translation.x
-            point[1] += transform.transform.translation.y
-            self.get_logger().info(f"Transformed point for {robot_name}: {point}")
+            point[0] -= transform.transform.translation.x
+            point[1] -= transform.transform.translation.y
+            self.get_logger().debug(f"Transformed point for {robot_name}: {point}")
             return point
         else:
-            self.get_logger().warn(f"No static transform found for {robot_name}_map")
+            self.get_logger().debug(f"No static transform found for {robot_name}_map")
             return point
 
 

@@ -1,4 +1,6 @@
 import rclpy
+from scipy.spatial.transform import Rotation
+import numpy as np
 from nav_msgs.msg import OccupancyGrid
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import PointStamped, TransformStamped
@@ -202,7 +204,47 @@ class RobotNetwork(Node):
     def apply_transform(
         self, robot_name: str, point: list[float, float]
     ) -> list[float, float]:
-        return point  # Placeholder for actual transform logic
+        robot_trainsform: TransformStamped = self.static_transforms.get(
+            f"{robot_name}_map"
+        )
+
+        if robot_trainsform is None:
+            self.get_logger().warn(
+                f"No static transform found for {robot_name}_map, cannot transform point"
+            )
+            return point
+
+        # transform from global frame to robot local frame using ros2 builtin methods
+        try:
+            # Extract translation and rotation
+            translation = robot_trainsform.transform.translation
+            rotation = robot_trainsform.transform.rotation
+
+            # Convert quaternion to yaw angle
+            quat: list[float] = [rotation.x, rotation.y, rotation.z, rotation.w]
+            yaw = Rotation.from_quat(quat).as_euler("xyz")[2]
+
+            # Create 2D transformation matrix
+            cos_yaw: float = np.cos(yaw)
+            sin_yaw: float = np.sin(yaw)
+            transform_matrix: np.ndarray = np.array(
+                [
+                    [cos_yaw, -sin_yaw, translation.x],
+                    [sin_yaw, cos_yaw, translation.y],
+                    [0, 0, 1],
+                ]
+            )
+
+            # Transform point
+            point_homogeneous: np.ndarray = np.array([point[0], point[1], 1])
+            transformed_point: np.ndarray = transform_matrix @ point_homogeneous
+
+            return transformed_point[:2].tolist()
+        except Exception as e:
+            self.get_logger().error(
+                f"Error applying transform for {robot_name}: {str(e)}"
+            )
+            return point
 
 
 def main():

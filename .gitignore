@@ -2,6 +2,7 @@
 __pycache__/
 *.bkp
 *.pt
+*.png
 robot_network/__pycache__/
 robot_network/resource/dataset/
 robot_network/resource/dataset_compressed/

@@ -511,17 +511,16 @@ class ReinforcementSwarmNetwork(nn.Module):
 
     def train_network(self, grid: OccupancyGrid) -> float:
         """
-        Train the network using PPO algorithm or run inference.
+        Train the network using PPO algorithm.
 
         Args:
             grid: Current occupancy grid
 
         Returns:
-            reward: Exploration reward (training) or None (inference)
+            reward: Exploration reward
         """
         if self.use_local_map:
             grid = self.robot.get_local_map()
-            # Don't proceed if local map is not available yet
             if grid is None or len(grid.data) == 0:
                 return None
 
@@ -529,24 +528,19 @@ class ReinforcementSwarmNetwork(nn.Module):
             self.previous_state = grid
             return None
 
-        # Get frontiers
         frontiers = self._get_frontiers(grid)
-
         if len(frontiers) == 0:
             self.previous_state = grid
             return None
 
-        # Get robot position
         robot_position = (self.robot.x, self.robot.y, self.robot.theta)
 
-        # Attempt to generate actions with good reward
         best_goal = None
         best_reward = float("-inf")
         best_log_prob = None
         best_value = None
 
         for attempt in range(MAX_REGENERATION_ATTEMPTS):
-            # Add exploration noise for regeneration attempts after the first
             add_noise = attempt > 0
             goal, log_prob, value = self.select_action(
                 robot_position, frontiers, add_noise
@@ -555,56 +549,39 @@ class ReinforcementSwarmNetwork(nn.Module):
             if goal is None:
                 continue
 
-            # Calculate potential reward for these goals
-            if self._train:
-                # Calculate exploration reward
-                current_explored = np.sum(np.array(grid.data) != -1)
-                previous_explored = np.sum(np.array(self.previous_state.data) != -1)
-                exploration_progress = current_explored - previous_explored
+            current_explored = np.sum(np.array(grid.data) != -1)
+            previous_explored = np.sum(np.array(self.previous_state.data) != -1)
+            exploration_progress = current_explored - previous_explored
 
-                # Reward based on percentage increase in explored area
-                total_cells = len(grid.data)
-                reward = float(exploration_progress) / max(total_cells, 1) * 100.0
+            total_cells = len(grid.data)
+            reward = float(exploration_progress) / max(total_cells, 1) * 100.0
 
-                # Apply negative reward for no progress
-                if exploration_progress <= 0:
-                    reward = NO_PROGRESS_PENALTY
-                    # Increase penalty for consecutive zero rewards
-                    reward -= self.consecutive_zero_rewards * 0.5
+            if exploration_progress <= 0:
+                reward = NO_PROGRESS_PENALTY
+                reward -= self.consecutive_zero_rewards * 0.5
 
-                # Additional reward shaping for better exploration
-                reward += self._compute_potential_reward(
-                    robot_position, goal, frontiers, grid
-                )
+            reward += self._compute_potential_reward(
+                robot_position, goal, frontiers, grid
+            )
 
-                # Keep track of best attempt
-                if reward > best_reward:
-                    best_reward = reward
-                    best_goal = goal
-                    best_log_prob = log_prob
-                    best_value = value
-
-                # If we got a positive reward, use this goal
-                if reward > 0:
-                    break
-            else:
-                # In inference mode, use first attempt
+            if reward > best_reward:
+                best_reward = reward
                 best_goal = goal
                 best_log_prob = log_prob
                 best_value = value
+
+            if reward > 0:
                 break
 
-        # Use the best goal found
         goal = best_goal
         log_prob = best_log_prob
         value = best_value
-        reward = best_reward if self._train else None
+        reward = best_reward
 
         if goal is None:
             self.previous_state = grid
             return None
 
-        # Publish goal to robot
         if not self.robot.is_moving:
             transformed_action = self.parent.apply_transform(
                 self.robot.namespace, list(goal)
@@ -612,45 +589,72 @@ class ReinforcementSwarmNetwork(nn.Module):
             self.robot.publish_goal(*transformed_action)
             self.parent.publish_point(*transformed_action)
 
-        # Training mode: store experience and update policy
-        if self._train:
-            # Track consecutive zero rewards
-            if reward <= 0:
-                self.consecutive_zero_rewards += 1
-            else:
-                self.consecutive_zero_rewards = 0
-
-            # Update training statistics
-            self.total_training_reward += reward
-            self.training_steps += 1
-
-            # Log progress periodically
-            if self.parent and self.training_steps % 10 == 0:
-                avg_reward = self.total_training_reward / self.training_steps
-                self.parent.get_logger().info(
-                    f"Training step {self.training_steps}: reward={reward:.3f}, "
-                    f"avg_reward={avg_reward:.3f}, consecutive_zeros={self.consecutive_zero_rewards}"
-                )
-
-            # Store experience (detach tensors to avoid graph reuse)
-            self.states.append((robot_position, frontiers))
-            self.actions.append(goal)
-            self.rewards.append(reward)
-            self.values.append(value.detach() if value is not None else None)
-            if log_prob is not None:
-                self.log_probs.append(log_prob.detach())
-            self.dones.append(False)
-
-            # Train after collecting enough experiences
-            if len(self.rewards) >= BATCH_SIZE:
-                self._update_policy()
-
-            self.previous_state = grid
-            return reward
+        if reward <= 0:
+            self.consecutive_zero_rewards += 1
         else:
-            # Inference mode: just return None
+            self.consecutive_zero_rewards = 0
+
+        self.total_training_reward += reward
+        self.training_steps += 1
+
+        if self.parent and self.training_steps % 10 == 0:
+            avg_reward = self.total_training_reward / self.training_steps
+            self.parent.get_logger().info(
+                f"Training step {self.training_steps}: reward={reward:.3f}, "
+                f"avg_reward={avg_reward:.3f}, consecutive_zeros={self.consecutive_zero_rewards}"
+            )
+
+        self.states.append((robot_position, frontiers))
+        self.actions.append(goal)
+        self.rewards.append(reward)
+        self.values.append(value.detach() if value is not None else None)
+        if log_prob is not None:
+            self.log_probs.append(log_prob.detach())
+        self.dones.append(False)
+
+        if len(self.rewards) >= BATCH_SIZE:
+            self._update_policy()
+
+        self.previous_state = grid
+        return reward
+
+    def eval_network(self, grid: OccupancyGrid) -> None:
+        """
+        Run inference on the network.
+
+        Args:
+            grid: Current occupancy grid
+        """
+        if self.use_local_map:
+            grid = self.robot.get_local_map()
+            if grid is None or len(grid.data) == 0:
+                return
+
+        if self.previous_state is None:
             self.previous_state = grid
-            return None
+            return
+
+        frontiers = self._get_frontiers(grid)
+        if len(frontiers) == 0:
+            self.previous_state = grid
+            return
+
+        robot_position = (self.robot.x, self.robot.y, self.robot.theta)
+
+        goal, log_prob, value = self.select_action(robot_position, frontiers, False)
+
+        if goal is None:
+            self.previous_state = grid
+            return
+
+        if not self.robot.is_moving:
+            transformed_action = self.parent.apply_transform(
+                self.robot.namespace, list(goal)
+            )
+            self.robot.publish_goal(*transformed_action)
+            self.parent.publish_point(*transformed_action)
+
+        self.previous_state = grid
 
     def _update_policy(self):
         """

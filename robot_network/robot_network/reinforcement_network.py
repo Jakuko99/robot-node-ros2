@@ -5,6 +5,7 @@ import torch.optim as optim
 from scipy.spatial import cKDTree
 from math import exp, sqrt, ceil
 from collections import deque
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 
@@ -328,6 +329,14 @@ class ReinforcementSwarmNetwork(nn.Module):
                 },
                 self.model_path,
             )
+
+            plt.figure(figsize=(10, 5))
+            plt.plot(self.rewards, label="Rewards")
+            plt.xlabel("Training Steps")
+            plt.ylabel("Reward")
+            plt.title("Training Rewards Over Time")
+            plt.legend()
+            plt.savefig(self.model_path.replace(".pt", ".png"))
         except Exception as e:
             response.success = False
             response.message = f"Failed to save model: {str(e)}"

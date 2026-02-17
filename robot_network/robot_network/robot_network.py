@@ -12,7 +12,7 @@ from rclpy.qos import (
     QoSDurabilityPolicy,
 )  # correct map QoS profile
 
-from robot_network.robot_watcher_v2 import RobotWatcher
+from robot_network.robot_watcher import RobotWatcher
 from robot_network.reinforcement_network import ReinforcementSwarmNetwork
 
 

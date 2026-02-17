@@ -19,8 +19,8 @@ def generate_launch_description():
                         "goal_marker_topic": "/mapping_goals",
                         "global_frame_id": "kris_robot1_map",
                         "use_local_maps": False,
-                        "goal_process_interval": 2.0,
-                        "robot_spin_interval": 2.0,
+                        "goal_process_interval": 5.0,
+                        "robot_spin_interval": 5.0,
                     }
                 ],
             ),

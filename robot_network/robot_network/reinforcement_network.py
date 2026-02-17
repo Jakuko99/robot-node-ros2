@@ -1023,12 +1023,12 @@ class ReinforcementSwarmNetwork(nn.Module):
             robot_pos = robot_positions
         else:
             robot_pos = robot_positions[0]
-        
+
         if isinstance(goals, tuple):
             goal = goals
         else:
             goal = goals[0]
-        
+
         dist_to_goal = sqrt(
             (goal[0] - robot_pos[0]) ** 2 + (goal[1] - robot_pos[1]) ** 2
         )
@@ -1045,7 +1045,7 @@ class ReinforcementSwarmNetwork(nn.Module):
             # Penalty if goal is very close to a frontier
             if dist_to_frontier < 1.0:
                 reward -= 0.1
-        
+
         goal_tuple = (round(goal[0], 2), round(goal[1], 2))
         if goal_tuple in goal_set:
             duplicates += 1

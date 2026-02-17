@@ -4,3 +4,4 @@ slam_toolbox:
     base_frame: kris_robot1_base_link
     scan_topic: /kris_robot1/scan
     odom_frame: kris_robot1_odom
+    namespace: /kris_robot1

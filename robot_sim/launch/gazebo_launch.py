@@ -40,6 +40,6 @@ def generate_launch_description():
                     "-p",
                     "config_file:=src/robot_sim/gazebo/bridge_config.yaml",
                 ]
-            ),       
+            ),
         ]
     )

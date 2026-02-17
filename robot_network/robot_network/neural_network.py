@@ -33,9 +33,7 @@ class RobotSwarmOptimizerNetwork(nn.Module):
     - Mapping priorities for unexplored areas
     """
 
-    def __init__(
-        self, train: bool = False, model_path: str = "", parent = None
-    ):
+    def __init__(self, train: bool = False, model_path: str = "", parent=None):
         super(RobotSwarmOptimizerNetwork, self).__init__()
         self._train: bool = train
         self.model_path: str = model_path

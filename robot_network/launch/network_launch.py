@@ -15,9 +15,9 @@ def generate_launch_description():
                     {
                         "train_network": True,
                         "network_model_path": f"{resource_dir}",
-                        "global_map_topic": "/kris_robot1/map",
+                        "global_map_topic": "/global_map",
                         "goal_marker_topic": "/mapping_goals",
-                        "global_frame_id": "kris_robot1_map",
+                        "global_frame_id": "global_map",
                         "use_local_maps": True,
                         "goal_process_interval": 5.0,
                         "robot_spin_interval": 5.0,

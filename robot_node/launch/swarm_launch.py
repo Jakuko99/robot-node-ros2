@@ -16,6 +16,11 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot1",
                         "goal_process_interval": 5.0,
+                        "robot_discovery_interval": 10.0,
+                        "position_update_interval": 2.5,
+                        "marl_training": True,
+                        "marl_update_every": 32,
+                        "marl_update_epochs": 6,
                     }
                 ],
             ),
@@ -28,6 +33,11 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot2",
                         "goal_process_interval": 5.0,
+                        "robot_discovery_interval": 10.0,
+                        "position_update_interval": 2.5,
+                        "marl_training": True,
+                        "marl_update_every": 32,
+                        "marl_update_epochs": 6,
                     }
                 ],
             ),

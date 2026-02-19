@@ -16,6 +16,8 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot1",
                         "goal_process_interval": 5.0,
+                        "robot_discovery_interval": 10.0,
+                        "position_update_interval": 5.0,
                     }
                 ],
             ),

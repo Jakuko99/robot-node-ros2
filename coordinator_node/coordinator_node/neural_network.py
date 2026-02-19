@@ -9,7 +9,7 @@ import numpy as np
 
 from nav_msgs.msg import OccupancyGrid
 from std_srvs.srv._trigger import Trigger_Request, Trigger_Response
-from robot_network.robot_watcher import RobotWatcher
+from coordinator_node.robot_watcher import RobotWatcher
 
 # ----- Hyperparameters -----
 BATCH_SIZE = 64
@@ -33,9 +33,7 @@ class RobotSwarmOptimizerNetwork(nn.Module):
     - Mapping priorities for unexplored areas
     """
 
-    def __init__(
-        self, train: bool = False, model_path: str = "", parent = None
-    ):
+    def __init__(self, train: bool = False, model_path: str = "", parent=None):
         super(RobotSwarmOptimizerNetwork, self).__init__()
         self._train: bool = train
         self.model_path: str = model_path

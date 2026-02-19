@@ -3,7 +3,7 @@ from glob import glob
 from setuptools import setup
 from setuptools import find_packages
 
-package_name = "robot_network"
+package_name = "coordinator_node"
 
 setup(
     name=package_name,
@@ -27,8 +27,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            # 'state_publisher = robot_network.state_publisher:main'
-            "robot_network = robot_network.robot_network:main"
+            # 'state_publisher = coordinator_node.state_publisher:main'
+            "coordinator_node = coordinator_node.coordinator_node:main"
         ],
     },
 )

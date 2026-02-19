@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from nav_msgs.msg import OccupancyGrid
 from std_srvs.srv._trigger import Trigger_Request, Trigger_Response
-from robot_network.robot_watcher import RobotWatcher
+from coordinator_node.robot_watcher import RobotWatcher
 
 # ----- Hyperparameters -----
 BATCH_SIZE = 32

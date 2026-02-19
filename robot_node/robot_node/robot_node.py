@@ -1,5 +1,7 @@
+import rclpy
 from rclpy.node import Node
 from rclpy.task import Future
+from rclpy.timer import Timer
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from rclpy.node import Node, Publisher, Subscription
@@ -15,12 +17,23 @@ from rclpy.qos import (
 import math
 
 
-class RobotWatcher(Node):
-    def __init__(self, namespace: str):
-        super().__init__(f"watcher_{namespace}")
+class RobotNode(Node):
+    def __init__(self):
+        super().__init__(f"robot_node")
+
+        # ----- Parameters ------
+        self.declare_parameter("namespace", "kris_robot1")
+        self.declare_parameter("goal_process_interval", 5.0)
+        self.namespace: str = (
+            self.get_parameter("namespace").get_parameter_value().string_value
+        )
+        self.goal_process_interval: float = (
+            self.get_parameter("goal_process_interval")
+            .get_parameter_value()
+            .double_value
+        )
 
         # ----- Variables -----
-        self.namespace: str = namespace
         self.goal_future: Future = None
         self.last_odom: Odometry = None
         self.last_cmd_vel: Twist = None
@@ -36,6 +49,12 @@ class RobotWatcher(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
+        )
+
+        # ----- Timers -----
+        self.process_goal_timer: Timer = self.create_timer(
+            self.goal_process_interval,
+            callback=self.process_goal_callback,
         )
 
         # ----- Clients -----
@@ -57,13 +76,6 @@ class RobotWatcher(Node):
             self.map_callback,
             map_qos,
         )
-
-        # self.cmd_vel_sub: Subscription[Twist] = self.create_subscription(
-        #     Twist,
-        #     f"{self.namespace}/cmd_vel",
-        #     self.cmd_vel_callback,
-        #     10,
-        # )
 
         # ----- Publishers -----
         self.goal_pub: Publisher[PoseStamped] = self.create_publisher(
@@ -144,6 +156,9 @@ class RobotWatcher(Node):
 
         self.moving = False  # goal is done, so we are no longer moving
 
+    def process_goal_callback(self):
+        pass  # robot "intelligence" goes here
+
     @property
     def is_moving(self) -> bool:
         return self.moving
@@ -156,3 +171,17 @@ class RobotWatcher(Node):
             f"No map received yet for {self.namespace}, returning empty map"
         )
         return OccupancyGrid()
+
+
+def main():
+    rclpy.init()
+    robot_node = RobotNode()
+    while rclpy.ok():
+        rclpy.spin_once(robot_node)
+
+    robot_node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

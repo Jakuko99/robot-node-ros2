@@ -14,13 +14,12 @@ from rclpy.qos import (
     QoSDurabilityPolicy,
 )  # correct map QoS profile
 
-from robot_network.robot_watcher import RobotWatcher
-from robot_network.reinforcement_network import ReinforcementSwarmNetwork
+from coordinator_node.reinforcement_network import ReinforcementSwarmNetwork
 
 
-class RobotNetwork(Node):
+class CoordinatorNode(Node):
     def __init__(self):
-        super().__init__("robot_network")
+        super().__init__("coordinator_node")
 
         # ----- Parameters -----
         self.declare_parameter("train_network", False)
@@ -28,14 +27,12 @@ class RobotNetwork(Node):
         self.declare_parameter("global_map_topic", "global_map")
         self.declare_parameter("goal_marker_topic", "mapping_goals")
         self.declare_parameter("global_frame_id", "global_map")
-        self.declare_parameter("use_local_maps", False)
         self.declare_parameter("goal_process_interval", 2.0)
-        self.declare_parameter("robot_spin_interval", 2.0)
 
         # ----- Variables -----
         self.current_global_map: OccupancyGrid = None
-        self.robots: dict[str, RobotWatcher] = {}
-        self.optimizer_networks: dict[str, ReinforcementSwarmNetwork] = {}
+        self.robots: list[str] = []
+        self.optimizer_network: ReinforcementSwarmNetwork = ReinforcementSwarmNetwork()
         self.train_network: bool = (
             self.get_parameter("train_network").get_parameter_value().bool_value
         )
@@ -44,9 +41,6 @@ class RobotNetwork(Node):
         )
         self.network_model_path: str = (
             self.get_parameter("network_model_path").get_parameter_value().string_value
-        )
-        self.use_local_maps: bool = (
-            self.get_parameter("use_local_maps").get_parameter_value().bool_value
         )
         self.static_transforms: dict[str, TFMessage] = {}
         map_qos: QoSProfile = QoSProfile(
@@ -60,19 +54,13 @@ class RobotNetwork(Node):
         self.save_model_service = self.create_service(
             Trigger,
             "save_model",
-            self.save_all_models,
+            self.save_model,
         )
         # ros2 service call /save_model std_srvs/srv/Trigger
 
         # ----- Timers -----
         self.discovery_timer: Timer = self.create_timer(
             5.0, callback=self.discover_robots
-        )
-        self.robot_spin_timer: Timer = self.create_timer(
-            self.get_parameter("robot_spin_interval")
-            .get_parameter_value()
-            .double_value,
-            callback=self.spin_robots,
         )
         self.goal_timer: Timer = self.create_timer(
             self.get_parameter("goal_process_interval")
@@ -103,7 +91,7 @@ class RobotNetwork(Node):
             10,
         )
 
-        self.get_logger().info("RobotNetwork node initialized")
+        self.get_logger().info("CoordinatorNode node initialized")
 
     def map_callback(self, msg: OccupancyGrid):
         self.current_global_map = msg
@@ -118,74 +106,39 @@ class RobotNetwork(Node):
                 )
 
     def process_goals(self):
-        for robot_name, network in self.optimizer_networks.items():
-            if self.use_local_maps:
-                robot_map: OccupancyGrid = network.robot.get_local_map()
-            else:
-                robot_map: OccupancyGrid = self.current_global_map
+        if self.optimizer_network is not None:
+            robot_map: OccupancyGrid = self.current_global_map
 
             if self.train_network:
-                network.train()
-                reward: float = network.train_network(robot_map)
-                self.get_logger().info(
-                    f"Trained network for {robot_name} with reward: {reward}"
-                )
+                self.optimizer_network.train()
+                reward: float = self.optimizer_network.train_network(robot_map)
+                self.get_logger().info(f"Trained network with reward: {reward}")
             else:
-                network.eval()
-                network.eval_network(robot_map)
+                self.optimizer_network.eval()
+                self.optimizer_network.eval_network(robot_map)
 
-    def save_all_models(self, request: Trigger.Request, response: Trigger.Response):
+    def save_model(self, request: Trigger.Request, response: Trigger.Response):
         """Save all robot network models."""
         try:
-            for robot_name, network in self.optimizer_networks.items():
+            if self.optimizer_network is not None:
                 request_inner = Trigger.Request()
                 response_inner = Trigger.Response()
-                network.save_model(request_inner, response_inner)
+                self.optimizer_network.save_model(request_inner, response_inner)
                 if not response_inner.success:
                     response.success = False
-                    response.message = f"Failed to save model for {robot_name}: {response_inner.message}"
+                    response.message = f"Failed to save model: {response_inner.message}"
                     return response
 
             response.success = True
-            response.message = f"Saved {len(self.optimizer_networks)} robot model(s)"
+            response.message = f"Saved model for coordinator node"
             return response
         except Exception as e:
             response.success = False
-            response.message = f"Error saving models: {str(e)}"
+            response.message = f"Error saving model: {str(e)}"
             return response
 
     def discover_robots(self):
-        topics: list[tuple[str, list[str, str]]] = self.get_topic_names_and_types()
-
-        for topic, types in topics:
-            if (topic.endswith("/odom")) and ("nav_msgs/msg/Odometry" in types):
-                robot_name = topic.split("/")[1]
-                if robot_name not in self.robots:
-                    # Create robot watcher
-                    robot_watcher = RobotWatcher(robot_name)
-                    rclpy.spin_once(
-                        robot_watcher, timeout_sec=1.0
-                    )  # Allow watcher to initialize
-                    self.robots[robot_name] = robot_watcher
-
-                    # Create dedicated network for this robot
-                    model_path = (
-                        f"{self.network_model_path}/{robot_name}_optimizer.pt"
-                        if self.network_model_path
-                        else ""
-                    )
-
-                    network = ReinforcementSwarmNetwork(
-                        robot_watcher=robot_watcher,
-                        train=self.train_network,
-                        model_path=model_path,
-                        parent=self,
-                    )
-                    self.optimizer_networks[robot_name] = network
-
-                    self.get_logger().info(
-                        f"Discovered robot: {robot_name} with dedicated network"
-                    )
+        nodes: list[str] = self.get_node_names()
 
     def publish_point(self, x: float, y: float):
         point_msg: PointStamped = PointStamped()
@@ -196,10 +149,6 @@ class RobotNetwork(Node):
         point_msg.point.z = 0.0
 
         self.point_pub.publish(point_msg)
-
-    def spin_robots(self):
-        for watcher_node in self.robots.values():
-            rclpy.spin_once(watcher_node, timeout_sec=1.0)
 
     def apply_transform(
         self, robot_name: str, point: list[float, float]
@@ -249,12 +198,12 @@ class RobotNetwork(Node):
 
 def main():
     rclpy.init()
-    robot_network_node = RobotNetwork()
+    coordinator_node_node = CoordinatorNode()
     while rclpy.ok():
-        robot_network_node.discover_robots()  # Initial robot discovery
-        rclpy.spin(robot_network_node)
+        coordinator_node_node.discover_robots()  # Initial robot discovery
+        rclpy.spin(coordinator_node_node)
 
-    robot_network_node.destroy_node()
+    coordinator_node_node.destroy_node()
     rclpy.shutdown()
 
 

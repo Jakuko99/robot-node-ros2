@@ -15,7 +15,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
     QoSHistoryPolicy,
     QoSDurabilityPolicy,
-)  # correct map QoS profile
+)
 from time import time
 import math
 import numpy as np
@@ -107,7 +107,7 @@ class RobotNode(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
-        )
+        )  # correct map QoS profile
 
         # ----- Timers -----
         self.process_goal_timer: Timer = self.create_timer(

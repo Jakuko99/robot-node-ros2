@@ -25,8 +25,10 @@ def generate_launch_description():
                 cmd=[
                     "ign",
                     "gazebo",
+                    "-s",
                     "-r",
                     "src/robot_sim/gazebo/random_environment.sdf",
+                    "--headless-rendering",
                 ],
             ),
             Node(

@@ -755,13 +755,24 @@ class EnvironmentGenerator:
         include1 = ET.SubElement(world, "include")
         ET.SubElement(include1, "uri").text = "file://src/robot_sim/gazebo/kris_robot"
         ET.SubElement(include1, "name").text = "kris_robot"
-        ET.SubElement(include1, "pose").text = "0 0 0.5 0 -0 3.14"
+        ET.SubElement(include1, "pose").text = "0.0 0.0 0.5 0.0 0.0 3.14"
 
         # Second robot
         include2 = ET.SubElement(world, "include")
         ET.SubElement(include2, "uri").text = "file://src/robot_sim/gazebo/kris_robot1"
         ET.SubElement(include2, "name").text = "kris_robot1"
-        ET.SubElement(include2, "pose").text = "-1.0 0 0.5 0 -0 3.14"
+        ET.SubElement(include2, "pose").text = "-1.0 0.0 0.5 0.0 0.0 3.14"
+
+        include3 = ET.SubElement(world, "include")
+        ET.SubElement(include3, "uri").text = "file://src/robot_sim/gazebo/kris_robot2"
+        ET.SubElement(include3, "name").text = "kris_robot2"
+        ET.SubElement(include3, "pose").text = "-1.0 -1.0 0.5 0.0 0.0 3.14"
+
+        # Second robot
+        include4 = ET.SubElement(world, "include")
+        ET.SubElement(include4, "uri").text = "file://src/robot_sim/gazebo/kris_robot3"
+        ET.SubElement(include4, "name").text = "kris_robot3"
+        ET.SubElement(include4, "pose").text = "0 -1.0 0.5 0.0 0.0 3.14"
 
     def _add_ground_plane(self, world):
         model = ET.SubElement(world, "model", name="ground_plane")

@@ -34,7 +34,7 @@ def generate_launch_description():
                 executable="rviz2",
                 name="rviz2",
                 output="screen",
-                arguments=["-d", "src/robot_sim/rviz/sim_rviz.rviz"],
+                arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
                 parameters=[{"use_sim_time": True}],
                 remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
             ),
@@ -112,16 +112,6 @@ def generate_launch_description():
                     "global_map",
                     "kris_robot4_map",
                 ]
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "mapping_launch.py")
-                ),
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "nav_launch.py")
-                ),
             ),
         ]
     )

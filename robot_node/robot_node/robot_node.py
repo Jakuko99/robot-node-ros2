@@ -1,4 +1,5 @@
 import rclpy
+from std_srvs.srv import Trigger
 from rclpy.node import Node
 from rclpy.task import Future
 from rclpy.timer import Timer
@@ -7,6 +8,7 @@ from nav2_msgs.action import NavigateToPose
 from rclpy.node import Node, Publisher, Subscription
 from nav_msgs.msg import OccupancyGrid, Odometry
 from action_msgs.msg import GoalStatus
+from rclpy.action.client import ClientGoalHandle
 from geometry_msgs.msg import Twist, PoseStamped
 from rclpy.qos import (
     QoSProfile,
@@ -37,9 +39,12 @@ class RobotNode(Node):
         self.declare_parameter("goal_process_interval", 5.0)
         self.declare_parameter("robot_discovery_interval", 10.0)
         self.declare_parameter("position_update_interval", 1.0)
+        self.declare_parameter("goal_timeout", 60.0)
         self.declare_parameter("marl_training", True)
         self.declare_parameter("marl_update_every", 32)
         self.declare_parameter("marl_update_epochs", 4)
+        self.declare_parameter("model_checkpoint_path", "/tmp/marl_checkpoint.pt")
+
         self.namespace: str = (
             self.get_parameter("robot_name").get_parameter_value().string_value
         )
@@ -58,6 +63,9 @@ class RobotNode(Node):
             .get_parameter_value()
             .double_value
         )
+        self.goal_timeout: float = (
+            self.get_parameter("goal_timeout").get_parameter_value().double_value
+        )
         self.marl_training: bool = (
             self.get_parameter("marl_training").get_parameter_value().bool_value
         )
@@ -67,9 +75,15 @@ class RobotNode(Node):
         self.marl_update_epochs: int = (
             self.get_parameter("marl_update_epochs").get_parameter_value().integer_value
         )
+        self.model_checkpoint_path: str = (
+            self.get_parameter("model_checkpoint_path")
+            .get_parameter_value()
+            .string_value
+        )
 
         # ----- Variables -----
         self.goal_future: Future = None
+        self.goal_handle: ClientGoalHandle = None
         self.last_odom: Odometry = None
         self.last_cmd_vel: Twist = None
         self.last_goal: PoseStamped = None
@@ -81,6 +95,7 @@ class RobotNode(Node):
         self.action_server_connected: bool = False
         self.other_nodes: list[str] = []  # keep track of other robot nodes
         self.last_position_update_time: float = time()
+        self.goal_publish_time: float = time()
         self.node_positions: dict[str, tuple[float, float]] = (
             {}
         )  # store positions of nodes
@@ -109,6 +124,12 @@ class RobotNode(Node):
         self.nav_client: ActionClient = ActionClient(
             self, NavigateToPose, f"{self.namespace}/navigate_to_pose"
         )
+
+        # ----- Sevices -----
+        self.save_service: Trigger = self.create_service(
+            Trigger, f"{self.get_name()}/save_checkpoint", self.save_checkpoint_callback
+        )
+        # ros2 service call /<node_name>/save_checkpoint std_srvs/srv/Trigger
 
         # ----- Subscribers -----
         self.odom_sub: Subscription[Odometry] = self.create_subscription(
@@ -172,6 +193,21 @@ class RobotNode(Node):
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg
 
+    def save_checkpoint_callback(
+        self, request: Trigger.Request, response: Trigger.Response
+    ):
+        if self.swarm_explorer is not None:
+            self.swarm_explorer.save_checkpoint(self.model_checkpoint_path)
+            response.success = True
+            response.message = f"Checkpoint saved to {self.model_checkpoint_path}"
+            self.get_logger().info(response.message)
+        else:
+            response.success = False
+            response.message = "SwarmExplorer not initialized, cannot save checkpoint"
+            self.get_logger().warn(response.message)
+
+        return response
+
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         goal_pose = PoseStamped()
         goal_pose.header.stamp = self.get_clock().now().to_msg()
@@ -207,19 +243,23 @@ class RobotNode(Node):
             self.get_logger().info(
                 f"Published new goal for {self.namespace} [{x}, {y}, {theta}]"
             )
+            self.goal_publish_time = time()
             self.moving = True
 
     def goal_response_callback(self, future: Future):
-        result = future.result()  # get result of sending the goal
-        result_future = result.get_result_async()
+        self.goal_handle: ClientGoalHandle = future.result()  # goal result
+        result_future: Future = self.goal_handle.get_result_async()
         result_future.add_done_callback(self.goal_done_callback)
 
     def goal_done_callback(self, future: Future):
-        result = future.result()
+        result: ClientGoalHandle = future.result()
         if result.status == GoalStatus.STATUS_SUCCEEDED:  # SUCCEEDED
             self.get_logger().info(f"Goal completed successfully for {self.namespace}")
-        elif result.status == GoalStatus.STATUS_ABORTED:  # ABORTED
-            self.get_logger().warn(f"Goal was aborted for {self.namespace}")
+        elif result.status in [
+            GoalStatus.STATUS_ABORTED,
+            GoalStatus.STATUS_CANCELED,
+        ]:  # ABORTED or CANCELED
+            self.get_logger().warn(f"Goal was abandoned for {self.namespace}")
         else:
             self.get_logger().warn(
                 f"Goal failed with status {result.status} for {self.namespace}"
@@ -229,17 +269,32 @@ class RobotNode(Node):
 
     def process_goal_callback(self):
         if self.current_map is None or self.last_odom is None:
-            return
+            return  # no data yet to make decisions with
+
+        if (
+            self.is_moving
+            and self.action_server_connected
+            and time() - self.goal_publish_time > self.goal_timeout
+        ):
+            self.get_logger().warn(
+                f"Goal timeout exceeded for {self.namespace}, canceling goal"
+            )
+            self.nav_client._cancel_goal_async(self.goal_handle)
+            self.moving = False
+            return  # robot is taking too long to reach goal
 
         if self.is_moving:
-            return
+            return  # robot is moving towards goal
 
         robot_names = self._get_swarm_robot_names()
         if len(robot_names) == 0:
-            return
+            return  # no other robots found
 
         if self.swarm_explorer is None and len(self.other_nodes) >= 1:
-            self.swarm_explorer = SwarmExplorer(robot_names=robot_names)
+            self.swarm_explorer = SwarmExplorer(
+                robot_names=robot_names,
+                checkpoint_path=self.model_checkpoint_path,
+            )
             self.previous_observation = None
             self.previous_action_output = None
             self.get_logger().info(
@@ -274,6 +329,7 @@ class RobotNode(Node):
                     f"critic_loss={metrics['critic_loss']:.4f}, "
                     f"entropy={metrics['entropy']:.4f}"
                 )
+                self.swarm_explorer.save_checkpoint(self.model_checkpoint_path)
 
         action_output = self.swarm_explorer.select_frontier_actions(current_observation)
         self.previous_observation = current_observation
@@ -401,11 +457,17 @@ class RobotNode(Node):
 def main():
     rclpy.init()
     robot_node = RobotNode()
-    while rclpy.ok():
-        rclpy.spin_once(robot_node)
-
-    robot_node.destroy_node()
-    rclpy.shutdown()
+    try:
+        while rclpy.ok():
+            rclpy.spin_once(robot_node)
+    except KeyboardInterrupt:
+        if robot_node.swarm_explorer is not None:
+            robot_node.swarm_explorer.save_checkpoint(robot_node.model_checkpoint_path)
+            robot_node.get_logger().info(
+                f"Saved MARL checkpoint to {robot_node.model_checkpoint_path}"
+            )
+        robot_node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

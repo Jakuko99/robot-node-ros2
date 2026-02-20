@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import math
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -163,6 +164,7 @@ class RLCoordinator:
         local_states: torch.Tensor,
         global_state: torch.Tensor,
         action_masks: Optional[torch.Tensor] = None,
+        logits_bias: Optional[torch.Tensor] = None,
         deterministic: bool = False,
     ) -> Dict[str, torch.Tensor]:
         local_states = local_states.to(self.device)
@@ -172,6 +174,8 @@ class RLCoordinator:
         )
 
         logits = self.model.actor_logits(local_states, action_masks)
+        if logits_bias is not None:
+            logits = logits + logits_bias.to(self.device)
         distribution = Categorical(logits=logits)
 
         if deterministic:
@@ -188,6 +192,7 @@ class RLCoordinator:
             "log_probs": log_probs,
             "entropy": entropy,
             "value": value,
+            "logits": logits,
         }
 
     def compute_reward(
@@ -342,6 +347,11 @@ class SwarmExplorer:
         local_patch_size: int = 32,
         max_frontier_clusters: int = 20,
         collision_distance: float = 0.35,
+        close_robot_distance: float = 1.0,
+        frontier_distance_bias: float = 3.0,
+        frontier_distance_scale: float = 5.0,
+        direction_consistency_bonus: float = 0.8,
+        checkpoint_path: Optional[str] = None,
         device: str = "cpu",
     ):
         self.robot_names = robot_names
@@ -349,6 +359,13 @@ class SwarmExplorer:
         self.local_patch_size = local_patch_size
         self.max_frontier_clusters = max_frontier_clusters
         self.collision_distance = collision_distance
+        self.close_robot_distance = close_robot_distance
+        self.frontier_distance_bias = frontier_distance_bias
+        self.frontier_distance_scale = frontier_distance_scale
+        self.direction_consistency_bonus = direction_consistency_bonus
+        self.last_action_directions: Dict[str, np.ndarray] = {
+            name: np.zeros(2, dtype=np.float32) for name in self.robot_names
+        }
 
         local_state_dim = (
             3 + 1 + 1 + (2 * self.max_frontier_clusters) + (2 * self.num_agents)
@@ -364,6 +381,27 @@ class SwarmExplorer:
         )
 
         self.rollout_buffer = RolloutBuffer()
+
+        if checkpoint_path and os.path.isfile(checkpoint_path):
+            self.load_checkpoint(checkpoint_path)
+
+    # ----------------------- Checkpoint helpers --------------------------
+    def save_checkpoint(self, path: str) -> None:
+        """Persist model weights and optimizer state to disk."""
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        torch.save(
+            {
+                "model_state_dict": self.rl.model.state_dict(),
+                "optimizer_state_dict": self.rl.optimizer.state_dict(),
+            },
+            path,
+        )
+
+    def load_checkpoint(self, path: str) -> None:
+        """Restore model weights and optimizer state from disk."""
+        checkpoint = torch.load(path, map_location=self.rl.device)
+        self.rl.model.load_state_dict(checkpoint["model_state_dict"])
+        self.rl.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     # ------------------------ Message -> Tensor --------------------------
     def occupancy_grid_to_numpy(self, grid_data: OccupancyGridData) -> np.ndarray:
@@ -425,7 +463,7 @@ class SwarmExplorer:
 
         frontier_set = {tuple(cell.tolist()) for cell in frontier_cells}
         visited = set()
-        centroids: List[Tuple[float, float]] = []
+        clusters_info: List[Tuple[int, float, float]] = []  # (size, x, y)
 
         neighbor_offsets = [
             (-1, -1),
@@ -458,14 +496,21 @@ class SwarmExplorer:
             if len(cluster) >= min_cluster_size:
                 cluster_arr = np.array(cluster, dtype=np.float32)
                 centroid_row_col = cluster_arr.mean(axis=0)
-                centroids.append(
+                clusters_info.append(
                     (
+                        len(cluster),
                         float(meta.origin_x + centroid_row_col[1] * meta.resolution),
                         float(meta.origin_y + centroid_row_col[0] * meta.resolution),
                     )
                 )
 
-        centroid_array = np.array(centroids, dtype=np.float32)
+        # Largest clusters first → richest unexplored boundary retained at truncation
+        clusters_info.sort(key=lambda item: -item[0])
+        centroid_array = (
+            np.array([(cx, cy) for _, cx, cy in clusters_info], dtype=np.float32)
+            if clusters_info
+            else np.zeros((0, 2), dtype=np.float32)
+        )
         if max_centroids is not None and len(centroid_array) > max_centroids:
             centroid_array = centroid_array[:max_centroids]
         return centroid_array
@@ -542,23 +587,33 @@ class SwarmExplorer:
         center_row = int((state.y - meta.origin_y) / meta.resolution)
         half = self.local_patch_size // 2
 
-        row_min = max(center_row - half, 0)
-        row_max = min(center_row + half, normalized_grid.shape[0])
-        col_min = max(center_col - half, 0)
-        col_max = min(center_col + half, normalized_grid.shape[1])
-
         patch = (
             np.ones((self.local_patch_size, self.local_patch_size), dtype=np.float32)
             * 0.5
         )
-        cropped = normalized_grid[row_min:row_max, col_min:col_max]
 
-        insert_row = (self.local_patch_size - cropped.shape[0]) // 2
-        insert_col = (self.local_patch_size - cropped.shape[1]) // 2
-        patch[
-            insert_row : insert_row + cropped.shape[0],
-            insert_col : insert_col + cropped.shape[1],
-        ] = cropped
+        src_row_start = center_row - half
+        src_col_start = center_col - half
+        src_row_end = src_row_start + self.local_patch_size
+        src_col_end = src_col_start + self.local_patch_size
+
+        grid_h, grid_w = normalized_grid.shape
+        row_min = max(src_row_start, 0)
+        row_max = min(src_row_end, grid_h)
+        col_min = max(src_col_start, 0)
+        col_max = min(src_col_end, grid_w)
+
+        if row_max <= row_min or col_max <= col_min:
+            return patch
+
+        dst_row_start = max(0, -src_row_start)
+        dst_col_start = max(0, -src_col_start)
+        dst_row_end = dst_row_start + (row_max - row_min)
+        dst_col_end = dst_col_start + (col_max - col_min)
+
+        patch[dst_row_start:dst_row_end, dst_col_start:dst_col_end] = normalized_grid[
+            row_min:row_max, col_min:col_max
+        ]
         return patch
 
     def _pad_frontier_centroids(self, centroids: torch.Tensor) -> torch.Tensor:
@@ -569,6 +624,188 @@ class SwarmExplorer:
         if valid_count > 0:
             padded[:valid_count] = centroids[:valid_count]
         return padded
+
+    def _compute_frontier_distance_bias(
+        self,
+        observation: SwarmObservation,
+        frontier_centroids: torch.Tensor,
+        action_masks: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build per-agent logits bias favoring closer frontier centroids."""
+        centroids = frontier_centroids.detach().cpu().numpy()
+        masks = action_masks.detach().cpu().numpy()
+        bias = np.zeros((self.num_agents, self.max_frontier_clusters), dtype=np.float32)
+
+        for robot_index, robot_name in enumerate(self.robot_names):
+            robot_state = observation.robot_states[robot_name]
+            valid_indices = np.where(masks[robot_index] > 0.0)[0]
+            if len(valid_indices) == 0:
+                continue
+
+            distances = np.array(
+                [
+                    math.hypot(
+                        centroids[idx][0] - robot_state.x,
+                        centroids[idx][1] - robot_state.y,
+                    )
+                    for idx in valid_indices
+                ],
+                dtype=np.float32,
+            )
+
+            # Exponential proximity bonus: highest for the closest frontier,
+            # decays sharply. frontier_distance_scale sets the half-life in metres.
+            bias_values = self.frontier_distance_bias * np.exp(
+                -distances / self.frontier_distance_scale
+            )
+
+            for offset, centroid_idx in enumerate(valid_indices):
+                bias[robot_index, int(centroid_idx)] = float(bias_values[offset])
+
+        return torch.tensor(bias, dtype=torch.float32, device=self.rl.device)
+
+    def _diversify_targets_for_close_robots(
+        self,
+        observation: SwarmObservation,
+        actions: List[int],
+        frontier_centroids: torch.Tensor,
+        action_masks: torch.Tensor,
+    ) -> List[int]:
+        """Reassign close robots to different map segments when feasible."""
+        if self.num_agents < 2:
+            return actions
+
+        centroids = frontier_centroids.detach().cpu().numpy()
+        masks = action_masks.detach().cpu().numpy()
+        positions = np.array(
+            [
+                [observation.robot_states[name].x, observation.robot_states[name].y]
+                for name in self.robot_names
+            ],
+            dtype=np.float32,
+        )
+
+        diffs = positions[:, None, :] - positions[None, :, :]
+        distances = np.linalg.norm(diffs, axis=-1)
+        np.fill_diagonal(distances, np.inf)
+
+        close_counts = np.sum(distances < self.close_robot_distance, axis=1)
+        close_robot_indices = [i for i, count in enumerate(close_counts) if count > 0]
+        if not close_robot_indices:
+            return actions
+
+        adjusted = list(actions)
+
+        for robot_index in sorted(
+            close_robot_indices, key=lambda idx: -close_counts[idx]
+        ):
+            valid_indices = np.where(masks[robot_index] > 0.0)[0].tolist()
+            if len(valid_indices) <= 1:
+                continue
+
+            current_choice = adjusted[robot_index]
+            neighbor_indices = [
+                idx
+                for idx in range(self.num_agents)
+                if distances[robot_index, idx] < self.close_robot_distance
+            ]
+            if not neighbor_indices:
+                continue
+
+            best_choice = current_choice
+            best_score = -float("inf")
+
+            for candidate in valid_indices:
+                if candidate == current_choice:
+                    continue
+
+                candidate_xy = centroids[candidate]
+                robot_xy = positions[robot_index]
+                travel_dist = float(
+                    math.hypot(
+                        candidate_xy[0] - robot_xy[0], candidate_xy[1] - robot_xy[1]
+                    )
+                )
+
+                separation_scores = []
+                for neighbor_idx in neighbor_indices:
+                    neighbor_choice = adjusted[neighbor_idx]
+                    if neighbor_choice < 0 or neighbor_choice >= len(centroids):
+                        continue
+                    neighbor_xy = centroids[neighbor_choice]
+                    separation_scores.append(
+                        float(
+                            math.hypot(
+                                candidate_xy[0] - neighbor_xy[0],
+                                candidate_xy[1] - neighbor_xy[1],
+                            )
+                        )
+                    )
+
+                if not separation_scores:
+                    continue
+
+                segment_separation = min(separation_scores)
+                score = segment_separation - 0.35 * travel_dist
+                if score > best_score:
+                    best_score = score
+                    best_choice = int(candidate)
+
+            adjusted[robot_index] = best_choice
+
+        return adjusted
+
+    def _compute_direction_consistency_bonus(
+        self,
+        prev_observation: SwarmObservation,
+        action_output: ActionOutput,
+    ) -> float:
+        bonus = 0.0
+        for robot_name in self.robot_names:
+            robot_state = prev_observation.robot_states[robot_name]
+            target_x, target_y = action_output.target_points.get(
+                robot_name, (robot_state.x, robot_state.y)
+            )
+            vec = np.array(
+                [target_x - robot_state.x, target_y - robot_state.y], dtype=np.float32
+            )
+            norm = float(np.linalg.norm(vec))
+            if norm <= 1e-6:
+                continue
+
+            current_dir = vec / norm
+            previous_dir = self.last_action_directions.get(robot_name)
+            if previous_dir is None:
+                continue
+
+            prev_norm = float(np.linalg.norm(previous_dir))
+            if prev_norm <= 1e-6:
+                continue
+
+            cosine = float(
+                np.clip(np.dot(previous_dir / prev_norm, current_dir), -1.0, 1.0)
+            )
+            if cosine > 0.6:
+                bonus += self.direction_consistency_bonus * ((cosine - 0.6) / 0.4)
+        return float(bonus)
+
+    def _update_last_action_directions(
+        self,
+        prev_observation: SwarmObservation,
+        action_output: ActionOutput,
+    ) -> None:
+        for robot_name in self.robot_names:
+            robot_state = prev_observation.robot_states[robot_name]
+            target_x, target_y = action_output.target_points.get(
+                robot_name, (robot_state.x, robot_state.y)
+            )
+            vec = np.array(
+                [target_x - robot_state.x, target_y - robot_state.y], dtype=np.float32
+            )
+            norm = float(np.linalg.norm(vec))
+            if norm <= 1e-6:
+                continue
+            self.last_action_directions[robot_name] = vec / norm
 
     def build_state_tensors(
         self, observation: SwarmObservation
@@ -587,6 +824,25 @@ class SwarmExplorer:
         )
 
         centroids = map_tensors["frontier_centroids"]
+
+        # Re-sort centroids nearest-first relative to the swarm centroid so
+        # that the lowest action indices are always the closest frontiers.
+        if centroids.shape[0] > 1:
+            positions_np = np.array(
+                [
+                    [observation.robot_states[n].x, observation.robot_states[n].y]
+                    for n in self.robot_names
+                ],
+                dtype=np.float32,
+            )
+            swarm_center = positions_np.mean(axis=0)
+            c_np = centroids.detach().cpu().numpy()
+            dists_to_swarm = np.linalg.norm(c_np - swarm_center, axis=1)
+            order = np.argsort(dists_to_swarm)
+            centroids = centroids[
+                torch.tensor(order, dtype=torch.long, device=self.rl.device)
+            ]
+
         padded_centroids = self._pad_frontier_centroids(centroids)
 
         local_state_list = []
@@ -663,14 +919,32 @@ class SwarmExplorer:
                 value=torch.tensor(0.0, device=self.rl.device),
             )
 
+        logits_bias = self._compute_frontier_distance_bias(
+            observation=observation,
+            frontier_centroids=state_tensors["frontier_centroids"],
+            action_masks=state_tensors["action_masks"],
+        )
+
         rollout = self.rl.select_actions(
             local_states=state_tensors["local_states"],
             global_state=state_tensors["global_state"],
             action_masks=state_tensors["action_masks"],
+            logits_bias=logits_bias,
             deterministic=deterministic,
         )
 
         actions = rollout["actions"].detach().cpu().numpy().tolist()
+        actions = self._diversify_targets_for_close_robots(
+            observation=observation,
+            actions=actions,
+            frontier_centroids=state_tensors["frontier_centroids"],
+            action_masks=state_tensors["action_masks"],
+        )
+
+        actions_tensor = torch.tensor(actions, dtype=torch.long, device=self.rl.device)
+        distribution = Categorical(logits=rollout["logits"])
+        final_log_probs = distribution.log_prob(actions_tensor)
+
         centroids = state_tensors["frontier_centroids"].detach().cpu().numpy()
 
         action_indices: Dict[str, int] = {}
@@ -688,7 +962,7 @@ class SwarmExplorer:
             local_states=state_tensors["local_states"],
             global_state=state_tensors["global_state"],
             action_masks=state_tensors["action_masks"],
-            log_probs=rollout["log_probs"].detach(),
+            log_probs=final_log_probs.detach(),
             value=rollout["value"].detach(),
         )
 
@@ -770,8 +1044,11 @@ class SwarmExplorer:
         distance_bonus = self._compute_frontier_proximity_bonus(
             prev_observation, action_output
         )
+        direction_bonus = self._compute_direction_consistency_bonus(
+            prev_observation, action_output
+        )
 
-        return base_reward + distance_bonus
+        return base_reward + distance_bonus + direction_bonus
 
     def _compute_frontier_proximity_bonus(
         self,
@@ -784,15 +1061,15 @@ class SwarmExplorer:
         Uses exponential decay: bonus = sum(exp(-scaled_distance))
         """
         bonus = 0.0
-        fronstier_centroids = action_output.frontier_centroids.detach().cpu().numpy()
+        frontier_centroids = action_output.frontier_centroids.detach().cpu().numpy()
 
         for robot_index, robot_name in enumerate(self.robot_names):
             action_idx = action_output.action_indices.get(robot_name, -1)
-            if action_idx < 0 or action_idx >= len(fronstier_centroids):
+            if action_idx < 0 or action_idx >= len(frontier_centroids):
                 continue
 
             robot_state = prev_observation.robot_states[robot_name]
-            target_centroid = fronstier_centroids[action_idx]
+            target_centroid = frontier_centroids[action_idx]
 
             dist = float(
                 math.hypot(
@@ -819,6 +1096,7 @@ class SwarmExplorer:
         reward = self.compute_transition_reward(
             prev_observation, next_observation, action_output
         )
+        self._update_last_action_directions(prev_observation, action_output)
 
         actions_tensor = torch.tensor(
             [action_output.action_indices[name] for name in self.robot_names],

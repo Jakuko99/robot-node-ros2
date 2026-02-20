@@ -1,5 +1,6 @@
 **/test/
 __pycache__/
-
+*.pt
+robot_sim/gazebo/random_environment.sdf
 robot_network/resource/dataset*/
 *.drawio.bkp

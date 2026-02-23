@@ -1,15 +1,13 @@
-from __future__ import annotations
-
+from torch.distributions import Categorical
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-
-import math
-import os
+import torch.nn.functional as F
+from collections import deque
+from typing import Optional
+import torch.nn as nn
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.distributions import Categorical
+import math
+import os
 
 
 @dataclass
@@ -42,17 +40,18 @@ class RobotKinematics:
 @dataclass
 class SwarmObservation:
     map_data: OccupancyGridData
-    robot_states: Dict[str, RobotKinematics]
+    robot_states: dict[str, RobotKinematics]
 
 
 @dataclass
 class ActionOutput:
-    action_indices: Dict[str, int]
-    target_points: Dict[str, Tuple[float, float]]
+    action_indices: dict[str, int]
+    target_points: dict[str, tuple[float, float]]
     frontier_centroids: torch.Tensor
     local_states: torch.Tensor
     global_state: torch.Tensor
     action_masks: torch.Tensor
+    patches: torch.Tensor
     log_probs: torch.Tensor
     value: torch.Tensor
 
@@ -62,6 +61,7 @@ class RolloutStep:
     local_states: torch.Tensor
     global_state: torch.Tensor
     action_masks: torch.Tensor
+    patches: torch.Tensor
     actions: torch.Tensor
     old_log_probs: torch.Tensor
     value: torch.Tensor
@@ -71,7 +71,7 @@ class RolloutStep:
 
 class RolloutBuffer:
     def __init__(self):
-        self.steps: List[RolloutStep] = []
+        self.steps: list[RolloutStep] = []
 
     def add(self, step: RolloutStep) -> None:
         self.steps.append(step)
@@ -92,12 +92,33 @@ class MultiAgentActorCritic(nn.Module):
         global_state_dim: int,
         max_frontier_clusters: int,
         hidden_dim: int = 256,
+        num_agents: int = 1,
+        patch_size: int = 32,
+        patch_encoding_dim: int = 64,
     ):
         super().__init__()
         self.max_frontier_clusters = max_frontier_clusters
+        self.num_agents = num_agents
+        self.patch_size = patch_size
+        self.patch_encoding_dim = patch_encoding_dim
 
+        # CNN encoder shared across all agents and patches
+        # Two Conv2d(kernel=4, stride=2) on a 32×32 input:
+        #   32 → 15 → 6  ⟹  32 channels × 6 × 6 = 1152 flat features
+        _cnn_flat = 32 * 6 * 6
+        self.patch_encoder = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(_cnn_flat, patch_encoding_dim),
+            nn.ReLU(),
+        )
+
+        actor_input_dim = local_state_dim + num_agents * patch_encoding_dim
         self.actor_backbone = nn.Sequential(
-            nn.Linear(local_state_dim, hidden_dim),
+            nn.Linear(actor_input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -115,13 +136,40 @@ class MultiAgentActorCritic(nn.Module):
     def actor_logits(
         self,
         local_state: torch.Tensor,
+        patches: torch.Tensor,
         action_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        features = self.actor_backbone(local_state)
+        # patches: (batch, num_agents, patch_size, patch_size)
+        batch = local_state.shape[0]
+        patches_flat = patches.view(
+            batch * self.num_agents, 1, self.patch_size, self.patch_size
+        )
+        encoded = self.patch_encoder(patches_flat)  # (batch*N, patch_encoding_dim)
+        encoded = encoded.view(batch, self.num_agents * self.patch_encoding_dim)
+        combined = torch.cat([local_state, encoded], dim=-1)
+        features = self.actor_backbone(combined)
         logits = self.actor_head(features)
         if action_mask is not None:
             logits = logits.masked_fill(action_mask <= 0.0, -1e9)
         return logits
+
+    def make_extended_global_state(
+        self,
+        local_states: torch.Tensor,
+        patches: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build global critic input by encoding patches and appending to local states.
+
+        local_states: (num_agents, local_state_dim)
+        patches:      (num_agents, num_agents, patch_size, patch_size)
+        returns:      flat (num_agents * (local_state_dim + num_agents * patch_encoding_dim),)
+        """
+        N = local_states.shape[0]
+        patches_flat = patches.view(N * N, 1, self.patch_size, self.patch_size)
+        encoded = self.patch_encoder(patches_flat)  # (N*N, patch_encoding_dim)
+        encoded = encoded.view(N, N * self.patch_encoding_dim)
+        extended = torch.cat([local_states, encoded], dim=-1)  # (N, extended_local_dim)
+        return extended.reshape(-1)
 
     def critic_value(self, global_state: torch.Tensor) -> torch.Tensor:
         return self.critic(global_state).squeeze(-1)
@@ -142,6 +190,8 @@ class RLCoordinator:
         clip_epsilon: float = 0.2,
         entropy_coef: float = 0.01,
         value_coef: float = 0.5,
+        patch_encoding_dim: int = 64,
+        patch_size: int = 32,
         device: str = "cpu",
     ):
         self.num_agents = num_agents
@@ -156,24 +206,27 @@ class RLCoordinator:
             local_state_dim=local_state_dim,
             global_state_dim=global_state_dim,
             max_frontier_clusters=max_frontier_clusters,
+            num_agents=num_agents,
+            patch_size=patch_size,
+            patch_encoding_dim=patch_encoding_dim,
         ).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
     def select_actions(
         self,
         local_states: torch.Tensor,
-        global_state: torch.Tensor,
+        patches: torch.Tensor,
         action_masks: Optional[torch.Tensor] = None,
         logits_bias: Optional[torch.Tensor] = None,
         deterministic: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         local_states = local_states.to(self.device)
-        global_state = global_state.to(self.device)
+        patches = patches.to(self.device)
         action_masks = (
             action_masks.to(self.device) if action_masks is not None else None
         )
 
-        logits = self.model.actor_logits(local_states, action_masks)
+        logits = self.model.actor_logits(local_states, patches, action_masks)
         if logits_bias is not None:
             logits = logits + logits_bias.to(self.device)
         distribution = Categorical(logits=logits)
@@ -185,7 +238,8 @@ class RLCoordinator:
 
         log_probs = distribution.log_prob(actions)
         entropy = distribution.entropy()
-        value = self.model.critic_value(global_state.unsqueeze(0)).squeeze(0)
+        extended_global = self.model.make_extended_global_state(local_states, patches)
+        value = self.model.critic_value(extended_global.unsqueeze(0)).squeeze(0)
 
         return {
             "actions": actions,
@@ -203,7 +257,7 @@ class RLCoordinator:
         collision: bool,
         coverage_weight: float = 5.0,
         overlap_weight: float = 2.0,
-        energy_weight: float = 0.1,
+        energy_weight: float = 0.3,
         collision_penalty: float = 10.0,
     ) -> float:
         reward = 0.0
@@ -220,7 +274,7 @@ class RLCoordinator:
         values: torch.Tensor,
         dones: torch.Tensor,
         last_value: float,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         gae = 0.0
         advantages = torch.zeros_like(rewards)
         for timestep in reversed(range(len(rewards))):
@@ -243,16 +297,16 @@ class RLCoordinator:
         buffer: RolloutBuffer,
         last_value: float,
         epochs: int = 4,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         if len(buffer) == 0:
             return {"actor_loss": 0.0, "critic_loss": 0.0, "entropy": 0.0}
 
         local_states = torch.stack([step.local_states for step in buffer.steps]).to(
             self.device
         )
-        global_states = torch.stack([step.global_state for step in buffer.steps]).to(
+        all_patches = torch.stack([step.patches for step in buffer.steps]).to(
             self.device
-        )
+        )  # (T, num_agents, num_agents, patch_size, patch_size)
         action_masks = torch.stack([step.action_masks for step in buffer.steps]).to(
             self.device
         )
@@ -279,9 +333,16 @@ class RLCoordinator:
         last_critic_loss = 0.0
         last_entropy = 0.0
 
+        T, N, D = local_states.shape
+        ps = self.model.patch_size
+        pe = self.model.patch_encoding_dim
+
         for _ in range(epochs):
+            # Actor: reshape patches so each agent in each timestep gets all N patches
+            patches_for_actor = all_patches.view(T * N, N, ps, ps)
             logits = self.model.actor_logits(
-                local_states.reshape(-1, local_states.shape[-1]),
+                local_states.reshape(-1, D),
+                patches_for_actor,
                 action_masks.reshape(-1, action_masks.shape[-1]),
             )
             distribution = Categorical(logits=logits)
@@ -305,7 +366,16 @@ class RLCoordinator:
             )
             actor_loss = -torch.min(unclipped, clipped).mean()
 
-            critic_values = self.model.critic_value(global_states)
+            # Critic: recompute extended global state so patch encoder gets gradients
+            encoded_flat = self.model.patch_encoder(
+                all_patches.view(T * N * N, 1, ps, ps)
+            )  # (T*N*N, pe)
+            encoded_per_agent = encoded_flat.view(T, N, N * pe)
+            extended_local = torch.cat(
+                [local_states, encoded_per_agent], dim=-1
+            )  # (T, N, D + N*pe)
+            extended_global = extended_local.view(T, -1)  # (T, N*(D+N*pe))
+            critic_values = self.model.critic_value(extended_global)
             critic_loss = F.mse_loss(critic_values, returns)
 
             entropy_bonus = entropy.mean()
@@ -343,14 +413,17 @@ class SwarmExplorer:
 
     def __init__(
         self,
-        robot_names: List[str],
+        robot_names: list[str],
         local_patch_size: int = 32,
         max_frontier_clusters: int = 20,
         collision_distance: float = 0.35,
         close_robot_distance: float = 1.0,
-        frontier_distance_bias: float = 3.0,
-        frontier_distance_scale: float = 5.0,
-        direction_consistency_bonus: float = 0.8,
+        frontier_distance_bias: float = 5.0,
+        frontier_distance_scale: float = 3.0,
+        direction_consistency_bonus: float = 1.5,
+        backtrack_penalty: float = 2.5,
+        backtrack_memory: int = 8,
+        directional_momentum_bias: float = 1.5,
         checkpoint_path: Optional[str] = None,
         device: str = "cpu",
     ):
@@ -363,20 +436,32 @@ class SwarmExplorer:
         self.frontier_distance_bias = frontier_distance_bias
         self.frontier_distance_scale = frontier_distance_scale
         self.direction_consistency_bonus = direction_consistency_bonus
-        self.last_action_directions: Dict[str, np.ndarray] = {
+        self.backtrack_penalty = backtrack_penalty
+        self.directional_momentum_bias = directional_momentum_bias
+        self.last_action_directions: dict[str, np.ndarray] = {
             name: np.zeros(2, dtype=np.float32) for name in self.robot_names
         }
+        self.visited_positions: dict[str, deque] = {
+            name: deque(maxlen=backtrack_memory) for name in self.robot_names
+        }
 
+        patch_encoding_dim = 64
         local_state_dim = (
             3 + 1 + 1 + (2 * self.max_frontier_clusters) + (2 * self.num_agents)
         )
-        global_state_dim = self.num_agents * local_state_dim
+        # Critic receives the concatenation of all agents' extended local states,
+        # where each extended local state = scalar features + N encoded patches.
+        global_state_dim = self.num_agents * (
+            local_state_dim + self.num_agents * patch_encoding_dim
+        )
 
         self.rl = RLCoordinator(
             num_agents=self.num_agents,
             local_state_dim=local_state_dim,
             global_state_dim=global_state_dim,
             max_frontier_clusters=self.max_frontier_clusters,
+            patch_encoding_dim=patch_encoding_dim,
+            patch_size=self.local_patch_size,
             device=device,
         )
 
@@ -463,7 +548,7 @@ class SwarmExplorer:
 
         frontier_set = {tuple(cell.tolist()) for cell in frontier_cells}
         visited = set()
-        clusters_info: List[Tuple[int, float, float]] = []  # (size, x, y)
+        clusters_info: list[tuple[int, float, float]] = []  # (size, x, y)
 
         neighbor_offsets = [
             (-1, -1),
@@ -517,7 +602,7 @@ class SwarmExplorer:
 
     def occupancy_grid_to_tensor(
         self, map_data: OccupancyGridData
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         grid = self.occupancy_grid_to_numpy(map_data)
         normalized = self.normalize_grid(grid)
         unknown_ratio = self.compute_unknown_ratio(grid)
@@ -556,8 +641,8 @@ class SwarmExplorer:
 
     def other_robots_to_tensors(
         self,
-        robot_states: Dict[str, RobotKinematics],
-    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+        robot_states: dict[str, RobotKinematics],
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
         positions = np.array(
             [[robot_states[name].x, robot_states[name].y] for name in self.robot_names],
             dtype=np.float32,
@@ -631,13 +716,20 @@ class SwarmExplorer:
         frontier_centroids: torch.Tensor,
         action_masks: torch.Tensor,
     ) -> torch.Tensor:
-        """Build per-agent logits bias favoring closer frontier centroids."""
+        """Build per-agent logits bias favoring closer frontier centroids.
+
+        Three components are combined:
+        1. Exponential proximity bonus (main driver — prefers nearest frontiers).
+        2. Directional momentum bonus (boosts frontiers aligned with current heading).
+        3. Backtrack penalty (discourages frontiers near recently visited positions).
+        """
         centroids = frontier_centroids.detach().cpu().numpy()
         masks = action_masks.detach().cpu().numpy()
         bias = np.zeros((self.num_agents, self.max_frontier_clusters), dtype=np.float32)
 
         for robot_index, robot_name in enumerate(self.robot_names):
             robot_state = observation.robot_states[robot_name]
+            robot_pos = np.array([robot_state.x, robot_state.y], dtype=np.float32)
             valid_indices = np.where(masks[robot_index] > 0.0)[0]
             if len(valid_indices) == 0:
                 continue
@@ -653,24 +745,59 @@ class SwarmExplorer:
                 dtype=np.float32,
             )
 
-            # Exponential proximity bonus: highest for the closest frontier,
+            # 1. Exponential proximity bonus: highest for the closest frontier,
             # decays sharply. frontier_distance_scale sets the half-life in metres.
             bias_values = self.frontier_distance_bias * np.exp(
                 -distances / self.frontier_distance_scale
             )
-
             for offset, centroid_idx in enumerate(valid_indices):
                 bias[robot_index, int(centroid_idx)] = float(bias_values[offset])
+
+            # 2. Directional momentum: boost frontiers aligned with last travel heading.
+            last_dir = self.last_action_directions.get(robot_name)
+            if last_dir is not None:
+                last_dir_norm = float(np.linalg.norm(last_dir))
+                if last_dir_norm > 1e-6:
+                    unit_dir = last_dir / last_dir_norm
+                    for centroid_idx in valid_indices:
+                        to_frontier = centroids[centroid_idx] - robot_pos
+                        frontier_dist = float(np.linalg.norm(to_frontier))
+                        if frontier_dist > 1e-6:
+                            cosine = float(
+                                np.clip(
+                                    np.dot(unit_dir, to_frontier / frontier_dist),
+                                    -1.0,
+                                    1.0,
+                                )
+                            )
+                            if cosine > 0.0:
+                                bias[robot_index, int(centroid_idx)] += (
+                                    self.directional_momentum_bias * cosine
+                                )
+
+            # 3. Backtrack penalty: reduce attractiveness of frontiers near
+            # recently visited positions.
+            visited = self.visited_positions.get(robot_name)
+            if visited:
+                visited_arr = np.array(list(visited), dtype=np.float32)  # (K, 2)
+                for centroid_idx in valid_indices:
+                    cpos = np.array(centroids[centroid_idx], dtype=np.float32)
+                    dists_to_visited = np.linalg.norm(
+                        visited_arr - cpos[None, :], axis=-1
+                    )
+                    min_dist = float(np.min(dists_to_visited))
+                    penalty = self.backtrack_penalty * math.exp(-min_dist / 2.0)
+                    bias[robot_index, int(centroid_idx)] -= penalty
 
         return torch.tensor(bias, dtype=torch.float32, device=self.rl.device)
 
     def _diversify_targets_for_close_robots(
         self,
         observation: SwarmObservation,
-        actions: List[int],
+        actions: list[int],
         frontier_centroids: torch.Tensor,
         action_masks: torch.Tensor,
-    ) -> List[int]:
+    ) -> list[int]:
         """Reassign close robots to different map segments when feasible."""
         if self.num_agents < 2:
             return actions
@@ -785,8 +912,8 @@ class SwarmExplorer:
             cosine = float(
                 np.clip(np.dot(previous_dir / prev_norm, current_dir), -1.0, 1.0)
             )
-            if cosine > 0.6:
-                bonus += self.direction_consistency_bonus * ((cosine - 0.6) / 0.4)
+            if cosine > 0.3:
+                bonus += self.direction_consistency_bonus * ((cosine - 0.3) / 0.7)
         return float(bonus)
 
     def _update_last_action_directions(
@@ -809,7 +936,7 @@ class SwarmExplorer:
 
     def build_state_tensors(
         self, observation: SwarmObservation
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         if any(name not in observation.robot_states for name in self.robot_names):
             raise ValueError(
                 "Missing robot states for one or more robots in SwarmObservation"
@@ -845,6 +972,22 @@ class SwarmExplorer:
 
         padded_centroids = self._pad_frontier_centroids(centroids)
 
+        # Compute every robot's local patch from the shared merged map, then
+        # broadcast so each agent receives the full set of N patches.
+        all_robot_patches = []
+        for name in self.robot_names:
+            patch = self.extract_local_patch(
+                normalized_np, observation.robot_states[name], observation.map_data.meta
+            )
+            all_robot_patches.append(
+                torch.tensor(patch, dtype=torch.float32, device=self.rl.device)
+            )
+        patches_stack = torch.stack(all_robot_patches, dim=0)  # (N, 32, 32)
+        # (N, N, 32, 32): patches_tensor[i] = all N patches from agent i's perspective
+        patches_tensor = (
+            patches_stack.unsqueeze(0).expand(self.num_agents, -1, -1, -1).contiguous()
+        )
+
         local_state_list = []
         action_mask_list = []
 
@@ -857,11 +1000,6 @@ class SwarmExplorer:
 
         for name in self.robot_names:
             state = observation.robot_states[name]
-            local_patch = self.extract_local_patch(
-                normalized_np, state, observation.map_data.meta
-            )
-            _ = torch.tensor(local_patch, dtype=torch.float32, device=self.rl.device)
-
             pose_features = torch.tensor(
                 [state.x, state.y, state.yaw],
                 dtype=torch.float32,
@@ -889,6 +1027,7 @@ class SwarmExplorer:
             "local_states": local_states,
             "global_state": global_state,
             "action_masks": action_masks,
+            "patches": patches_tensor,
             "frontier_centroids": padded_centroids,
             "distance_matrix": distance_matrix,
             "map_entropy": map_tensors["map_entropy"],
@@ -915,6 +1054,7 @@ class SwarmExplorer:
                 local_states=state_tensors["local_states"],
                 global_state=state_tensors["global_state"],
                 action_masks=state_tensors["action_masks"],
+                patches=state_tensors["patches"],
                 log_probs=zero,
                 value=torch.tensor(0.0, device=self.rl.device),
             )
@@ -927,7 +1067,7 @@ class SwarmExplorer:
 
         rollout = self.rl.select_actions(
             local_states=state_tensors["local_states"],
-            global_state=state_tensors["global_state"],
+            patches=state_tensors["patches"],
             action_masks=state_tensors["action_masks"],
             logits_bias=logits_bias,
             deterministic=deterministic,
@@ -947,8 +1087,8 @@ class SwarmExplorer:
 
         centroids = state_tensors["frontier_centroids"].detach().cpu().numpy()
 
-        action_indices: Dict[str, int] = {}
-        target_points: Dict[str, Tuple[float, float]] = {}
+        action_indices: dict[str, int] = {}
+        target_points: dict[str, tuple[float, float]] = {}
         for robot_index, robot_name in enumerate(self.robot_names):
             frontier_index = int(actions[robot_index])
             target_x, target_y = centroids[frontier_index].tolist()
@@ -962,6 +1102,7 @@ class SwarmExplorer:
             local_states=state_tensors["local_states"],
             global_state=state_tensors["global_state"],
             action_masks=state_tensors["action_masks"],
+            patches=state_tensors["patches"],
             log_probs=final_log_probs.detach(),
             value=rollout["value"].detach(),
         )
@@ -972,7 +1113,7 @@ class SwarmExplorer:
     ) -> float:
         return max(prev_unknown_ratio - next_unknown_ratio, 0.0)
 
-    def compute_frontier_overlap_ratio(self, assigned_frontiers: List[int]) -> float:
+    def compute_frontier_overlap_ratio(self, assigned_frontiers: list[int]) -> float:
         valid = [index for index in assigned_frontiers if index >= 0]
         if not valid:
             return 0.0
@@ -982,7 +1123,7 @@ class SwarmExplorer:
     def compute_travel_distance(
         self,
         prev_observation: SwarmObservation,
-        target_points: Dict[str, Tuple[float, float]],
+        target_points: dict[str, tuple[float, float]],
     ) -> float:
         total = 0.0
         for robot_name in self.robot_names:
@@ -1079,9 +1220,9 @@ class SwarmExplorer:
             )
 
             if dist > 0.1:
-                scaled_dist = dist / 10.0
+                scaled_dist = dist / 5.0
                 prox_bonus = float(math.exp(-scaled_dist))
-                bonus += 2.0 * prox_bonus
+                bonus += 3.5 * prox_bonus
 
         return bonus
 
@@ -1098,6 +1239,13 @@ class SwarmExplorer:
         )
         self._update_last_action_directions(prev_observation, action_output)
 
+        # Record current robot positions for backtracking detection.
+        for robot_name in self.robot_names:
+            robot_state = prev_observation.robot_states[robot_name]
+            self.visited_positions[robot_name].append(
+                np.array([robot_state.x, robot_state.y], dtype=np.float32)
+            )
+
         actions_tensor = torch.tensor(
             [action_output.action_indices[name] for name in self.robot_names],
             dtype=torch.long,
@@ -1109,6 +1257,7 @@ class SwarmExplorer:
                 local_states=action_output.local_states.detach(),
                 global_state=action_output.global_state.detach(),
                 action_masks=action_output.action_masks.detach(),
+                patches=action_output.patches.detach(),
                 actions=actions_tensor,
                 old_log_probs=action_output.log_probs.detach(),
                 value=action_output.value.detach(),
@@ -1123,7 +1272,7 @@ class SwarmExplorer:
         next_observation: Optional[SwarmObservation],
         done: bool,
         epochs: int = 4,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         if len(self.rollout_buffer) == 0:
             return {"actor_loss": 0.0, "critic_loss": 0.0, "entropy": 0.0}
 
@@ -1132,8 +1281,11 @@ class SwarmExplorer:
         else:
             next_state = self.build_state_tensors(next_observation)
             with torch.no_grad():
+                extended_global = self.rl.model.make_extended_global_state(
+                    next_state["local_states"], next_state["patches"]
+                )
                 last_value_tensor = self.rl.model.critic_value(
-                    next_state["global_state"].unsqueeze(0)
+                    extended_global.unsqueeze(0)
                 )
             last_value = float(last_value_tensor.squeeze(0).item())
 
@@ -1151,7 +1303,7 @@ class SwarmExplorer:
         done: bool = False,
         update_every: int = 64,
         epochs: int = 4,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """One integrated training step for RobotNode-driven control loops.
 
         Typical cycle in RobotNode:
@@ -1182,7 +1334,7 @@ class SwarmExplorer:
     def train(
         self,
         epochs: int = 4,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Direct PPO training on accumulated experiences.
 
         Exposes the underlying PPO update for external batch-based training.

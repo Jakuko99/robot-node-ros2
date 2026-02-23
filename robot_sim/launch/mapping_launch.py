@@ -52,7 +52,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot1_map",
                         "x": 0.0,
@@ -68,7 +68,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot2_map",
                         "x": 1.0,
@@ -84,7 +84,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot3_map",
                         "x": 1.0,
@@ -100,7 +100,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot4_map",
                         "x": 0.0,
@@ -109,10 +109,6 @@ def generate_launch_description():
                     }
                 ],
             ),
-            Node(
-                package="map_merger",
-                executable="map_merger",
-                output="screen"
-            ),
+            Node(package="map_merger", executable="map_merger", output="screen"),
         ]
     )

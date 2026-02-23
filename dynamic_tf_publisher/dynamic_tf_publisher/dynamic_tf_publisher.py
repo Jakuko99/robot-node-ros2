@@ -1,17 +1,27 @@
 import rclpy
-from rclpy.qos import QoSProfile
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSHistoryPolicy,
+    QoSDurabilityPolicy,
+)
 from rclpy.node import Node
-from nav_msgs.msg import OccupancyGrid
-from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped
-import numpy as np
 
 
 class DynamicTFPublisher(Node):
     def __init__(self):
         super().__init__("dynamic_tf_publisher_node")
-        self.static_publisher = self.create_publisher(TFMessage, "/tf_static", 10)
+        self.static_publisher = self.create_publisher(
+            TFMessage,
+            "/tf_static",
+            QoSProfile(
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                history=QoSHistoryPolicy.KEEP_ALL,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )  # use default QoS for latched topic
         self.declare_parameter("publish_rate", 1.0)
         self.declare_parameter("frame_id", "world")
         self.declare_parameter("child_frame_id", "dynamic_frame")

@@ -11,7 +11,7 @@ Panels:
         - /Path1
         - /Path2
       Splitter Ratio: 0.5
-    Tree Height: 355
+    Tree Height: 630
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -160,7 +160,7 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path
-      Color: 85; 0; 255
+      Color: 0; 0; 255
       Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
@@ -238,9 +238,9 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.3295818567276001
-        Y: -0.2903043329715729
-        Z: -1.033126711845398
+        X: 0.21757353842258453
+        Y: -0.5420525670051575
+        Z: -1.0328748226165771
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -249,7 +249,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 1.5653979778289795
+      Yaw: 1.570397973060608
     Saved: ~
 Window Geometry:
   Displays:

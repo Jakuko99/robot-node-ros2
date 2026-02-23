@@ -22,9 +22,7 @@ def generate_launch_description():
                         "marl_training": True,
                         "marl_update_every": 32,
                         "marl_update_epochs": 4,
-                        "model_checkpoint_path": os.path.join(
-                            resource_dir, "kris_robot1_model.pt"
-                        ),
+                        "model_checkpoint_path": f"{resource_dir}/kris_robot1_model.pt",
                     }
                 ],
             ),
@@ -43,9 +41,7 @@ def generate_launch_description():
                         "marl_training": True,
                         "marl_update_every": 32,
                         "marl_update_epochs": 4,
-                        "model_checkpoint_path": os.path.join(
-                            resource_dir, "kris_robot2_model.pt"
-                        ),
+                        "model_checkpoint_path": f"{resource_dir}/kris_robot2_model.pt",
                     }
                 ],
             ),

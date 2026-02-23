@@ -288,6 +288,7 @@ class RobotNode(Node):
             self.swarm_explorer = SwarmExplorer(
                 robot_names=robot_names,
                 checkpoint_path=self.model_checkpoint_path,
+                direction_consistency_bonus=2.0,
             )
             self.previous_observation = None
             self.previous_action_output = None

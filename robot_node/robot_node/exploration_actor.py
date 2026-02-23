@@ -220,33 +220,49 @@ class RLCoordinator:
         logits_bias: Optional[torch.Tensor] = None,
         deterministic: bool = False,
     ) -> dict[str, torch.Tensor]:
-        local_states = local_states.to(self.device)
-        patches = patches.to(self.device)
-        action_masks = (
-            action_masks.to(self.device) if action_masks is not None else None
-        )
+        with torch.no_grad():
+            local_states = local_states.to(self.device)
+            patches = patches.to(self.device)
+            action_masks = (
+                action_masks.to(self.device) if action_masks is not None else None
+            )
 
-        logits = self.model.actor_logits(local_states, patches, action_masks)
-        if logits_bias is not None:
-            logits = logits + logits_bias.to(self.device)
-        distribution = Categorical(logits=logits)
+            # Unbiased logits — used for old_log_probs so they are consistent with
+            # the unbiased logits produced during PPO update (no distribution mismatch).
+            logits_unbiased = self.model.actor_logits(
+                local_states, patches, action_masks
+            )
 
-        if deterministic:
-            actions = torch.argmax(logits, dim=-1)
-        else:
-            actions = distribution.sample()
+            # Biased logits — used only for action selection / sampling.
+            if logits_bias is not None:
+                logits_biased = logits_unbiased + logits_bias.to(self.device)
+            else:
+                logits_biased = logits_unbiased
 
-        log_probs = distribution.log_prob(actions)
-        entropy = distribution.entropy()
-        extended_global = self.model.make_extended_global_state(local_states, patches)
-        value = self.model.critic_value(extended_global.unsqueeze(0)).squeeze(0)
+            if deterministic:
+                actions = torch.argmax(logits_biased, dim=-1)
+            else:
+                actions = Categorical(logits=logits_biased).sample()
+
+            # Log-probs and entropy from the *unbiased* distribution so that the
+            # PPO importance-sampling ratio exp(new_log_probs - old_log_probs) is
+            # always comparing two evaluations of the same (network) policy.
+            unbiased_dist = Categorical(logits=logits_unbiased)
+            log_probs = unbiased_dist.log_prob(actions)
+            entropy = unbiased_dist.entropy()
+
+            extended_global = self.model.make_extended_global_state(
+                local_states, patches
+            )
+            value = self.model.critic_value(extended_global.unsqueeze(0)).squeeze(0)
 
         return {
             "actions": actions,
             "log_probs": log_probs,
             "entropy": entropy,
             "value": value,
-            "logits": logits,
+            "logits": logits_biased,  # for downstream sampling / diversification
+            "logits_unbiased": logits_unbiased,  # for consistent old_log_probs
         }
 
     def compute_reward(
@@ -424,6 +440,7 @@ class SwarmExplorer:
         backtrack_penalty: float = 2.5,
         backtrack_memory: int = 8,
         directional_momentum_bias: float = 1.5,
+        other_robot_penalty: float = 4.0,
         checkpoint_path: Optional[str] = None,
         device: str = "cpu",
     ):
@@ -438,6 +455,7 @@ class SwarmExplorer:
         self.direction_consistency_bonus = direction_consistency_bonus
         self.backtrack_penalty = backtrack_penalty
         self.directional_momentum_bias = directional_momentum_bias
+        self.other_robot_penalty = other_robot_penalty
         self.last_action_directions: dict[str, np.ndarray] = {
             name: np.zeros(2, dtype=np.float32) for name in self.robot_names
         }
@@ -789,7 +807,78 @@ class SwarmExplorer:
                     penalty = self.backtrack_penalty * math.exp(-min_dist / 2.0)
                     bias[robot_index, int(centroid_idx)] -= penalty
 
+            # 4. Other-robot exclusion penalty: strongly discourage frontiers that
+            # another robot is already close to, preventing mapping overlap.
+            other_positions = [
+                np.array(
+                    [observation.robot_states[n].x, observation.robot_states[n].y],
+                    dtype=np.float32,
+                )
+                for n in self.robot_names
+                if n != robot_name
+            ]
+            if other_positions:
+                others_arr = np.stack(other_positions, axis=0)  # (M, 2)
+                for centroid_idx in valid_indices:
+                    cpos = np.array(centroids[centroid_idx], dtype=np.float32)
+                    dists_to_others = np.linalg.norm(
+                        others_arr - cpos[None, :], axis=-1
+                    )
+                    min_dist = float(np.min(dists_to_others))
+                    # Scale = frontier_distance_scale so same spatial sensitivity as
+                    # the proximity bonus — frontiers within ~scale metres are heavily
+                    # penalised.
+                    penalty = self.other_robot_penalty * math.exp(
+                        -min_dist / self.frontier_distance_scale
+                    )
+                    bias[robot_index, int(centroid_idx)] -= penalty
+
         return torch.tensor(bias, dtype=torch.float32, device=self.rl.device)
+
+    def _deduplicate_targets(
+        self,
+        actions: list[int],
+        logits: torch.Tensor,
+        action_masks: torch.Tensor,
+    ) -> list[int]:
+        """Ensure no two robots are assigned the same frontier index.
+
+        Robots are processed in priority order (lower index keeps its pick).
+        Displaced robots are reassigned to the highest-scoring valid frontier
+        that has not already been claimed.
+        """
+        if self.num_agents < 2:
+            return actions
+
+        logits_np = logits.detach().cpu().numpy()  # (N, max_clusters)
+        masks_np = action_masks.detach().cpu().numpy()  # (N, max_clusters)
+        adjusted = list(actions)
+        taken: set[int] = set()
+
+        for robot_index in range(self.num_agents):
+            chosen = adjusted[robot_index]
+            if chosen < 0:
+                continue
+            if chosen not in taken:
+                taken.add(chosen)
+                continue
+
+            # Current choice is already claimed — find best unclaimed alternative.
+            valid = np.where(masks_np[robot_index] > 0.0)[0]
+            # Sort valid frontiers by this robot's logit score descending.
+            sorted_valid = valid[np.argsort(-logits_np[robot_index, valid])]
+            reassigned = False
+            for candidate in sorted_valid:
+                if int(candidate) not in taken:
+                    adjusted[robot_index] = int(candidate)
+                    taken.add(int(candidate))
+                    reassigned = True
+                    break
+            if not reassigned:
+                # All frontiers taken — keep original (least-bad option).
+                taken.add(chosen)
+
+        return adjusted
 
     def _diversify_targets_for_close_robots(
         self,
@@ -1080,10 +1169,18 @@ class SwarmExplorer:
             frontier_centroids=state_tensors["frontier_centroids"],
             action_masks=state_tensors["action_masks"],
         )
+        actions = self._deduplicate_targets(
+            actions=actions,
+            logits=rollout["logits"],
+            action_masks=state_tensors["action_masks"],
+        )
 
         actions_tensor = torch.tensor(actions, dtype=torch.long, device=self.rl.device)
-        distribution = Categorical(logits=rollout["logits"])
-        final_log_probs = distribution.log_prob(actions_tensor)
+        # Use unbiased logits so old_log_probs match the distribution evaluated
+        # during PPO updates (which never apply the inference-time bias).
+        final_log_probs = Categorical(logits=rollout["logits_unbiased"]).log_prob(
+            actions_tensor
+        )
 
         centroids = state_tensors["frontier_centroids"].detach().cpu().numpy()
 

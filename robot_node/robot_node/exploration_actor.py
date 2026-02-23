@@ -1,15 +1,13 @@
-from __future__ import annotations
-
+from torch.distributions import Categorical
 from dataclasses import dataclass
+import torch.nn.functional as F
+from collections import deque
 from typing import Optional
-
-import math
-import os
+import torch.nn as nn
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.distributions import Categorical
+import math
+import os
 
 
 @dataclass
@@ -217,18 +215,18 @@ class RLCoordinator:
     def select_actions(
         self,
         local_states: torch.Tensor,
-        global_state: torch.Tensor,
+        patches: torch.Tensor,
         action_masks: Optional[torch.Tensor] = None,
         logits_bias: Optional[torch.Tensor] = None,
         deterministic: bool = False,
     ) -> dict[str, torch.Tensor]:
         local_states = local_states.to(self.device)
-        global_state = global_state.to(self.device)
+        patches = patches.to(self.device)
         action_masks = (
             action_masks.to(self.device) if action_masks is not None else None
         )
 
-        logits = self.model.actor_logits(local_states, action_masks)
+        logits = self.model.actor_logits(local_states, patches, action_masks)
         if logits_bias is not None:
             logits = logits + logits_bias.to(self.device)
         distribution = Categorical(logits=logits)
@@ -240,7 +238,8 @@ class RLCoordinator:
 
         log_probs = distribution.log_prob(actions)
         entropy = distribution.entropy()
-        value = self.model.critic_value(global_state.unsqueeze(0)).squeeze(0)
+        extended_global = self.model.make_extended_global_state(local_states, patches)
+        value = self.model.critic_value(extended_global.unsqueeze(0)).squeeze(0)
 
         return {
             "actions": actions,
@@ -258,7 +257,7 @@ class RLCoordinator:
         collision: bool,
         coverage_weight: float = 5.0,
         overlap_weight: float = 2.0,
-        energy_weight: float = 0.1,
+        energy_weight: float = 0.3,
         collision_penalty: float = 10.0,
     ) -> float:
         reward = 0.0
@@ -419,9 +418,12 @@ class SwarmExplorer:
         max_frontier_clusters: int = 20,
         collision_distance: float = 0.35,
         close_robot_distance: float = 1.0,
-        frontier_distance_bias: float = 3.0,
-        frontier_distance_scale: float = 5.0,
-        direction_consistency_bonus: float = 0.8,
+        frontier_distance_bias: float = 5.0,
+        frontier_distance_scale: float = 3.0,
+        direction_consistency_bonus: float = 1.5,
+        backtrack_penalty: float = 2.5,
+        backtrack_memory: int = 8,
+        directional_momentum_bias: float = 1.5,
         checkpoint_path: Optional[str] = None,
         device: str = "cpu",
     ):
@@ -434,8 +436,13 @@ class SwarmExplorer:
         self.frontier_distance_bias = frontier_distance_bias
         self.frontier_distance_scale = frontier_distance_scale
         self.direction_consistency_bonus = direction_consistency_bonus
+        self.backtrack_penalty = backtrack_penalty
+        self.directional_momentum_bias = directional_momentum_bias
         self.last_action_directions: dict[str, np.ndarray] = {
             name: np.zeros(2, dtype=np.float32) for name in self.robot_names
+        }
+        self.visited_positions: dict[str, deque] = {
+            name: deque(maxlen=backtrack_memory) for name in self.robot_names
         }
 
         patch_encoding_dim = 64
@@ -709,13 +716,20 @@ class SwarmExplorer:
         frontier_centroids: torch.Tensor,
         action_masks: torch.Tensor,
     ) -> torch.Tensor:
-        """Build per-agent logits bias favoring closer frontier centroids."""
+        """Build per-agent logits bias favoring closer frontier centroids.
+
+        Three components are combined:
+        1. Exponential proximity bonus (main driver — prefers nearest frontiers).
+        2. Directional momentum bonus (boosts frontiers aligned with current heading).
+        3. Backtrack penalty (discourages frontiers near recently visited positions).
+        """
         centroids = frontier_centroids.detach().cpu().numpy()
         masks = action_masks.detach().cpu().numpy()
         bias = np.zeros((self.num_agents, self.max_frontier_clusters), dtype=np.float32)
 
         for robot_index, robot_name in enumerate(self.robot_names):
             robot_state = observation.robot_states[robot_name]
+            robot_pos = np.array([robot_state.x, robot_state.y], dtype=np.float32)
             valid_indices = np.where(masks[robot_index] > 0.0)[0]
             if len(valid_indices) == 0:
                 continue
@@ -731,14 +745,49 @@ class SwarmExplorer:
                 dtype=np.float32,
             )
 
-            # Exponential proximity bonus: highest for the closest frontier,
+            # 1. Exponential proximity bonus: highest for the closest frontier,
             # decays sharply. frontier_distance_scale sets the half-life in metres.
             bias_values = self.frontier_distance_bias * np.exp(
                 -distances / self.frontier_distance_scale
             )
-
             for offset, centroid_idx in enumerate(valid_indices):
                 bias[robot_index, int(centroid_idx)] = float(bias_values[offset])
+
+            # 2. Directional momentum: boost frontiers aligned with last travel heading.
+            last_dir = self.last_action_directions.get(robot_name)
+            if last_dir is not None:
+                last_dir_norm = float(np.linalg.norm(last_dir))
+                if last_dir_norm > 1e-6:
+                    unit_dir = last_dir / last_dir_norm
+                    for centroid_idx in valid_indices:
+                        to_frontier = centroids[centroid_idx] - robot_pos
+                        frontier_dist = float(np.linalg.norm(to_frontier))
+                        if frontier_dist > 1e-6:
+                            cosine = float(
+                                np.clip(
+                                    np.dot(unit_dir, to_frontier / frontier_dist),
+                                    -1.0,
+                                    1.0,
+                                )
+                            )
+                            if cosine > 0.0:
+                                bias[robot_index, int(centroid_idx)] += (
+                                    self.directional_momentum_bias * cosine
+                                )
+
+            # 3. Backtrack penalty: reduce attractiveness of frontiers near
+            # recently visited positions.
+            visited = self.visited_positions.get(robot_name)
+            if visited:
+                visited_arr = np.array(list(visited), dtype=np.float32)  # (K, 2)
+                for centroid_idx in valid_indices:
+                    cpos = np.array(centroids[centroid_idx], dtype=np.float32)
+                    dists_to_visited = np.linalg.norm(
+                        visited_arr - cpos[None, :], axis=-1
+                    )
+                    min_dist = float(np.min(dists_to_visited))
+                    penalty = self.backtrack_penalty * math.exp(-min_dist / 2.0)
+                    bias[robot_index, int(centroid_idx)] -= penalty
 
         return torch.tensor(bias, dtype=torch.float32, device=self.rl.device)
 
@@ -863,8 +912,8 @@ class SwarmExplorer:
             cosine = float(
                 np.clip(np.dot(previous_dir / prev_norm, current_dir), -1.0, 1.0)
             )
-            if cosine > 0.6:
-                bonus += self.direction_consistency_bonus * ((cosine - 0.6) / 0.4)
+            if cosine > 0.3:
+                bonus += self.direction_consistency_bonus * ((cosine - 0.3) / 0.7)
         return float(bonus)
 
     def _update_last_action_directions(
@@ -1171,9 +1220,9 @@ class SwarmExplorer:
             )
 
             if dist > 0.1:
-                scaled_dist = dist / 10.0
+                scaled_dist = dist / 5.0
                 prox_bonus = float(math.exp(-scaled_dist))
-                bonus += 2.0 * prox_bonus
+                bonus += 3.5 * prox_bonus
 
         return bonus
 
@@ -1189,6 +1238,13 @@ class SwarmExplorer:
             prev_observation, next_observation, action_output
         )
         self._update_last_action_directions(prev_observation, action_output)
+
+        # Record current robot positions for backtracking detection.
+        for robot_name in self.robot_names:
+            robot_state = prev_observation.robot_states[robot_name]
+            self.visited_positions[robot_name].append(
+                np.array([robot_state.x, robot_state.y], dtype=np.float32)
+            )
 
         actions_tensor = torch.tensor(
             [action_output.action_indices[name] for name in self.robot_names],

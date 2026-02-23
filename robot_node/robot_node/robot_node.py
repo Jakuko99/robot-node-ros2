@@ -240,9 +240,7 @@ class RobotNode(Node):
                 NavigateToPose.Goal(pose=goal_pose)
             )
             self.goal_future.add_done_callback(self.goal_response_callback)
-            self.get_logger().info(
-                f"Published new goal for {self.namespace} [{x}, {y}, {theta}]"
-            )
+            self.get_logger().info(f"Published new goal [{x}, {y}, {theta}]")
             self.goal_publish_time = time()
             self.moving = True
 
@@ -254,16 +252,14 @@ class RobotNode(Node):
     def goal_done_callback(self, future: Future):
         result: ClientGoalHandle = future.result()
         if result.status == GoalStatus.STATUS_SUCCEEDED:  # SUCCEEDED
-            self.get_logger().info(f"Goal completed successfully for {self.namespace}")
+            self.get_logger().info(f"Goal completed successfully")
         elif result.status in [
             GoalStatus.STATUS_ABORTED,
             GoalStatus.STATUS_CANCELED,
         ]:  # ABORTED or CANCELED
-            self.get_logger().warn(f"Goal was abandoned for {self.namespace}")
+            self.get_logger().warn(f"Goal was abandoned")
         else:
-            self.get_logger().warn(
-                f"Goal failed with status {result.status} for {self.namespace}"
-            )
+            self.get_logger().error(f"Goal failed with status {result.status}")
 
         self.moving = False  # goal is done, so we are no longer moving
 
@@ -276,9 +272,7 @@ class RobotNode(Node):
             and self.action_server_connected
             and time() - self.goal_publish_time > self.goal_timeout
         ):
-            self.get_logger().warn(
-                f"Goal timeout exceeded for {self.namespace}, canceling goal"
-            )
+            self.get_logger().warn(f"Goal timeout exceeded, canceling goal")
             self.nav_client._cancel_goal_async(self.goal_handle)
             self.moving = False
             return  # robot is taking too long to reach goal
@@ -448,9 +442,7 @@ class RobotNode(Node):
         if self.current_map:
             return self.current_map
 
-        self.get_logger().warn(
-            f"No map received yet for {self.namespace}, returning empty map"
-        )
+        self.get_logger().warn(f"No map received yet, returning empty map")
         return OccupancyGrid()
 
 

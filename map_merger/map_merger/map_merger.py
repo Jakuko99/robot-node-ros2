@@ -264,10 +264,11 @@ class MapMerger(Node):
                     (s_dict[frame_id][1] - min_y) / merged_map.info.resolution
                 )
 
-                local_data = np.array(map_data.data).reshape(
-                    (map_data.info.height, map_data.info.width)
+                local_data = (
+                    np.array(map_data.data)
+                    .reshape((map_data.info.height, map_data.info.width))
+                    .astype(np.int16)
                 )
-                local_data[local_data == 0] = 15
 
                 print(f"Offset: x={offset_x}, y={offset_y}")
 
@@ -284,12 +285,25 @@ class MapMerger(Node):
                 conflict_count[ys, xs][conflict] += 1
                 known_count[ys, xs][local_known] += 1
 
-                # Original overwrite logic
-                merged_data[ys, xs] = np.where(
-                    local_known & ((local_data != -1) & (local_data != 100)),
-                    merged_data[ys, xs] + local_data,
-                    np.where(local_known, local_data, merged_data[ys, xs]),
+                # Where only local has data, write it directly.
+                # Where both have data:
+                #   - obstacles keep 100
+                #   - free cells accumulate pheromone (treat 0 as 1 unit so
+                #     repeated exploration yields higher values for ACO)
+                patch = merged_data[ys, xs].astype(np.int16)
+                only_local = local_known & ~merged_known
+                both_known = local_known & merged_known
+                both_obstacle = both_known & ((local_data == 100) | (patch == 100))
+                both_free = both_known & ~both_obstacle
+
+                patch[only_local] = local_data[only_local]
+                patch[both_obstacle] = 100
+                pheromone_existing = np.where(patch == 0, 1, patch)
+                pheromone_new = np.where(local_data == 0, 1, local_data)
+                patch[both_free] = np.clip(
+                    pheromone_existing[both_free] + pheromone_new[both_free], 0, 90
                 )
+                merged_data[ys, xs] = patch.astype(np.int8)
 
                 explore_ratio: float = np.count_nonzero(
                     merged_data != -1

@@ -1,6 +1,6 @@
 import rclpy
-from rclpy.node import Node
-from nav_msgs.msg import OccupancyGrid
+from rclpy.node import Node, Subscription
+from nav_msgs.msg import OccupancyGrid, Odometry
 from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
 from std_msgs.msg import Float32
@@ -14,12 +14,21 @@ class MapSubscription:
         self.node: "MapMerger" = node
         self.topic_name: str = topic_name
 
-        self.subscription = node.create_subscription(
+        self.subscription: Subscription[OccupancyGrid] = node.create_subscription(
             OccupancyGrid, topic_name, self.map_callback, 10
         )
-        self.update_subscription = node.create_subscription(
-            OccupancyGridUpdate, topic_name + "_updates", self.update_map_callback, 10
+        self.update_subscription: Subscription[OccupancyGridUpdate] = (
+            node.create_subscription(
+                OccupancyGridUpdate,
+                topic_name + "_updates",
+                self.update_map_callback,
+                10,
+            )
         )
+        self.odom_sub: Subscription[Odometry] = node.create_subscription(
+            Odometry, topic_name.replace("/map", "/odom"), self.odom_callback, 10
+        )
+
         self.map_data: OccupancyGrid = None
         self.map_position_x: float = 0.0
         self.map_position_y: float = 0.0
@@ -27,6 +36,10 @@ class MapSubscription:
         self.map_width: int = 0
         self.map_height: int = 0
         self.map_resolution: float = 0.0
+
+        self.robot_position_x: float = 0.0
+        self.robot_position_y: float = 0.0
+        self.robot_orientation: float = 0.0
 
     def map_callback(self, msg: OccupancyGrid):
         self.map_data: OccupancyGrid = msg
@@ -38,8 +51,13 @@ class MapSubscription:
 
         self.node.merge_maps()
 
-    def update_map_callback(self, msg):
+    def update_map_callback(self, msg: OccupancyGridUpdate):
         pass
+
+    def odom_callback(self, msg: Odometry):
+        self.robot_position_x = msg.pose.pose.position.x
+        self.robot_position_y = msg.pose.pose.position.y
+        self.robot_orientation = msg.pose.pose.orientation.z
 
 
 class MapMerger(Node):
@@ -249,6 +267,7 @@ class MapMerger(Node):
                 local_data = np.array(map_data.data).reshape(
                     (map_data.info.height, map_data.info.width)
                 )
+                local_data[local_data == 0] = 15
 
                 print(f"Offset: x={offset_x}, y={offset_y}")
 
@@ -267,10 +286,14 @@ class MapMerger(Node):
 
                 # Original overwrite logic
                 merged_data[ys, xs] = np.where(
-                    local_known,
-                    local_data,
-                    merged_data[ys, xs],
+                    local_known & ((local_data != -1) & (local_data != 100)),
+                    merged_data[ys, xs] + local_data,
+                    np.where(local_known, local_data, merged_data[ys, xs]),
                 )
+
+                explore_ratio: float = np.count_nonzero(
+                    merged_data != -1
+                ) / np.count_nonzero(merged_data == -1)
 
             merged_map.data = merged_data.flatten().tolist()
             self.publisher.publish(merged_map)
@@ -288,9 +311,10 @@ class MapMerger(Node):
                 f"Published merged map. "
                 f"({merged_map.info.width} x {merged_map.info.height}) | "
                 f"merge confidence: {merge_confidence:.3f}"
+                f" | explored: {explore_ratio:.3f}"
             )
 
-            # publish confidence to topic 
+            # publish confidence to topic
             confidence_msg = Float32()
             confidence_msg.data = merge_confidence
             self.confidence_publisher.publish(confidence_msg)

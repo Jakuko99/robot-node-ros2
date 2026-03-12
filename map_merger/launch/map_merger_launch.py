@@ -12,10 +12,16 @@ def generate_launch_description():
     return LaunchDescription(
         [
             Node(
+                name="kris_robot1_merger",
                 package="map_merger",
                 executable="map_merger",
                 output="screen",
-                parameters=[{"use_sim_time": True}],
+                parameters=[
+                    {
+                        "robot_name": "kris_robot1",
+                        "merge_topic_name": "pheromones",
+                    }
+                ],
             ),
         ]
     )

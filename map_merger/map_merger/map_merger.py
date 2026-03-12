@@ -1,28 +1,46 @@
 import rclpy
-from rclpy.node import Node, Subscription
+from rclpy.node import Node, Subscription, Publisher, Timer
 from nav_msgs.msg import OccupancyGrid, Odometry
 from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
-from std_msgs.msg import Float32
+from geometry_msgs.msg import TransformStamped
 import numpy as np
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSHistoryPolicy,
+    QoSDurabilityPolicy,
+)
 from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
+
+from map_merger.aco_creator import ACOCreator
+
+map_qos: QoSProfile = QoSProfile(
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1,
+)  # map QoS profile to ensure we get the latest map
 
 
 class MapSubscription:
-    def __init__(self, robot_name: str, node: "MapMerger", topic_name: str):
+    def __init__(
+        self, robot_name: str, node: "MapMerger", topic_name: str, primary: bool = False
+    ):
         self.robot_name: str = robot_name
         self.node: "MapMerger" = node
         self.topic_name: str = topic_name
+        self.primary: bool = primary
 
         self.subscription: Subscription[OccupancyGrid] = node.create_subscription(
-            OccupancyGrid, topic_name, self.map_callback, 10
+            OccupancyGrid, topic_name, self.map_callback, map_qos
         )
         self.update_subscription: Subscription[OccupancyGridUpdate] = (
             node.create_subscription(
                 OccupancyGridUpdate,
                 topic_name + "_updates",
                 self.update_map_callback,
-                10,
+                map_qos,
             )
         )
         self.odom_sub: Subscription[Odometry] = node.create_subscription(
@@ -49,7 +67,8 @@ class MapSubscription:
         self.map_height = msg.info.height
         self.map_resolution = msg.info.resolution
 
-        self.node.merge_maps()
+        if self.primary:
+            self.node.aco_creator.update_local_map(msg)
 
     def update_map_callback(self, msg: OccupancyGridUpdate):
         pass
@@ -59,28 +78,52 @@ class MapSubscription:
         self.robot_position_y = msg.pose.pose.position.y
         self.robot_orientation = msg.pose.pose.orientation.z
 
+        if self.primary:
+            self.node.aco_creator.update_odom(msg)
+
 
 class MapMerger(Node):
     def __init__(self):
         super().__init__("map_merger_node")
-        self.publisher = self.create_publisher(OccupancyGrid, "/global_map", 10)
-        self.static_subscription = self.create_subscription(
-            TFMessage, "/tf_static", self.tf_callback, 10
+        self.declare_parameter("robot_name", "robot")
+        self.robot_name: str = (
+            self.get_parameter("robot_name").get_parameter_value().string_value
         )
-        self.confidence_publisher = self.create_publisher(
-            Float32, "/merge_confidence", 10
+        self.declare_parameter("merge_topic_name", "global_map")
+        self.merge_topic_name: str = (
+            f"/{self.robot_name}/{self.get_parameter('merge_topic_name').get_parameter_value().string_value}"
+        )
+        self.declare_parameter("map_frame_id", "map")
+        self.map_frame_id: str = (
+            self.get_parameter("map_frame_id").get_parameter_value().string_value
+        )
+
+        self.publisher: Publisher[OccupancyGrid] = self.create_publisher(
+            OccupancyGrid, self.merge_topic_name, map_qos
+        )
+        self.static_subscription: Subscription[TFMessage] = self.create_subscription(
+            TFMessage, "/tf_static", self.tf_callback, 10
         )
 
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
+        self.aco_creator: ACOCreator = ACOCreator(self.robot_name, self)
+        self.map_subscriptions[self.robot_name] = MapSubscription(
+            self.robot_name, self, f"/{self.robot_name}/map", primary=True
+        )
+
+        self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps)
 
     def tf_callback(self, msg: TFMessage):
+        transform: TransformStamped  # type hint for transform in msg.transforms
         for transform in msg.transforms:
             if transform.child_frame_id not in self.static_transforms:
                 self.static_transforms[transform.child_frame_id] = transform
                 self.get_logger().info(
                     f"Received new static transform for {transform.child_frame_id}"
                 )
+            if transform.child_frame_id.replace("_map", "") == self.robot_name:
+                self.aco_creator.update_transform(transform)
 
         self.discover_robots()
 
@@ -95,7 +138,10 @@ class MapMerger(Node):
             ):
                 robot_name: str = topic.split("/")[1]
 
-                if robot_name not in self.map_subscriptions:
+                if (
+                    robot_name not in self.map_subscriptions
+                    and not robot_name == self.robot_name
+                ):
                     topic_name: str = f"/{robot_name}/map"
                     self.map_subscriptions[robot_name] = MapSubscription(
                         robot_name, self, topic_name
@@ -233,7 +279,7 @@ class MapMerger(Node):
             )
             merged_map.info.origin.position.z = 0.0
             merged_map.info.origin.orientation.w = 1.0
-            merged_map.header.frame_id = "global_map"
+            merged_map.header.frame_id = self.map_frame_id
             merged_map.header.stamp = self.get_clock().now().to_msg()
 
             print(
@@ -301,37 +347,21 @@ class MapMerger(Node):
                 pheromone_existing = np.where(patch == 0, 1, patch)
                 pheromone_new = np.where(local_data == 0, 1, local_data)
                 patch[both_free] = np.clip(
-                    pheromone_existing[both_free] + pheromone_new[both_free], 0, 90
+                    pheromone_existing[both_free] + pheromone_new[both_free] + 10, 0, 90
                 )
                 merged_data[ys, xs] = patch.astype(np.int8)
 
-                explore_ratio: float = np.count_nonzero(
-                    merged_data != -1
-                ) / np.count_nonzero(merged_data == -1)
-
             merged_map.data = merged_data.flatten().tolist()
-            self.publisher.publish(merged_map)
 
-            overlap_cells = known_count >= 2
-            if np.any(overlap_cells):
-                agreement = 1.0 - (
-                    conflict_count[overlap_cells] / known_count[overlap_cells]
-                )
-                merge_confidence = float(np.mean(agreement))
-            else:
-                merge_confidence = 0.0  # no overlap → conflict
+            pheromone_map: OccupancyGrid = self.aco_creator.update_global_map(
+                merged_map
+            )
+            self.publisher.publish(pheromone_map)
 
             self.get_logger().info(
                 f"Published merged map. "
                 f"({merged_map.info.width} x {merged_map.info.height}) | "
-                f"merge confidence: {merge_confidence:.3f}"
-                f" | explored: {explore_ratio:.3f}"
             )
-
-            # publish confidence to topic
-            confidence_msg = Float32()
-            confidence_msg.data = merge_confidence
-            self.confidence_publisher.publish(confidence_msg)
 
             for sub in self.map_subscriptions.values():
                 sub.map_data = None  # reset maps after merging

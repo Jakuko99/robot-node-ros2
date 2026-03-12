@@ -112,7 +112,7 @@ class MapMerger(Node):
             self.robot_name, self, f"/{self.robot_name}/map", primary=True
         )
 
-        self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps)
+        self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps_v1)
 
     def tf_callback(self, msg: TFMessage):
         transform: TransformStamped  # type hint for transform in msg.transforms
@@ -150,8 +150,88 @@ class MapMerger(Node):
                         f"Subscribed to map topic for robot {robot_name} at {topic_name}"
                     )
 
+    def merge_maps_v1(self):
+        local_maps: dict[str, OccupancyGrid] = {
+            sub.map_data.header.frame_id: sub.map_data
+            for sub in self.map_subscriptions.values()
+            if sub.map_data is not None
+        }
+
+        if len(local_maps) == len(self.map_subscriptions) and len(local_maps) > 1:
+            min_x: float = min([m.info.origin.position.x for m in local_maps.values()])
+            min_y: float = min([m.info.origin.position.y for m in local_maps.values()])
+            max_x: float = max(
+                [
+                    m.info.origin.position.x + m.info.width * m.info.resolution
+                    for m in local_maps.values()
+                ]
+            )
+            max_y: float = max(
+                [
+                    m.info.origin.position.y + m.info.height * m.info.resolution
+                    for m in local_maps.values()
+                ]
+            )
+
+            merged_map: OccupancyGrid = OccupancyGrid()
+            merged_map.header.frame_id = self.map_frame_id
+            merged_map.header.stamp = self.get_clock().now().to_msg()
+            merged_map.info.origin.position.x = min_x
+            merged_map.info.origin.position.y = min_y
+            merged_map.info.resolution = min(
+                [m.info.resolution for m in local_maps.values()]
+            )
+            merged_map.info.width = int(
+                np.ceil((max_x - min_x) / merged_map.info.resolution)
+            )
+            merged_map.info.height = int(
+                np.ceil((max_y - min_y) / merged_map.info.resolution)
+            )
+            merged_map.data = [-1] * (merged_map.info.width * merged_map.info.height)
+
+            for map in local_maps.values():
+                static_tf: TransformStamped = self.get_static_transform(
+                    map.header.frame_id
+                )
+                for y in range(map.info.height):
+                    for x in range(map.info.width):
+                        index = x + y * map.info.width
+                        merged_x = int(
+                            np.floor(
+                                (
+                                    map.info.origin.position.x
+                                    + static_tf.transform.translation.x
+                                    + x * map.info.resolution
+                                    - min_x
+                                )
+                                / merged_map.info.resolution
+                            )
+                        )
+                        merged_y = int(
+                            np.floor(
+                                (
+                                    map.info.origin.position.y
+                                    + static_tf.transform.translation.y
+                                    + y * map.info.resolution
+                                    - min_y
+                                )
+                                / merged_map.info.resolution
+                            )
+                        )
+                        merged_i = merged_x + merged_y * merged_map.info.width
+                        if map.data[index] == 0 and merged_map.data[merged_i] >= 0:
+                            merged_map.data[merged_i] += 1
+
+                        elif map.data[index] == 0:
+                            merged_map.data[merged_i] = 0
+
+                        elif map.data[index] != -1:
+                            merged_map.data[merged_i] = map.data[index]
+
+            self.publisher.publish(merged_map)
+
     def merge_maps(self):
-        local_maps = {
+        local_maps: dict[str, OccupancyGrid] = {
             sub.map_data.header.frame_id: sub.map_data
             for sub in self.map_subscriptions.values()
             if sub.map_data is not None
@@ -367,6 +447,9 @@ class MapMerger(Node):
                 sub.map_data = None  # reset maps after merging
 
         self.discover_robots()
+
+    def get_static_transform(self, frame_id: str) -> TransformStamped:
+        return self.static_transforms.get(frame_id, TransformStamped())
 
 
 def main(args=None):

@@ -178,8 +178,8 @@ class MapMerger(Node):
                 static_tf: TransformStamped = self.get_static_transform(map.header.frame_id)
                 for y in range(map.info.height):
                     for x in range(map.info.width):
-                        index = x + y * map.info.width
-                        merged_x = int(
+                        index: int = x + y * map.info.width
+                        merged_x: int = int(
                             np.floor(
                                 (
                                     map.info.origin.position.x
@@ -190,7 +190,7 @@ class MapMerger(Node):
                                 / merged_map.info.resolution
                             )
                         )
-                        merged_y = int(
+                        merged_y: int = int(
                             np.floor(
                                 (
                                     map.info.origin.position.y
@@ -201,7 +201,7 @@ class MapMerger(Node):
                                 / merged_map.info.resolution
                             )
                         )
-                        merged_i = merged_x + merged_y * merged_map.info.width
+                        merged_i: int = merged_x + merged_y * merged_map.info.width
                         if (
                             map.data[index] == 0
                             and merged_map.data[merged_i] >= 0

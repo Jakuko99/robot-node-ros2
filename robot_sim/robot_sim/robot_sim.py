@@ -31,9 +31,7 @@ class WheeledRobotSimulator(Node):
 
         self.pub: Publisher = self.create_publisher(String, "robot_description", 10)
         robot_msg = String()
-        robot_msg.data = (
-            self.get_parameter("robot_description").get_parameter_value().string_value
-        )
+        robot_msg.data = self.get_parameter("robot_description").get_parameter_value().string_value
         self.pub.publish(robot_msg)
 
         # Robot state
@@ -62,9 +60,7 @@ class WheeledRobotSimulator(Node):
         self.theta += self.v_angular * dt
         self.x += self.v_linear * np.cos(self.theta) * dt
         self.y += self.v_linear * np.sin(self.theta) * dt
-        self.get_logger().info(
-            f"Pose: x={self.x:.2f}, y={self.y:.2f}, theta={self.theta:.2f}"
-        )
+        self.get_logger().info(f"Pose: x={self.x:.2f}, y={self.y:.2f}, theta={self.theta:.2f}")
 
         self.publish_odometry()
         self.publish_tf()
@@ -96,9 +92,7 @@ class WheeledRobotSimulator(Node):
         odom_msg.pose.pose.position.z = 0.0
 
         quat = self.euler_to_quaternion(0, 0, self.theta)
-        odom_msg.pose.pose.orientation = Quaternion(
-            x=quat[0], y=quat[1], z=quat[2], w=quat[3]
-        )
+        odom_msg.pose.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
 
         odom_msg.twist.twist.linear.x = self.v_linear
         odom_msg.twist.twist.angular.z = self.v_angular
@@ -124,9 +118,7 @@ class WheeledRobotSimulator(Node):
         self.tf_broadcaster.sendTransform(t)
 
         robot_msg = String()
-        robot_msg.data = (
-            self.get_parameter("robot_description").get_parameter_value().string_value
-        )
+        robot_msg.data = self.get_parameter("robot_description").get_parameter_value().string_value
         self.pub.publish(robot_msg)
 
         # Publish joint states

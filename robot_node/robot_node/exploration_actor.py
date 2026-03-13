@@ -141,9 +141,7 @@ class MultiAgentActorCritic(nn.Module):
     ) -> torch.Tensor:
         # patches: (batch, num_agents, patch_size, patch_size)
         batch = local_state.shape[0]
-        patches_flat = patches.view(
-            batch * self.num_agents, 1, self.patch_size, self.patch_size
-        )
+        patches_flat = patches.view(batch * self.num_agents, 1, self.patch_size, self.patch_size)
         encoded = self.patch_encoder(patches_flat)  # (batch*N, patch_encoding_dim)
         encoded = encoded.view(batch, self.num_agents * self.patch_encoding_dim)
         combined = torch.cat([local_state, encoded], dim=-1)
@@ -223,15 +221,11 @@ class RLCoordinator:
         with torch.no_grad():
             local_states = local_states.to(self.device)
             patches = patches.to(self.device)
-            action_masks = (
-                action_masks.to(self.device) if action_masks is not None else None
-            )
+            action_masks = action_masks.to(self.device) if action_masks is not None else None
 
             # Unbiased logits — used for old_log_probs so they are consistent with
             # the unbiased logits produced during PPO update (no distribution mismatch).
-            logits_unbiased = self.model.actor_logits(
-                local_states, patches, action_masks
-            )
+            logits_unbiased = self.model.actor_logits(local_states, patches, action_masks)
 
             # Biased logits — used only for action selection / sampling.
             if logits_bias is not None:
@@ -251,9 +245,7 @@ class RLCoordinator:
             log_probs = unbiased_dist.log_prob(actions)
             entropy = unbiased_dist.entropy()
 
-            extended_global = self.model.make_extended_global_state(
-                local_states, patches
-            )
+            extended_global = self.model.make_extended_global_state(local_states, patches)
             value = self.model.critic_value(extended_global.unsqueeze(0)).squeeze(0)
 
         return {
@@ -294,15 +286,9 @@ class RLCoordinator:
         gae = 0.0
         advantages = torch.zeros_like(rewards)
         for timestep in reversed(range(len(rewards))):
-            next_value = (
-                last_value if timestep == len(rewards) - 1 else values[timestep + 1]
-            )
+            next_value = last_value if timestep == len(rewards) - 1 else values[timestep + 1]
             non_terminal = 1.0 - dones[timestep]
-            delta = (
-                rewards[timestep]
-                + self.gamma * next_value * non_terminal
-                - values[timestep]
-            )
+            delta = rewards[timestep] + self.gamma * next_value * non_terminal - values[timestep]
             gae = delta + self.gamma * self.gae_lambda * non_terminal * gae
             advantages[timestep] = gae
         returns = advantages + values
@@ -317,19 +303,13 @@ class RLCoordinator:
         if len(buffer) == 0:
             return {"actor_loss": 0.0, "critic_loss": 0.0, "entropy": 0.0}
 
-        local_states = torch.stack([step.local_states for step in buffer.steps]).to(
-            self.device
-        )
+        local_states = torch.stack([step.local_states for step in buffer.steps]).to(self.device)
         all_patches = torch.stack([step.patches for step in buffer.steps]).to(
             self.device
         )  # (T, num_agents, num_agents, patch_size, patch_size)
-        action_masks = torch.stack([step.action_masks for step in buffer.steps]).to(
-            self.device
-        )
+        action_masks = torch.stack([step.action_masks for step in buffer.steps]).to(self.device)
         actions = torch.stack([step.actions for step in buffer.steps]).to(self.device)
-        old_log_probs = torch.stack([step.old_log_probs for step in buffer.steps]).to(
-            self.device
-        )
+        old_log_probs = torch.stack([step.old_log_probs for step in buffer.steps]).to(self.device)
         values = torch.stack([step.value for step in buffer.steps]).to(self.device)
         rewards = torch.tensor(
             [step.reward for step in buffer.steps],
@@ -367,18 +347,13 @@ class RLCoordinator:
             new_log_probs = distribution.log_prob(flat_actions).reshape(
                 actions.shape[0], actions.shape[1]
             )
-            entropy = (
-                distribution.entropy()
-                .reshape(actions.shape[0], actions.shape[1])
-                .mean(dim=1)
-            )
+            entropy = distribution.entropy().reshape(actions.shape[0], actions.shape[1]).mean(dim=1)
 
             adv_agent = advantages.unsqueeze(-1).expand_as(new_log_probs)
             ratio = torch.exp(new_log_probs - old_log_probs)
             unclipped = ratio * adv_agent
             clipped = (
-                torch.clamp(ratio, 1.0 - self.clip_epsilon, 1.0 + self.clip_epsilon)
-                * adv_agent
+                torch.clamp(ratio, 1.0 - self.clip_epsilon, 1.0 + self.clip_epsilon) * adv_agent
             )
             actor_loss = -torch.min(unclipped, clipped).mean()
 
@@ -395,11 +370,7 @@ class RLCoordinator:
             critic_loss = F.mse_loss(critic_values, returns)
 
             entropy_bonus = entropy.mean()
-            loss = (
-                actor_loss
-                + self.value_coef * critic_loss
-                - self.entropy_coef * entropy_bonus
-            )
+            loss = actor_loss + self.value_coef * critic_loss - self.entropy_coef * entropy_bonus
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -464,9 +435,7 @@ class SwarmExplorer:
         }
 
         patch_encoding_dim = 64
-        local_state_dim = (
-            3 + 1 + 1 + (2 * self.max_frontier_clusters) + (2 * self.num_agents)
-        )
+        local_state_dim = 3 + 1 + 1 + (2 * self.max_frontier_clusters) + (2 * self.num_agents)
         # Critic receives the concatenation of all agents' extended local states,
         # where each extended local state = scalar features + N encoded patches.
         global_state_dim = self.num_agents * (
@@ -618,9 +587,7 @@ class SwarmExplorer:
             centroid_array = centroid_array[:max_centroids]
         return centroid_array
 
-    def occupancy_grid_to_tensor(
-        self, map_data: OccupancyGridData
-    ) -> dict[str, torch.Tensor]:
+    def occupancy_grid_to_tensor(self, map_data: OccupancyGridData) -> dict[str, torch.Tensor]:
         grid = self.occupancy_grid_to_numpy(map_data)
         normalized = self.normalize_grid(grid)
         unknown_ratio = self.compute_unknown_ratio(grid)
@@ -633,15 +600,11 @@ class SwarmExplorer:
         )
 
         return {
-            "grid": torch.tensor(
-                normalized, dtype=torch.float32, device=self.rl.device
-            ),
+            "grid": torch.tensor(normalized, dtype=torch.float32, device=self.rl.device),
             "unknown_ratio": torch.tensor(
                 [unknown_ratio], dtype=torch.float32, device=self.rl.device
             ),
-            "map_entropy": torch.tensor(
-                [entropy], dtype=torch.float32, device=self.rl.device
-            ),
+            "map_entropy": torch.tensor([entropy], dtype=torch.float32, device=self.rl.device),
             "frontier_cells": torch.tensor(
                 frontier_cells, dtype=torch.float32, device=self.rl.device
             ),
@@ -674,9 +637,7 @@ class SwarmExplorer:
                 pairwise_diff[index], dtype=torch.float32, device=self.rl.device
             )
 
-        distance_matrix = torch.tensor(
-            distances, dtype=torch.float32, device=self.rl.device
-        )
+        distance_matrix = torch.tensor(distances, dtype=torch.float32, device=self.rl.device)
         return relative_map, distance_matrix
 
     # ---------------------- State Construction ---------------------------
@@ -690,10 +651,7 @@ class SwarmExplorer:
         center_row = int((state.y - meta.origin_y) / meta.resolution)
         half = self.local_patch_size // 2
 
-        patch = (
-            np.ones((self.local_patch_size, self.local_patch_size), dtype=np.float32)
-            * 0.5
-        )
+        patch = np.ones((self.local_patch_size, self.local_patch_size), dtype=np.float32) * 0.5
 
         src_row_start = center_row - half
         src_col_start = center_col - half
@@ -800,9 +758,7 @@ class SwarmExplorer:
                 visited_arr = np.array(list(visited), dtype=np.float32)  # (K, 2)
                 for centroid_idx in valid_indices:
                     cpos = np.array(centroids[centroid_idx], dtype=np.float32)
-                    dists_to_visited = np.linalg.norm(
-                        visited_arr - cpos[None, :], axis=-1
-                    )
+                    dists_to_visited = np.linalg.norm(visited_arr - cpos[None, :], axis=-1)
                     min_dist = float(np.min(dists_to_visited))
                     penalty = self.backtrack_penalty * math.exp(-min_dist / 2.0)
                     bias[robot_index, int(centroid_idx)] -= penalty
@@ -821,9 +777,7 @@ class SwarmExplorer:
                 others_arr = np.stack(other_positions, axis=0)  # (M, 2)
                 for centroid_idx in valid_indices:
                     cpos = np.array(centroids[centroid_idx], dtype=np.float32)
-                    dists_to_others = np.linalg.norm(
-                        others_arr - cpos[None, :], axis=-1
-                    )
+                    dists_to_others = np.linalg.norm(others_arr - cpos[None, :], axis=-1)
                     min_dist = float(np.min(dists_to_others))
                     # Scale = frontier_distance_scale so same spatial sensitivity as
                     # the proximity bonus — frontiers within ~scale metres are heavily
@@ -912,9 +866,7 @@ class SwarmExplorer:
 
         adjusted = list(actions)
 
-        for robot_index in sorted(
-            close_robot_indices, key=lambda idx: -close_counts[idx]
-        ):
+        for robot_index in sorted(close_robot_indices, key=lambda idx: -close_counts[idx]):
             valid_indices = np.where(masks[robot_index] > 0.0)[0].tolist()
             if len(valid_indices) <= 1:
                 continue
@@ -938,9 +890,7 @@ class SwarmExplorer:
                 candidate_xy = centroids[candidate]
                 robot_xy = positions[robot_index]
                 travel_dist = float(
-                    math.hypot(
-                        candidate_xy[0] - robot_xy[0], candidate_xy[1] - robot_xy[1]
-                    )
+                    math.hypot(candidate_xy[0] - robot_xy[0], candidate_xy[1] - robot_xy[1])
                 )
 
                 separation_scores = []
@@ -982,9 +932,7 @@ class SwarmExplorer:
             target_x, target_y = action_output.target_points.get(
                 robot_name, (robot_state.x, robot_state.y)
             )
-            vec = np.array(
-                [target_x - robot_state.x, target_y - robot_state.y], dtype=np.float32
-            )
+            vec = np.array([target_x - robot_state.x, target_y - robot_state.y], dtype=np.float32)
             norm = float(np.linalg.norm(vec))
             if norm <= 1e-6:
                 continue
@@ -998,9 +946,7 @@ class SwarmExplorer:
             if prev_norm <= 1e-6:
                 continue
 
-            cosine = float(
-                np.clip(np.dot(previous_dir / prev_norm, current_dir), -1.0, 1.0)
-            )
+            cosine = float(np.clip(np.dot(previous_dir / prev_norm, current_dir), -1.0, 1.0))
             if cosine > 0.3:
                 bonus += self.direction_consistency_bonus * ((cosine - 0.3) / 0.7)
         return float(bonus)
@@ -1015,29 +961,21 @@ class SwarmExplorer:
             target_x, target_y = action_output.target_points.get(
                 robot_name, (robot_state.x, robot_state.y)
             )
-            vec = np.array(
-                [target_x - robot_state.x, target_y - robot_state.y], dtype=np.float32
-            )
+            vec = np.array([target_x - robot_state.x, target_y - robot_state.y], dtype=np.float32)
             norm = float(np.linalg.norm(vec))
             if norm <= 1e-6:
                 continue
             self.last_action_directions[robot_name] = vec / norm
 
-    def build_state_tensors(
-        self, observation: SwarmObservation
-    ) -> dict[str, torch.Tensor]:
+    def build_state_tensors(self, observation: SwarmObservation) -> dict[str, torch.Tensor]:
         if any(name not in observation.robot_states for name in self.robot_names):
-            raise ValueError(
-                "Missing robot states for one or more robots in SwarmObservation"
-            )
+            raise ValueError("Missing robot states for one or more robots in SwarmObservation")
 
         map_tensors = self.occupancy_grid_to_tensor(observation.map_data)
         map_grid_np = self.occupancy_grid_to_numpy(observation.map_data)
         normalized_np = self.normalize_grid(map_grid_np)
 
-        relative_positions, distance_matrix = self.other_robots_to_tensors(
-            observation.robot_states
-        )
+        relative_positions, distance_matrix = self.other_robots_to_tensors(observation.robot_states)
 
         centroids = map_tensors["frontier_centroids"]
 
@@ -1055,9 +993,7 @@ class SwarmExplorer:
             c_np = centroids.detach().cpu().numpy()
             dists_to_swarm = np.linalg.norm(c_np - swarm_center, axis=1)
             order = np.argsort(dists_to_swarm)
-            centroids = centroids[
-                torch.tensor(order, dtype=torch.long, device=self.rl.device)
-            ]
+            centroids = centroids[torch.tensor(order, dtype=torch.long, device=self.rl.device)]
 
         padded_centroids = self._pad_frontier_centroids(centroids)
 
@@ -1073,9 +1009,7 @@ class SwarmExplorer:
             )
         patches_stack = torch.stack(all_robot_patches, dim=0)  # (N, 32, 32)
         # (N, N, 32, 32): patches_tensor[i] = all N patches from agent i's perspective
-        patches_tensor = (
-            patches_stack.unsqueeze(0).expand(self.num_agents, -1, -1, -1).contiguous()
-        )
+        patches_tensor = patches_stack.unsqueeze(0).expand(self.num_agents, -1, -1, -1).contiguous()
 
         local_state_list = []
         action_mask_list = []
@@ -1133,9 +1067,7 @@ class SwarmExplorer:
         if torch.all(state_tensors["action_masks"] <= 0.0):
             empty_actions = {name: -1 for name in self.robot_names}
             empty_targets = {name: (0.0, 0.0) for name in self.robot_names}
-            zero = torch.zeros(
-                self.num_agents, dtype=torch.float32, device=self.rl.device
-            )
+            zero = torch.zeros(self.num_agents, dtype=torch.float32, device=self.rl.device)
             return ActionOutput(
                 action_indices=empty_actions,
                 target_points=empty_targets,
@@ -1178,9 +1110,7 @@ class SwarmExplorer:
         actions_tensor = torch.tensor(actions, dtype=torch.long, device=self.rl.device)
         # Use unbiased logits so old_log_probs match the distribution evaluated
         # during PPO updates (which never apply the inference-time bias).
-        final_log_probs = Categorical(logits=rollout["logits_unbiased"]).log_prob(
-            actions_tensor
-        )
+        final_log_probs = Categorical(logits=rollout["logits_unbiased"]).log_prob(actions_tensor)
 
         centroids = state_tensors["frontier_centroids"].detach().cpu().numpy()
 
@@ -1205,9 +1135,7 @@ class SwarmExplorer:
         )
 
     # ------------------------- Reward utilities --------------------------
-    def compute_coverage_gain(
-        self, prev_unknown_ratio: float, next_unknown_ratio: float
-    ) -> float:
+    def compute_coverage_gain(self, prev_unknown_ratio: float, next_unknown_ratio: float) -> float:
         return max(prev_unknown_ratio - next_unknown_ratio, 0.0)
 
     def compute_frontier_overlap_ratio(self, assigned_frontiers: list[int]) -> float:
@@ -1225,13 +1153,9 @@ class SwarmExplorer:
         total = 0.0
         for robot_name in self.robot_names:
             current_state = prev_observation.robot_states[robot_name]
-            target_xy = target_points.get(
-                robot_name, (current_state.x, current_state.y)
-            )
+            target_xy = target_points.get(robot_name, (current_state.x, current_state.y))
             total += float(
-                math.hypot(
-                    target_xy[0] - current_state.x, target_xy[1] - current_state.y
-                )
+                math.hypot(target_xy[0] - current_state.x, target_xy[1] - current_state.y)
             )
         return total
 
@@ -1279,12 +1203,8 @@ class SwarmExplorer:
             collision=collision,
         )
 
-        distance_bonus = self._compute_frontier_proximity_bonus(
-            prev_observation, action_output
-        )
-        direction_bonus = self._compute_direction_consistency_bonus(
-            prev_observation, action_output
-        )
+        distance_bonus = self._compute_frontier_proximity_bonus(prev_observation, action_output)
+        direction_bonus = self._compute_direction_consistency_bonus(prev_observation, action_output)
 
         return base_reward + distance_bonus + direction_bonus
 
@@ -1331,9 +1251,7 @@ class SwarmExplorer:
         action_output: ActionOutput,
         done: bool = False,
     ) -> float:
-        reward = self.compute_transition_reward(
-            prev_observation, next_observation, action_output
-        )
+        reward = self.compute_transition_reward(prev_observation, next_observation, action_output)
         self._update_last_action_directions(prev_observation, action_output)
 
         # Record current robot positions for backtracking detection.
@@ -1381,9 +1299,7 @@ class SwarmExplorer:
                 extended_global = self.rl.model.make_extended_global_state(
                     next_state["local_states"], next_state["patches"]
                 )
-                last_value_tensor = self.rl.model.critic_value(
-                    extended_global.unsqueeze(0)
-                )
+                last_value_tensor = self.rl.model.critic_value(extended_global.unsqueeze(0))
             last_value = float(last_value_tensor.squeeze(0).item())
 
         metrics = self.rl.update_from_rollout(
@@ -1408,9 +1324,7 @@ class SwarmExplorer:
         2) RobotNode sends goals and waits for next map/odom update
         3) metrics = explorer.training_loop_step(obs_t, obs_t1, action_output, done)
         """
-        reward = self.add_transition(
-            prev_observation, next_observation, action_output, done=done
-        )
+        reward = self.add_transition(prev_observation, next_observation, action_output, done=done)
 
         metrics = {
             "reward": reward,

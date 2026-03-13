@@ -26,9 +26,7 @@ class Room:
 
 
 class EnvironmentGenerator:
-    def __init__(
-        self, width=30, height=30, num_rooms=8, wall_height=2.5, wall_thickness=0.15
-    ):
+    def __init__(self, width=30, height=30, num_rooms=8, wall_height=2.5, wall_thickness=0.15):
         self.width = width
         self.height = height
         self.num_rooms = num_rooms
@@ -83,12 +81,8 @@ class EnvironmentGenerator:
                             x = base_room.x + (base_room.width - room_width) / 2
                         else:
                             # Random offset for better space filling
-                            max_offset = max(
-                                0.1, min(base_room.width, room_width) - 0.1
-                            )
-                            x = base_room.x + random.uniform(
-                                0, base_room.width - max_offset
-                            )
+                            max_offset = max(0.1, min(base_room.width, room_width) - 0.1)
+                            x = base_room.x + random.uniform(0, base_room.width - max_offset)
                         y = base_room.y + base_room.height
                     elif side == "south":
                         # Place below
@@ -100,12 +94,8 @@ class EnvironmentGenerator:
                         elif align < 0.75:
                             x = base_room.x + (base_room.width - room_width) / 2
                         else:
-                            max_offset = max(
-                                0.1, min(base_room.width, room_width) - 0.1
-                            )
-                            x = base_room.x + random.uniform(
-                                0, base_room.width - max_offset
-                            )
+                            max_offset = max(0.1, min(base_room.width, room_width) - 0.1)
+                            x = base_room.x + random.uniform(0, base_room.width - max_offset)
                         y = base_room.y - room_height
                     elif side == "east":
                         # Place to the right
@@ -117,12 +107,8 @@ class EnvironmentGenerator:
                         elif align < 0.75:
                             y = base_room.y + (base_room.height - room_height) / 2
                         else:
-                            max_offset = max(
-                                0.1, min(base_room.height, room_height) - 0.1
-                            )
-                            y = base_room.y + random.uniform(
-                                0, base_room.height - max_offset
-                            )
+                            max_offset = max(0.1, min(base_room.height, room_height) - 0.1)
+                            y = base_room.y + random.uniform(0, base_room.height - max_offset)
                         x = base_room.x + base_room.width
                     else:  # west
                         # Place to the left
@@ -134,12 +120,8 @@ class EnvironmentGenerator:
                         elif align < 0.75:
                             y = base_room.y + (base_room.height - room_height) / 2
                         else:
-                            max_offset = max(
-                                0.1, min(base_room.height, room_height) - 0.1
-                            )
-                            y = base_room.y + random.uniform(
-                                0, base_room.height - max_offset
-                            )
+                            max_offset = max(0.1, min(base_room.height, room_height) - 0.1)
+                            y = base_room.y + random.uniform(0, base_room.height - max_offset)
                         x = base_room.x - room_width
 
                     # Check if within bounds - use minimal margin to maximize space usage
@@ -213,9 +195,7 @@ class EnvironmentGenerator:
                 overlap_end = min(new_room.x + new_room.width, room.x + room.width)
                 door_pos = (overlap_start + overlap_end) / 2 - new_room.x
                 room_door_pos = (overlap_start + overlap_end) / 2 - room.x
-                potential_connections.append(
-                    ("north", door_pos, room, "south", room_door_pos)
-                )
+                potential_connections.append(("north", door_pos, room, "south", room_door_pos))
 
             # South side of new_room touches north side of room
             elif abs(new_room.y - (room.y + room.height)) < threshold and not (
@@ -225,35 +205,27 @@ class EnvironmentGenerator:
                 overlap_end = min(new_room.x + new_room.width, room.x + room.width)
                 door_pos = (overlap_start + overlap_end) / 2 - new_room.x
                 room_door_pos = (overlap_start + overlap_end) / 2 - room.x
-                potential_connections.append(
-                    ("south", door_pos, room, "north", room_door_pos)
-                )
+                potential_connections.append(("south", door_pos, room, "north", room_door_pos))
 
             # East side of new_room touches west side of room
             elif abs((new_room.x + new_room.width) - room.x) < threshold and not (
-                new_room.y + new_room.height < room.y
-                or new_room.y > room.y + room.height
+                new_room.y + new_room.height < room.y or new_room.y > room.y + room.height
             ):
                 overlap_start = max(new_room.y, room.y)
                 overlap_end = min(new_room.y + new_room.height, room.y + room.height)
                 door_pos = (overlap_start + overlap_end) / 2 - new_room.y
                 room_door_pos = (overlap_start + overlap_end) / 2 - room.y
-                potential_connections.append(
-                    ("east", door_pos, room, "west", room_door_pos)
-                )
+                potential_connections.append(("east", door_pos, room, "west", room_door_pos))
 
             # West side of new_room touches east side of room
             elif abs(new_room.x - (room.x + room.width)) < threshold and not (
-                new_room.y + new_room.height < room.y
-                or new_room.y > room.y + room.height
+                new_room.y + new_room.height < room.y or new_room.y > room.y + room.height
             ):
                 overlap_start = max(new_room.y, room.y)
                 overlap_end = min(new_room.y + new_room.height, room.y + room.height)
                 door_pos = (overlap_start + overlap_end) / 2 - new_room.y
                 room_door_pos = (overlap_start + overlap_end) / 2 - room.y
-                potential_connections.append(
-                    ("west", door_pos, room, "east", room_door_pos)
-                )
+                potential_connections.append(("west", door_pos, room, "east", room_door_pos))
 
         # Limit number of connections to avoid too many passthrough rooms
         # Always create at least 1 connection, up to 3 max (avoid 4-way intersections)
@@ -291,14 +263,10 @@ class EnvironmentGenerator:
                         or room.x > other_room.x + other_room.width
                     ):
                         overlap_start = max(room.x, other_room.x)
-                        overlap_end = min(
-                            room.x + room.width, other_room.x + other_room.width
-                        )
+                        overlap_end = min(room.x + room.width, other_room.x + other_room.width)
                         if overlap_end > overlap_start:
                             door_pos = (overlap_start + overlap_end) / 2 - room.x
-                            other_door_pos = (
-                                overlap_start + overlap_end
-                            ) / 2 - other_room.x
+                            other_door_pos = (overlap_start + overlap_end) / 2 - other_room.x
                             best_connection = (
                                 "north",
                                 door_pos,
@@ -309,21 +277,15 @@ class EnvironmentGenerator:
                             break
 
                     # South side
-                    elif abs(
-                        room.y - (other_room.y + other_room.height)
-                    ) < threshold and not (
+                    elif abs(room.y - (other_room.y + other_room.height)) < threshold and not (
                         room.x + room.width < other_room.x
                         or room.x > other_room.x + other_room.width
                     ):
                         overlap_start = max(room.x, other_room.x)
-                        overlap_end = min(
-                            room.x + room.width, other_room.x + other_room.width
-                        )
+                        overlap_end = min(room.x + room.width, other_room.x + other_room.width)
                         if overlap_end > overlap_start:
                             door_pos = (overlap_start + overlap_end) / 2 - room.x
-                            other_door_pos = (
-                                overlap_start + overlap_end
-                            ) / 2 - other_room.x
+                            other_door_pos = (overlap_start + overlap_end) / 2 - other_room.x
                             best_connection = (
                                 "south",
                                 door_pos,
@@ -339,14 +301,10 @@ class EnvironmentGenerator:
                         or room.y > other_room.y + other_room.height
                     ):
                         overlap_start = max(room.y, other_room.y)
-                        overlap_end = min(
-                            room.y + room.height, other_room.y + other_room.height
-                        )
+                        overlap_end = min(room.y + room.height, other_room.y + other_room.height)
                         if overlap_end > overlap_start:
                             door_pos = (overlap_start + overlap_end) / 2 - room.y
-                            other_door_pos = (
-                                overlap_start + overlap_end
-                            ) / 2 - other_room.y
+                            other_door_pos = (overlap_start + overlap_end) / 2 - other_room.y
                             best_connection = (
                                 "east",
                                 door_pos,
@@ -357,21 +315,15 @@ class EnvironmentGenerator:
                             break
 
                     # West side
-                    elif abs(
-                        room.x - (other_room.x + other_room.width)
-                    ) < threshold and not (
+                    elif abs(room.x - (other_room.x + other_room.width)) < threshold and not (
                         room.y + room.height < other_room.y
                         or room.y > other_room.y + other_room.height
                     ):
                         overlap_start = max(room.y, other_room.y)
-                        overlap_end = min(
-                            room.y + room.height, other_room.y + other_room.height
-                        )
+                        overlap_end = min(room.y + room.height, other_room.y + other_room.height)
                         if overlap_end > overlap_start:
                             door_pos = (overlap_start + overlap_end) / 2 - room.y
-                            other_door_pos = (
-                                overlap_start + overlap_end
-                            ) / 2 - other_room.y
+                            other_door_pos = (overlap_start + overlap_end) / 2 - other_room.y
                             best_connection = (
                                 "west",
                                 door_pos,
@@ -417,14 +369,10 @@ class EnvironmentGenerator:
                 if exits_on_side[0] - door_width / 2 > 0.1:
                     if is_horizontal:
                         wall_len = exits_on_side[0] - door_width / 2
-                        self.walls.append(
-                            (base_x, base_y, wall_len, self.wall_thickness)
-                        )
+                        self.walls.append((base_x, base_y, wall_len, self.wall_thickness))
                     else:
                         wall_len = exits_on_side[0] - door_width / 2
-                        self.walls.append(
-                            (base_x, base_y, self.wall_thickness, wall_len)
-                        )
+                        self.walls.append((base_x, base_y, self.wall_thickness, wall_len))
 
                 for i in range(len(exits_on_side) - 1):
                     start = exits_on_side[i] + door_width / 2
@@ -476,15 +424,11 @@ class EnvironmentGenerator:
         self.walls.append(
             (margin, self.height - margin, self.width - 2 * margin, self.wall_thickness)
         )
-        self.walls.append(
-            (margin, margin, self.width - 2 * margin, self.wall_thickness)
-        )
+        self.walls.append((margin, margin, self.width - 2 * margin, self.wall_thickness))
         self.walls.append(
             (self.width - margin, margin, self.wall_thickness, self.height - 2 * margin)
         )
-        self.walls.append(
-            (margin, margin, self.wall_thickness, self.height - 2 * margin)
-        )
+        self.walls.append((margin, margin, self.wall_thickness, self.height - 2 * margin))
 
     def _center_environment(self):
         """Shift all coordinates so environment is centered at (0, 0)"""
@@ -587,9 +531,7 @@ class EnvironmentGenerator:
     def _add_gui_plugins(self, gui):
         """Add GUI plugins configuration"""
         # 3D View plugin
-        view_plugin = ET.SubElement(
-            gui, "plugin", name="3D View", filename="MinimalScene"
-        )
+        view_plugin = ET.SubElement(gui, "plugin", name="3D View", filename="MinimalScene")
         view_gui = ET.SubElement(view_plugin, "ignition-gui")
         ET.SubElement(view_gui, "title").text = "3D View"
         prop = ET.SubElement(view_gui, "property", type="bool", key="showTitleBar")
@@ -610,31 +552,19 @@ class EnvironmentGenerator:
             filename="EntityContextMenuPlugin",
         )
         context_gui = ET.SubElement(context_plugin, "ignition-gui")
-        ET.SubElement(context_gui, "property", key="state", type="string").text = (
-            "floating"
-        )
+        ET.SubElement(context_gui, "property", key="state", type="string").text = "floating"
         ET.SubElement(context_gui, "property", key="width", type="double").text = "5"
         ET.SubElement(context_gui, "property", key="height", type="double").text = "5"
-        ET.SubElement(context_gui, "property", key="showTitleBar", type="bool").text = (
-            "false"
-        )
+        ET.SubElement(context_gui, "property", key="showTitleBar", type="bool").text = "false"
 
         # Scene Manager
-        scene_plugin = ET.SubElement(
-            gui, "plugin", name="Scene Manager", filename="GzSceneManager"
-        )
+        scene_plugin = ET.SubElement(gui, "plugin", name="Scene Manager", filename="GzSceneManager")
         scene_gui = ET.SubElement(scene_plugin, "ignition-gui")
-        ET.SubElement(scene_gui, "property", key="resizable", type="bool").text = (
-            "false"
-        )
+        ET.SubElement(scene_gui, "property", key="resizable", type="bool").text = "false"
         ET.SubElement(scene_gui, "property", key="width", type="double").text = "5"
         ET.SubElement(scene_gui, "property", key="height", type="double").text = "5"
-        ET.SubElement(scene_gui, "property", key="state", type="string").text = (
-            "floating"
-        )
-        ET.SubElement(scene_gui, "property", key="showTitleBar", type="bool").text = (
-            "false"
-        )
+        ET.SubElement(scene_gui, "property", key="state", type="string").text = "floating"
+        ET.SubElement(scene_gui, "property", key="showTitleBar", type="bool").text = "false"
 
         # Interactive view control
         interactive_plugin = ET.SubElement(
@@ -644,57 +574,33 @@ class EnvironmentGenerator:
             filename="InteractiveViewControl",
         )
         interactive_gui = ET.SubElement(interactive_plugin, "ignition-gui")
-        ET.SubElement(
-            interactive_gui, "property", key="resizable", type="bool"
-        ).text = "false"
-        ET.SubElement(interactive_gui, "property", key="width", type="double").text = (
-            "5"
-        )
-        ET.SubElement(interactive_gui, "property", key="height", type="double").text = (
-            "5"
-        )
-        ET.SubElement(interactive_gui, "property", key="state", type="string").text = (
-            "floating"
-        )
-        ET.SubElement(
-            interactive_gui, "property", key="showTitleBar", type="bool"
-        ).text = "false"
+        ET.SubElement(interactive_gui, "property", key="resizable", type="bool").text = "false"
+        ET.SubElement(interactive_gui, "property", key="width", type="double").text = "5"
+        ET.SubElement(interactive_gui, "property", key="height", type="double").text = "5"
+        ET.SubElement(interactive_gui, "property", key="state", type="string").text = "floating"
+        ET.SubElement(interactive_gui, "property", key="showTitleBar", type="bool").text = "false"
 
         # Camera Tracking
         camera_plugin = ET.SubElement(
             gui, "plugin", name="Camera Tracking", filename="CameraTracking"
         )
         camera_gui = ET.SubElement(camera_plugin, "ignition-gui")
-        ET.SubElement(camera_gui, "property", key="resizable", type="bool").text = (
-            "false"
-        )
+        ET.SubElement(camera_gui, "property", key="resizable", type="bool").text = "false"
         ET.SubElement(camera_gui, "property", key="width", type="double").text = "5"
         ET.SubElement(camera_gui, "property", key="height", type="double").text = "5"
-        ET.SubElement(camera_gui, "property", key="state", type="string").text = (
-            "floating"
-        )
-        ET.SubElement(camera_gui, "property", key="showTitleBar", type="bool").text = (
-            "false"
-        )
+        ET.SubElement(camera_gui, "property", key="state", type="string").text = "floating"
+        ET.SubElement(camera_gui, "property", key="showTitleBar", type="bool").text = "false"
 
         # World control
-        control_plugin = ET.SubElement(
-            gui, "plugin", name="World control", filename="WorldControl"
-        )
+        control_plugin = ET.SubElement(gui, "plugin", name="World control", filename="WorldControl")
         control_gui = ET.SubElement(control_plugin, "ignition-gui")
         ET.SubElement(control_gui, "title").text = "World control"
-        ET.SubElement(control_gui, "property", type="bool", key="showTitleBar").text = (
-            "false"
-        )
-        ET.SubElement(control_gui, "property", type="bool", key="resizable").text = (
-            "false"
-        )
+        ET.SubElement(control_gui, "property", type="bool", key="showTitleBar").text = "false"
+        ET.SubElement(control_gui, "property", type="bool", key="resizable").text = "false"
         ET.SubElement(control_gui, "property", type="double", key="height").text = "72"
         ET.SubElement(control_gui, "property", type="double", key="width").text = "121"
         ET.SubElement(control_gui, "property", type="double", key="z").text = "1"
-        ET.SubElement(control_gui, "property", type="string", key="state").text = (
-            "floating"
-        )
+        ET.SubElement(control_gui, "property", type="string", key="state").text = "floating"
         anchors = ET.SubElement(control_gui, "anchors", target="3D View")
         ET.SubElement(anchors, "line", own="left", target="left")
         ET.SubElement(anchors, "line", own="bottom", target="bottom")
@@ -704,23 +610,15 @@ class EnvironmentGenerator:
         ET.SubElement(control_plugin, "use_event").text = "true"
 
         # World stats
-        stats_plugin = ET.SubElement(
-            gui, "plugin", name="World stats", filename="WorldStats"
-        )
+        stats_plugin = ET.SubElement(gui, "plugin", name="World stats", filename="WorldStats")
         stats_gui = ET.SubElement(stats_plugin, "ignition-gui")
         ET.SubElement(stats_gui, "title").text = "World stats"
-        ET.SubElement(stats_gui, "property", type="bool", key="showTitleBar").text = (
-            "false"
-        )
-        ET.SubElement(stats_gui, "property", type="bool", key="resizable").text = (
-            "false"
-        )
+        ET.SubElement(stats_gui, "property", type="bool", key="showTitleBar").text = "false"
+        ET.SubElement(stats_gui, "property", type="bool", key="resizable").text = "false"
         ET.SubElement(stats_gui, "property", type="double", key="height").text = "110"
         ET.SubElement(stats_gui, "property", type="double", key="width").text = "290"
         ET.SubElement(stats_gui, "property", type="double", key="z").text = "1"
-        ET.SubElement(stats_gui, "property", type="string", key="state").text = (
-            "floating"
-        )
+        ET.SubElement(stats_gui, "property", type="string", key="state").text = "floating"
         anchors = ET.SubElement(stats_gui, "anchors", target="3D View")
         ET.SubElement(anchors, "line", own="right", target="right")
         ET.SubElement(anchors, "line", own="bottom", target="bottom")
@@ -738,14 +636,10 @@ class EnvironmentGenerator:
             gui, "plugin", name="Component inspector", filename="ComponentInspector"
         )
         inspector_gui = ET.SubElement(inspector_plugin, "ignition-gui")
-        ET.SubElement(inspector_gui, "property", type="string", key="state").text = (
-            "docked"
-        )
+        ET.SubElement(inspector_gui, "property", type="string", key="state").text = "docked"
 
         # Entity tree
-        tree_plugin = ET.SubElement(
-            gui, "plugin", name="Entity tree", filename="EntityTree"
-        )
+        tree_plugin = ET.SubElement(gui, "plugin", name="Entity tree", filename="EntityTree")
         tree_gui = ET.SubElement(tree_plugin, "ignition-gui")
         ET.SubElement(tree_gui, "property", type="string", key="state").text = "docked"
 

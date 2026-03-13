@@ -39,9 +39,7 @@ class DynamicTFPublisher(Node):
         tf_msg = TFMessage()
         tranform = TransformStamped()
         tranform.header.stamp = self.get_clock().now().to_msg()
-        tranform.header.frame_id = (
-            self.get_parameter("frame_id").get_parameter_value().string_value
-        )
+        tranform.header.frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
         tranform.child_frame_id = (
             self.get_parameter("child_frame_id").get_parameter_value().string_value
         )

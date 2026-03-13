@@ -51,9 +51,7 @@ class PositionalEncoding(nn.Module):
         # Create positional encoding matrix
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model)
-        )
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -306,18 +304,14 @@ class ReinforcementSwarmNetwork(nn.Module):
             try:
                 self.load_model(self.model_path)
                 if parent:
-                    parent.get_logger().info(
-                        f"Loaded pretrained model from {self.model_path}"
-                    )
+                    parent.get_logger().info(f"Loaded pretrained model from {self.model_path}")
             except Exception as e:
                 if parent:
                     parent.get_logger().warn(
                         f"Failed to load model from {self.model_path}: {str(e)}"
                     )
 
-    def save_model(
-        self, request: Trigger_Request, response: Trigger_Response
-    ) -> Trigger_Response:
+    def save_model(self, request: Trigger_Request, response: Trigger_Response) -> Trigger_Response:
         try:
             torch.save(
                 {
@@ -384,9 +378,7 @@ class ReinforcementSwarmNetwork(nn.Module):
         batch_size = robot_positions.shape[0]
 
         # Embed robots and frontiers
-        robot_embedded = self.robot_embedding(
-            robot_positions
-        )  # (batch, n_robots, d_model)
+        robot_embedded = self.robot_embedding(robot_positions)  # (batch, n_robots, d_model)
         frontier_embedded = self.frontier_embedding(
             frontier_positions
         )  # (batch, n_frontiers, d_model)
@@ -456,8 +448,7 @@ class ReinforcementSwarmNetwork(nn.Module):
         # Backtracking prevention: check if goal is too close to previous goal
         if self.previous_goal is not None:
             distance = sqrt(
-                (goal[0] - self.previous_goal[0]) ** 2
-                + (goal[1] - self.previous_goal[1]) ** 2
+                (goal[0] - self.previous_goal[0]) ** 2 + (goal[1] - self.previous_goal[1]) ** 2
             )
 
             # If new goal is too close to previous goal, find alternative
@@ -480,9 +471,7 @@ class ReinforcementSwarmNetwork(nn.Module):
         self.previous_goal = goal
 
         # Compute log probability (simplified for continuous actions)
-        log_prob = -torch.nn.functional.mse_loss(
-            goal_positions, goal_positions.detach()
-        )
+        log_prob = -torch.nn.functional.mse_loss(goal_positions, goal_positions.detach())
 
         return goal, log_prob, state_value
 
@@ -552,9 +541,7 @@ class ReinforcementSwarmNetwork(nn.Module):
 
         for attempt in range(MAX_REGENERATION_ATTEMPTS):
             add_noise = attempt > 0
-            goal, log_prob, value = self.select_action(
-                robot_position, frontiers, add_noise
-            )
+            goal, log_prob, value = self.select_action(robot_position, frontiers, add_noise)
 
             if goal is None:
                 continue
@@ -570,9 +557,7 @@ class ReinforcementSwarmNetwork(nn.Module):
                 reward = NO_PROGRESS_PENALTY
                 reward -= self.consecutive_zero_rewards * 0.5
 
-            reward += self._compute_potential_reward(
-                robot_position, goal, frontiers, grid
-            )
+            reward += self._compute_potential_reward(robot_position, goal, frontiers, grid)
 
             if reward > best_reward:
                 best_reward = reward
@@ -593,9 +578,7 @@ class ReinforcementSwarmNetwork(nn.Module):
             return None
 
         if not self.robot.is_moving:
-            transformed_action = self.parent.apply_transform(
-                self.robot.namespace, list(goal)
-            )
+            transformed_action = self.parent.apply_transform(self.robot.namespace, list(goal))
             self.robot.publish_goal(*transformed_action)
             self.parent.publish_point(*transformed_action)
 
@@ -658,9 +641,7 @@ class ReinforcementSwarmNetwork(nn.Module):
             return
 
         if not self.robot.is_moving:
-            transformed_action = self.parent.apply_transform(
-                self.robot.namespace, list(goal)
-            )
+            transformed_action = self.parent.apply_transform(self.robot.namespace, list(goal))
             self.robot.publish_goal(*transformed_action)
             self.parent.publish_point(*transformed_action)
 
@@ -687,15 +668,9 @@ class ReinforcementSwarmNetwork(nn.Module):
                 old_action = self.actions[i]
 
                 # Prepare tensors (fresh tensors for each forward pass)
-                robot_tensor = torch.tensor(
-                    [robot_position], dtype=torch.float32
-                ).unsqueeze(0)
-                frontier_tensor = torch.tensor(
-                    frontiers, dtype=torch.float32
-                ).unsqueeze(0)
-                old_action_tensor = torch.tensor(
-                    [old_action], dtype=torch.float32
-                ).unsqueeze(0)
+                robot_tensor = torch.tensor([robot_position], dtype=torch.float32).unsqueeze(0)
+                frontier_tensor = torch.tensor(frontiers, dtype=torch.float32).unsqueeze(0)
+                old_action_tensor = torch.tensor([old_action], dtype=torch.float32).unsqueeze(0)
 
                 # Forward pass (creates fresh computation graph)
                 new_action, new_value, _ = self.forward(robot_tensor, frontier_tensor)
@@ -713,10 +688,7 @@ class ReinforcementSwarmNetwork(nn.Module):
 
                 # PPO clipped objective
                 surr1 = ratio * advantages[i]
-                surr2 = (
-                    torch.clamp(ratio, 1.0 - CLIP_EPSILON, 1.0 + CLIP_EPSILON)
-                    * advantages[i]
-                )
+                surr2 = torch.clamp(ratio, 1.0 - CLIP_EPSILON, 1.0 + CLIP_EPSILON) * advantages[i]
                 actor_loss = -torch.min(surr1, surr2).mean()
 
                 # Value loss
@@ -800,9 +772,7 @@ class ReinforcementSwarmNetwork(nn.Module):
                 reward += exp(-min_dist / sigma)
 
         # Frontier reduction reward (more frontiers explored is good)
-        frontier_reduction = self._count_frontiers(state) - self._count_frontiers(
-            next_state
-        )
+        frontier_reduction = self._count_frontiers(state) - self._count_frontiers(next_state)
         if frontier_reduction > 0:
             reward += 0.5 * frontier_reduction
         elif frontier_reduction < 0:
@@ -817,9 +787,7 @@ class ReinforcementSwarmNetwork(nn.Module):
 
         return reward
 
-    def _count_frontiers(
-        self, grid: OccupancyGrid, cluster_distance: float = 0.5
-    ) -> int:
+    def _count_frontiers(self, grid: OccupancyGrid, cluster_distance: float = 0.5) -> int:
         """Count number of frontier clusters in the map."""
         if not grid:
             return 0
@@ -850,12 +818,8 @@ class ReinforcementSwarmNetwork(nn.Module):
             for dx in (-1, 0, 1):
                 if dx == 0 and dy == 0:
                     continue
-                adjacent_unknown |= pad_unknown[
-                    1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width
-                ]
-                adjacent_occupied |= pad_occupied[
-                    1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width
-                ]
+                adjacent_unknown |= pad_unknown[1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width]
+                adjacent_occupied |= pad_occupied[1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width]
 
         frontier_mask = free & adjacent_unknown & (~adjacent_occupied)
 
@@ -953,12 +917,8 @@ class ReinforcementSwarmNetwork(nn.Module):
             for dx in (-1, 0, 1):
                 if dx == 0 and dy == 0:
                     continue
-                adjacent_unknown |= pad_unknown[
-                    1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width
-                ]
-                adjacent_occupied |= pad_occupied[
-                    1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width
-                ]
+                adjacent_unknown |= pad_unknown[1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width]
+                adjacent_occupied |= pad_occupied[1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width]
 
         frontier_mask = free & adjacent_unknown & (~adjacent_occupied)
 
@@ -1057,9 +1017,7 @@ class ReinforcementSwarmNetwork(nn.Module):
         else:
             goal = goals[0]
 
-        dist_to_goal = sqrt(
-            (goal[0] - robot_pos[0]) ** 2 + (goal[1] - robot_pos[1]) ** 2
-        )
+        dist_to_goal = sqrt((goal[0] - robot_pos[0]) ** 2 + (goal[1] - robot_pos[1]) ** 2)
         # Small reward for distance (encourages exploring further areas)
         reward += min(dist_to_goal * 0.05, 0.5)
 
@@ -1067,9 +1025,7 @@ class ReinforcementSwarmNetwork(nn.Module):
         goal_set = set()
         duplicates = 0
         for frontier in frontiers:
-            dist_to_frontier = sqrt(
-                (goal[0] - frontier[0]) ** 2 + (goal[1] - frontier[1]) ** 2
-            )
+            dist_to_frontier = sqrt((goal[0] - frontier[0]) ** 2 + (goal[1] - frontier[1]) ** 2)
             # Penalty if goal is very close to a frontier
             if dist_to_frontier < 1.0:
                 reward -= 0.1

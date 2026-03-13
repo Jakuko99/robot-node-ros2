@@ -27,9 +27,7 @@ def generate_launch_description():
                 executable="robot_sim",
                 name="robot_sim",
                 output="screen",
-                parameters=[
-                    {"use_sim_time": use_sim_time, "robot_description": robot_desc}
-                ],
+                parameters=[{"use_sim_time": use_sim_time, "robot_description": robot_desc}],
                 arguments=[urdf],
             ),
         ]

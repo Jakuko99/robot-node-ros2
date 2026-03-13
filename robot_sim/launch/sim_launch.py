@@ -74,14 +74,10 @@ def generate_launch_description():
                 ]
             ),
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "mapping_launch.py")
-                ),
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, "mapping_launch.py")),
             ),
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "nav_launch.py")
-                ),
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, "nav_launch.py")),
             ),
         ]
     )

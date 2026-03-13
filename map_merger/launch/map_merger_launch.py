@@ -20,6 +20,7 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot1",
                         "merge_topic_name": "pheromones",
+                        "map_frame_id": "global_map",
                     }
                 ],
             ),

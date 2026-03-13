@@ -45,23 +45,15 @@ class RobotNode(Node):
         self.declare_parameter("marl_update_epochs", 4)
         self.declare_parameter("model_checkpoint_path", "/tmp/marl_checkpoint.pt")
 
-        self.namespace: str = (
-            self.get_parameter("robot_name").get_parameter_value().string_value
-        )
+        self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.goal_process_interval: float = (
-            self.get_parameter("goal_process_interval")
-            .get_parameter_value()
-            .double_value
+            self.get_parameter("goal_process_interval").get_parameter_value().double_value
         )
         self.robot_discovery_interval: float = (
-            self.get_parameter("robot_discovery_interval")
-            .get_parameter_value()
-            .double_value
+            self.get_parameter("robot_discovery_interval").get_parameter_value().double_value
         )
         self.position_update_interval: float = (
-            self.get_parameter("position_update_interval")
-            .get_parameter_value()
-            .double_value
+            self.get_parameter("position_update_interval").get_parameter_value().double_value
         )
         self.goal_timeout: float = (
             self.get_parameter("goal_timeout").get_parameter_value().double_value
@@ -76,9 +68,7 @@ class RobotNode(Node):
             self.get_parameter("marl_update_epochs").get_parameter_value().integer_value
         )
         self.model_checkpoint_path: str = (
-            self.get_parameter("model_checkpoint_path")
-            .get_parameter_value()
-            .string_value
+            self.get_parameter("model_checkpoint_path").get_parameter_value().string_value
         )
 
         # ----- Variables -----
@@ -96,9 +86,7 @@ class RobotNode(Node):
         self.other_nodes: list[str] = []  # keep track of other robot nodes
         self.last_position_update_time: float = time()
         self.goal_publish_time: float = time()
-        self.node_positions: dict[str, tuple[float, float]] = (
-            {}
-        )  # store positions of nodes
+        self.node_positions: dict[str, tuple[float, float]] = {}  # store positions of nodes
         self.swarm_explorer: SwarmExplorer = None
         self.previous_observation: SwarmObservation = None
         self.previous_action_output: ActionOutput = None
@@ -178,9 +166,7 @@ class RobotNode(Node):
         if time() - self.last_position_update_time < self.position_update_interval:
             return
 
-        node_name = msg.header.frame_id.replace(
-            "_odom", "_node"
-        )  # extract node name from frame_id
+        node_name = msg.header.frame_id.replace("_odom", "_node")  # extract node name from frame_id
         self.node_positions[node_name] = (
             msg.pose.pose.position.x,
             msg.pose.pose.position.y,
@@ -193,9 +179,7 @@ class RobotNode(Node):
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg
 
-    def save_checkpoint_callback(
-        self, request: Trigger.Request, response: Trigger.Response
-    ):
+    def save_checkpoint_callback(self, request: Trigger.Request, response: Trigger.Response):
         if self.swarm_explorer is not None:
             self.swarm_explorer.save_checkpoint(self.model_checkpoint_path)
             response.success = True
@@ -236,9 +220,7 @@ class RobotNode(Node):
             self.goal_pub.publish(goal_pose)
 
         else:
-            self.goal_future = self.nav_client.send_goal_async(
-                NavigateToPose.Goal(pose=goal_pose)
-            )
+            self.goal_future = self.nav_client.send_goal_async(NavigateToPose.Goal(pose=goal_pose))
             self.goal_future.add_done_callback(self.goal_response_callback)
             self.get_logger().info(f"Published new goal [{x}, {y}, {theta}]")
             self.goal_publish_time = time()
@@ -292,9 +274,7 @@ class RobotNode(Node):
             )
             self.previous_observation = None
             self.previous_action_output = None
-            self.get_logger().info(
-                f"Initialized SwarmExplorer for robots: {robot_names}"
-            )
+            self.get_logger().info(f"Initialized SwarmExplorer for robots: {robot_names}")
 
         if self.swarm_explorer is None:
             return
@@ -347,13 +327,9 @@ class RobotNode(Node):
         for node_name in sorted(self.node_positions.keys()):
             if node_name.endswith("_node"):
                 discovered.append(node_name.replace("_node", ""))
-        return [self.namespace] + [
-            name for name in discovered if name != self.namespace
-        ]
+        return [self.namespace] + [name for name in discovered if name != self.namespace]
 
-    def _build_swarm_observation(
-        self, robot_names: list[str]
-    ) -> SwarmObservation | None:
+    def _build_swarm_observation(self, robot_names: list[str]) -> SwarmObservation | None:
         if self.current_map is None or self.last_odom is None:
             return None
 
@@ -363,13 +339,9 @@ class RobotNode(Node):
             return None
 
         try:
-            grid = np.array(self.current_map.data, dtype=np.int16).reshape(
-                height, width
-            )
+            grid = np.array(self.current_map.data, dtype=np.int16).reshape(height, width)
         except ValueError:
-            self.get_logger().warn(
-                "Failed to reshape occupancy grid for SwarmObservation"
-            )
+            self.get_logger().warn("Failed to reshape occupancy grid for SwarmObservation")
             return None
 
         meta = MapMeta(

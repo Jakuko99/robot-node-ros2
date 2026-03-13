@@ -187,6 +187,7 @@ class MapMerger(Node):
             merged_map.info.height = int(
                 np.ceil((max_y - min_y) / merged_map.info.resolution)
             )
+
             merged_map.data = [-1] * (merged_map.info.width * merged_map.info.height)
 
             for map in local_maps.values():
@@ -219,8 +220,12 @@ class MapMerger(Node):
                             )
                         )
                         merged_i = merged_x + merged_y * merged_map.info.width
-                        if map.data[index] == 0 and merged_map.data[merged_i] >= 0:
-                            merged_map.data[merged_i] += 1
+                        if (
+                            map.data[index] == 0
+                            and merged_map.data[merged_i] >= 0
+                            and merged_map.data[merged_i] < 100
+                        ):
+                            merged_map.data[merged_i] += 5
 
                         elif map.data[index] == 0:
                             merged_map.data[merged_i] = 0

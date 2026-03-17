@@ -9,7 +9,7 @@ from rclpy.node import Node, Publisher, Subscription
 from nav_msgs.msg import OccupancyGrid, Odometry
 from action_msgs.msg import GoalStatus
 from rclpy.action.client import ClientGoalHandle
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import PoseStamped
 from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
@@ -66,6 +66,9 @@ class RobotNode(Node):
         )  # correct map QoS profile
 
         # ----- Timers -----
+        self.goal_timer: Timer = self.create_timer(
+            self.goal_process_interval, callback=self.goal_timer_callback
+        )
 
         # ----- Clients -----
         self.nav_client: ActionClient = ActionClient(
@@ -114,6 +117,10 @@ class RobotNode(Node):
 
     def map_callback(self, msg: OccupancyGrid):
         pass
+
+    def goal_timer_callback(self):
+        if not self.moving:
+            pass
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         goal_pose = PoseStamped()

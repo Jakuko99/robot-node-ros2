@@ -16,13 +16,9 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot1",
                         "goal_process_interval": 5.0,
-                        "robot_discovery_interval": 10.0,
-                        "position_update_interval": 2.5,
-                        "goal_timeout": 120.0,
-                        "marl_training": True,
-                        "marl_update_every": 32,
-                        "marl_update_epochs": 4,
-                        "model_checkpoint_path": f"{resource_dir}/kris_robot1_model.pt",
+                        "pheromone_map_topic": "pheromones",
+                        "map_frame_id": "global_map",
+                        "goal_topic": "goal_pose",
                     }
                 ],
             ),
@@ -35,23 +31,11 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot2",
                         "goal_process_interval": 5.0,
-                        "robot_discovery_interval": 10.0,
-                        "position_update_interval": 2.5,
-                        "goal_timeout": 120.0,
-                        "marl_training": True,
-                        "marl_update_every": 32,
-                        "marl_update_epochs": 4,
-                        "model_checkpoint_path": f"{resource_dir}/kris_robot2_model.pt",
+                        "pheromone_map_topic": "pheromones",
+                        "map_frame_id": "kris_robot2_pheromone_map",
+                        "goal_topic": "goal_pose",
                     }
                 ],
             ),
-            # Node(
-            #     package="rviz2",
-            #     executable="rviz2",
-            #     name="map_rviz",
-            #     output="screen",
-            #     arguments=["-d", "src/robot_node/rviz/map_view.rviz"],
-            #     parameters=[{"use_sim_time": True}],
-            # ),
         ]
     )

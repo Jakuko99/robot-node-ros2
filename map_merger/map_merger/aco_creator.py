@@ -23,27 +23,28 @@ class ACOCreator:
         self.global_map = (
             self.merge_maps(self.global_map, new_global_map) if self.global_map else new_global_map
         )
+        self.global_map = self.find_frontiers(self.global_map)
+        self.global_map = self.find_lower_trust_points(self.global_map)
 
         map_data: np.ndarray = np.array(self.global_map.data, dtype=np.int8).reshape(
             (self.global_map.info.height, self.global_map.info.width)
         )
 
         if self.current_odom and self.static_transform and self.current_map:
-            position: tuple[float, float] = self.pos_to_map_index(
-                self.global_map,
-                (
-                    self.current_odom.pose.pose.position.x,
-                    self.current_odom.pose.pose.position.y,
-                ),
-            )
-            region: np.ndarray = self._get_region(map_data, *position[::-1], width=3)
-            if np.mean(region) > 20:
-                map_data = self._set_region(map_data, *position[::-1], width=3, value=110)
+            try:
+                position: tuple[float, float] = self.pos_to_map_index(
+                    self.global_map,
+                    (
+                        self.current_odom.pose.pose.position.x,
+                        self.current_odom.pose.pose.position.y,
+                    ),
+                )
+                map_data = self._set_region(map_data, *position[::-1], width=3, value=25)
 
-            map_data = self._set_region(map_data, *position[::-1], width=3, value=25)
-
-            # for i in range(110): # gradient test
-            #     map_data = self._set_region(map_data, 0, i, width=5, value=i)
+            except ValueError:
+                self.logger.warn(
+                    "Current position is out of global map bounds. Skipping position marking."
+                )
 
             self.global_map.data = np.array(map_data).flatten().tolist()
 
@@ -94,13 +95,22 @@ class ACOCreator:
         if transform is None:
             transform = self.static_transform
 
+        if pos[0] < map.info.origin.position.x or pos[1] < map.info.origin.position.y:
+            raise ValueError("Position is out of map bounds")
+
         m_res: float = map.info.resolution
         return (
             math.floor(
-                (pos[0] + transform.transform.translation.x - map.info.origin.position.x) / m_res
+                abs(
+                    (pos[0] + transform.transform.translation.x - map.info.origin.position.x)
+                    / m_res
+                )
             ),
             math.floor(
-                (pos[1] + transform.transform.translation.y - map.info.origin.position.y) / m_res
+                abs(
+                    (pos[1] + transform.transform.translation.y - map.info.origin.position.y)
+                    / m_res
+                )
             ),
         )
 
@@ -131,27 +141,87 @@ class ACOCreator:
         for map in maps:
             for y in range(map.info.height):
                 for x in range(map.info.width):
-                    index: int = x + y * map.info.width
-                    merged_x: int = int(
-                        np.floor(
-                            (map.info.origin.position.x + x * map.info.resolution - min_x)
-                            / merged_map.info.resolution
+                    try:
+                        index: int = x + y * map.info.width
+                        merged_x: int = int(
+                            np.floor(
+                                (map.info.origin.position.x + x * map.info.resolution - min_x)
+                                / merged_map.info.resolution
+                            )
                         )
-                    )
-                    merged_y: int = int(
-                        np.floor(
-                            (map.info.origin.position.y + y * map.info.resolution - min_y)
-                            / merged_map.info.resolution
+                        merged_y: int = int(
+                            np.floor(
+                                (map.info.origin.position.y + y * map.info.resolution - min_y)
+                                / merged_map.info.resolution
+                            )
                         )
-                    )
-                    merged_i: int = merged_x + merged_y * merged_map.info.width
+                        merged_i: int = merged_x + merged_y * merged_map.info.width
 
-                    if (
-                        merged_map.data[merged_i] > 0 and merged_map.data[merged_i] < 100
-                    ) or merged_map.data[merged_i] > 100:
-                        continue
+                        if merged_map.data[merged_i] > 0 and merged_map.data[merged_i] < 100:
+                            continue
 
-                    elif map.data[index] != -1:
-                        merged_map.data[merged_i] = map.data[index]
+                        elif map.data[index] != -1:
+                            merged_map.data[merged_i] = map.data[index]
+
+                    except IndexError:
+                        return map1
 
         return merged_map
+
+    @staticmethod
+    def find_frontiers(map: OccupancyGrid) -> OccupancyGrid:
+        """
+        Find frontiers on the map and mark their locations with a specific value (e.g., 110) in the map data.
+        """
+        map_data: np.ndarray = np.array(map.data, dtype=np.int8).reshape(
+            (map.info.height, map.info.width)
+        )
+
+        for y in range(map.info.height):
+            for x in range(map.info.width):
+                if map_data[y, x] == 0:  # Free cell
+                    # Check neighbors
+                    neighbors = [(y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)]
+                    for ny, nx in neighbors:
+                        if 0 <= ny < map.info.height and 0 <= nx < map.info.width:
+                            if map_data[ny, nx] == -1:  # Unknown neighbor
+                                index: int = x + y * map.info.width
+                                map.data[index] = 110  # Mark frontier cell
+
+        return map
+
+    @staticmethod
+    def find_lower_trust_points(map: OccupancyGrid) -> OccupancyGrid:
+        """
+        Find lower trust points on the map and mark their locations with a specific value (e.g., -10) in the map data.
+        Lower trust points are random occupied cells that are next to free cells.
+        """
+        map_data: np.ndarray = np.array(map.data, dtype=np.int8).reshape(
+            (map.info.height, map.info.width)
+        )
+
+        for y in range(map.info.height):
+            for x in range(map.info.width):
+                if map_data[y, x] == 100:  # occupied cell
+                    # Check neighbors
+                    neighbors = [
+                        (y - 1, x),
+                        (y + 1, x),
+                        (y, x - 1),
+                        (y, x + 1),
+                        (y - 1, x - 1),
+                        (y - 1, x + 1),
+                        (y + 1, x - 1),
+                        (y + 1, x + 1),
+                    ]
+                    empty_neighbors = 0
+                    for ny, nx in neighbors:
+                        if 0 <= ny < map.info.height and 0 <= nx < map.info.width:
+                            if map_data[ny, nx] == 0:  # Free neighbor
+                                empty_neighbors += 1
+
+                    if empty_neighbors >= 4:
+                        index: int = x + y * map.info.width
+                        map.data[index] = -10  # Mark lower trust point
+
+        return map

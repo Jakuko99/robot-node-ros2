@@ -169,8 +169,8 @@ class MapMerger(Node):
             merged_map.info.origin.position.x = min_x
             merged_map.info.origin.position.y = min_y
             merged_map.info.resolution = min([m.info.resolution for m in local_maps.values()])
-            merged_map.info.width = int(np.ceil((max_x - min_x) / merged_map.info.resolution))
-            merged_map.info.height = int(np.ceil((max_y - min_y) / merged_map.info.resolution))
+            merged_map.info.width = int(np.ceil((max_x - min_x) / merged_map.info.resolution)) + 10
+            merged_map.info.height = int(np.ceil((max_y - min_y) / merged_map.info.resolution)) + 10
 
             merged_map.data = [-1] * (merged_map.info.width * merged_map.info.height)
 
@@ -201,19 +201,26 @@ class MapMerger(Node):
                                 / merged_map.info.resolution
                             )
                         )
-                        merged_i: int = merged_x + merged_y * merged_map.info.width
-                        if (
-                            map.data[index] == 0
-                            and merged_map.data[merged_i] >= 0
-                            and merged_map.data[merged_i] < 100
-                        ):
-                            merged_map.data[merged_i] += 10
+                        try:
+                            merged_i: int = merged_x + merged_y * merged_map.info.width
+                            if (
+                                map.data[index] == 0
+                                and merged_map.data[merged_i] >= 0
+                                and merged_map.data[merged_i] < 100
+                            ):
+                                merged_map.data[merged_i] += 10
 
-                        elif map.data[index] == 0:
-                            merged_map.data[merged_i] = 0
+                            elif map.data[index] == 0:
+                                merged_map.data[merged_i] = 0
 
-                        elif map.data[index] != -1:
-                            merged_map.data[merged_i] = map.data[index]
+                            elif map.data[index] != -1:
+                                merged_map.data[merged_i] = map.data[index]
+
+                        except IndexError:
+                            self.get_logger().warn(
+                                f"Index error for merged map at ({merged_x}, {merged_y}) with map {map.header.frame_id} at ({x}, {y})"
+                            )
+                            continue
 
             updated_map: OccupancyGrid = self.aco_creator.update_global_map(merged_map)
             self.publisher.publish(updated_map)

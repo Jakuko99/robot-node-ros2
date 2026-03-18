@@ -187,6 +187,7 @@ class ACOCreator:
                             if map_data[ny, nx] == -1:  # Unknown neighbor
                                 index: int = x + y * map.info.width
                                 map.data[index] = 110  # Mark frontier cell
+                                break
 
         return map
 

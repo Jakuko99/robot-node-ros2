@@ -70,18 +70,18 @@ def generate_launch_description():
                     }
                 ],
             ),
-            # Node(
-            #     name="kris_robot2_merger",
-            #     package="map_merger",
-            #     executable="map_merger",
-            #     output="screen",
-            #     parameters=[
-            #         {
-            #             "robot_name": "kris_robot2",
-            #             "merge_topic_name": "pheromones",
-            #             "map_frame_id": "kris_robot2_pheromone_map",
-            #         }
-            #     ],
-            # ),
+            Node(
+                name="kris_robot2_merger",
+                package="map_merger",
+                executable="map_merger",
+                output="screen",
+                parameters=[
+                    {
+                        "robot_name": "kris_robot2",
+                        "merge_topic_name": "pheromones",
+                        "map_frame_id": "kris_robot2_pheromone_map",
+                    }
+                ],
+            ),
         ]
     )

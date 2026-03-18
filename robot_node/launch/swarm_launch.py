@@ -19,6 +19,8 @@ def generate_launch_description():
                         "pheromone_map_topic": "pheromones",
                         "map_frame_id": "global_map",
                         "goal_topic": "goal_pose",
+                        "static_transform_x": 0.0,
+                        "static_transform_y": 0.0,
                     }
                 ],
             ),
@@ -34,6 +36,8 @@ def generate_launch_description():
                         "pheromone_map_topic": "pheromones",
                         "map_frame_id": "kris_robot2_pheromone_map",
                         "goal_topic": "goal_pose",
+                        "static_transform_x": 1.0,
+                        "static_transform_y": 0.0,
                     }
                 ],
             ),

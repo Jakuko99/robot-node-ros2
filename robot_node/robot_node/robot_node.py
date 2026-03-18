@@ -33,6 +33,8 @@ class RobotNode(Node):
         self.declare_parameter("map_frame_id", "map")
         self.declare_parameter("goal_process_interval", 5.0)
         self.declare_parameter("goal_topic", "goal_pose")
+        self.declare_parameter("static_transform_x", 0.0)
+        self.declare_parameter("static_transform_y", 0.0)
 
         self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.map_frame_id: str = (
@@ -45,6 +47,12 @@ class RobotNode(Node):
             self.get_parameter("goal_process_interval").get_parameter_value().double_value
         )
         self.goal_topic: str = self.get_parameter("goal_topic").get_parameter_value().string_value
+        self.static_transform_x: float = (
+            self.get_parameter("static_transform_x").get_parameter_value().double_value
+        )
+        self.static_transform_y: float = (
+            self.get_parameter("static_transform_y").get_parameter_value().double_value
+        )
 
         # ----- Variables -----
         self.goal_future: Future = None
@@ -52,12 +60,14 @@ class RobotNode(Node):
         self.last_odom: Odometry = None
         self.last_goal: PoseStamped = None
         self.current_map: OccupancyGrid = None
+        self.current_local_map: OccupancyGrid = None
         self.x: float = 0.0
         self.y: float = 0.0
         self.theta: float = 0.0
         self.moving: bool = False
         self.action_server_connected: bool = False
         self.goal_publish_time: float = time()
+        self.goal_timeout: float = 30.0  # seconds
         map_qos: QoSProfile = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -65,9 +75,17 @@ class RobotNode(Node):
             depth=1,
         )  # correct map QoS profile
 
+        self.decision_network: DecisionNetwork = DecisionNetwork(
+            self.namespace, pheromone_decay=0.1
+        )
+
         # ----- Timers -----
         self.goal_timer: Timer = self.create_timer(
             self.goal_process_interval, callback=self.goal_timer_callback
+        )
+
+        self.discovery_timer: Timer = self.create_timer(
+            10.0, callback=self.robot_discovery_callback
         )
 
         # ----- Clients -----
@@ -75,7 +93,7 @@ class RobotNode(Node):
             self, NavigateToPose, f"{self.namespace}/navigate_to_pose"
         )
 
-        # ----- Sevices -----
+        # ----- Services -----
 
         # ----- Subscribers -----
         self.odom_sub: Subscription[Odometry] = self.create_subscription(
@@ -91,6 +109,15 @@ class RobotNode(Node):
             self.map_callback,
             map_qos,
         )
+
+        self.local_map_sub: Subscription[OccupancyGrid] = self.create_subscription(
+            OccupancyGrid,
+            f"{self.namespace}/map",
+            self.local_map_callback,
+            map_qos,
+        )
+
+        self.goal_sub: list[Subscription[PoseStamped]] = list()
 
         # ----- Publishers -----
         self.goal_pub: Publisher[PoseStamped] = self.create_publisher(
@@ -116,11 +143,32 @@ class RobotNode(Node):
         self.theta = 2.0 * math.atan2(qz, qw)
 
     def map_callback(self, msg: OccupancyGrid):
-        pass
+        self.current_map = msg
+
+        self.decision_network.update_state(self.current_map, self.last_odom)
+
+    def local_map_callback(self, msg: OccupancyGrid):
+        self.current_local_map = msg
 
     def goal_timer_callback(self):
-        if not self.moving:
-            pass
+        if self.moving or self.current_local_map is None or self.last_odom is None:
+            return
+
+        if (
+            self.is_moving
+            and self.action_server_connected
+            and time() - self.goal_publish_time > self.goal_timeout
+        ):
+            self.get_logger().warn(f"Goal timeout exceeded, canceling goal")
+            self.nav_client._cancel_goal_async(self.goal_handle)
+            self.moving = False
+            return  # robot is taking too long to reach goal
+
+        new_goal: tuple[float, float] = self.decision_network.generate_goal()
+        if new_goal:
+            self.publish_goal(
+                new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
+            )
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         goal_pose = PoseStamped()
@@ -156,6 +204,9 @@ class RobotNode(Node):
             self.goal_publish_time = time()
             self.moving = True
 
+    def other_goal_callback(self, msg: PoseStamped, namespace: str):
+        pass
+
     def goal_response_callback(self, future: Future):
         self.goal_handle: ClientGoalHandle = future.result()  # goal result
         result_future: Future = self.goal_handle.get_result_async()
@@ -176,8 +227,24 @@ class RobotNode(Node):
         self.moving = False  # goal is done, so we are no longer moving
 
     def robot_discovery_callback(self):
-        nodes: list[str] = self.get_node_names()
+        # nodes: list[str] = self.get_node_names()
         topics: list[str] = [topic[0] for topic in self.get_topic_names_and_types()]
+
+        for topic in topics:
+            if topic.endswith("/navigate_to_pose") and topic.split("/")[1] != self.namespace:
+                other_robot_namespace: str = topic.split("/")[1]
+                if other_robot_namespace in [sub.topic.split("/")[1] for sub in self.goal_sub]:
+                    continue  # already subscribed to this robot's goal topic
+
+                self.get_logger().info(f"Discovered new robot: {other_robot_namespace}")
+                self.goal_sub.append(
+                    self.create_subscription(
+                        PoseStamped,
+                        f"/{other_robot_namespace}/{self.goal_topic}",
+                        lambda msg, ns=other_robot_namespace: self.other_goal_callback(msg, ns),
+                        10,
+                    )
+                )
 
     @property
     def is_moving(self) -> bool:

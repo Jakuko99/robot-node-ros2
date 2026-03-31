@@ -20,14 +20,15 @@ class ACOCreator:
         self.current_map = new_map
 
     def update_global_map(self, new_global_map: OccupancyGrid) -> OccupancyGrid:
-        self.global_map = (
-            self.merge_maps(self.global_map, new_global_map) if self.global_map else new_global_map
-        )
-        self.global_map = self.find_frontiers(self.global_map)
-        self.global_map = self.find_lower_trust_points(self.global_map)
+        # self.global_map = (
+        #     self.merge_maps(self.global_map, new_global_map) if self.global_map else new_global_map
+        # )  # always modify current one, to keep the same reference for subscribers
+        self.global_map = new_global_map
+        # self.global_map = self.find_frontiers(self.global_map)
+        # self.global_map = self.find_lower_trust_points(self.global_map)
 
-        map_data: np.ndarray = np.array(self.global_map.data, dtype=np.int8).reshape(
-            (self.global_map.info.height, self.global_map.info.width)
+        map_data: np.ndarray = np.array(new_global_map.data, dtype=np.int8).reshape(
+            (new_global_map.info.height, new_global_map.info.width)
         )
 
         if self.current_odom and self.static_transform and self.current_map:
@@ -39,14 +40,15 @@ class ACOCreator:
                         self.current_odom.pose.pose.position.y,
                     ),
                 )
-                map_data = self._set_region(map_data, *position[::-1], width=3, value=25)
+                map_data = self._set_region(map_data, *position[::-1], width=1, value=-10)
 
             except ValueError:
                 self.logger.warn(
                     "Current position is out of global map bounds. Skipping position marking."
                 )
 
-            self.global_map.data = np.array(map_data).flatten().tolist()
+        self.mark_robot_positions(map_data)
+        self.global_map.data = np.array(map_data).flatten().tolist()
 
         return self.global_map
 
@@ -55,6 +57,32 @@ class ACOCreator:
 
     def update_transform(self, new_transform: TransformStamped):
         self.static_transform = new_transform
+
+    def mark_robot_positions(self, map_data: np.ndarray) -> np.ndarray:
+        if self.parent.map_subscriptions:
+            for robot_name in self.parent.map_subscriptions.keys():
+                if robot_name != self.robot_name:
+                    try:
+                        static_tf: TransformStamped = self.parent.static_transforms.get(
+                            robot_name, TransformStamped()
+                        )
+
+                        position: tuple[float, float] = self.pos_to_map_index(
+                            self.global_map,
+                            (
+                                self.parent.map_subscriptions[robot_name].robot_position_x,
+                                self.parent.map_subscriptions[robot_name].robot_position_y,
+                            ),
+                            transform=static_tf,
+                        )
+                        map_data = self._set_region(map_data, *position[::-1], width=1, value=110)
+
+                    except ValueError:
+                        self.logger.warn(
+                            f"Current position of {robot_name} is out of global map bounds. Skipping position marking."
+                        )
+
+        return map_data
 
     # ----- Helper methods -----
     @staticmethod

@@ -144,7 +144,6 @@ class RobotNode(Node):
 
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg
-
         self.decision_network.update_state(self.current_map, self.last_odom)
 
     def local_map_callback(self, msg: OccupancyGrid):

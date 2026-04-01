@@ -21,25 +21,27 @@ def generate_launch_description():
                         "goal_topic": "goal_pose",
                         "static_transform_x": 0.0,
                         "static_transform_y": 0.0,
+                        "model_path": os.path.join(resource_dir, "kris_robot1_model.pth"),
                     }
                 ],
             ),
-            # Node(
-            #     package="robot_node",
-            #     executable="robot_node",
-            #     name="kris_robot2_node",
-            #     output="screen",
-            #     parameters=[
-            #         {
-            #             "robot_name": "kris_robot2",
-            #             "goal_process_interval": 5.0,
-            #             "pheromone_map_topic": "pheromones",
-            #             "map_frame_id": "kris_robot2_pheromone_map",
-            #             "goal_topic": "goal_pose",
-            #             "static_transform_x": 1.0,
-            #             "static_transform_y": 0.0,
-            #         }
-            #     ],
-            # ),
+            Node(
+                package="robot_node",
+                executable="robot_node",
+                name="kris_robot2_node",
+                output="screen",
+                parameters=[
+                    {
+                        "robot_name": "kris_robot2",
+                        "goal_process_interval": 5.0,
+                        "pheromone_map_topic": "pheromones",
+                        "map_frame_id": "kris_robot2_pheromone_map",
+                        "goal_topic": "goal_pose",
+                        "static_transform_x": 1.0,
+                        "static_transform_y": 0.0,
+                        "model_path": os.path.join(resource_dir, "kris_robot2_model.pth"),
+                    }
+                ],
+            ),
         ]
     )

@@ -13,9 +13,10 @@ from rclpy.qos import (
 )
 from time import time
 import math
+import torch
 import numpy as np
 
-from robot_node.decision_network import DecisionNetwork, FeedbackLayer
+from robot_node.decision_network import DecisionNetwork
 
 
 class RobotNode(Node):
@@ -31,6 +32,8 @@ class RobotNode(Node):
         self.declare_parameter("static_transform_x", 0.0)
         self.declare_parameter("static_transform_y", 0.0)
         self.declare_parameter("goal_timeout", 30.0)
+        self.declare_parameter("training_interval", 10.0)
+        self.declare_parameter("model_path", "model.pth")
 
         self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.map_frame_id: str = (
@@ -52,6 +55,10 @@ class RobotNode(Node):
         self.goal_timeout: float = (
             self.get_parameter("goal_timeout").get_parameter_value().double_value
         )
+        self.training_interval: float = (
+            self.get_parameter("training_interval").get_parameter_value().double_value
+        )
+        self.model_path: str = self.get_parameter("model_path").get_parameter_value().string_value
 
         # ----- Variables -----
         self.last_odom: Odometry = None
@@ -73,10 +80,16 @@ class RobotNode(Node):
         self.decision_network: DecisionNetwork = DecisionNetwork(
             self.namespace, pheromone_decay=0.1
         )
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.decision_network.to(device)
 
         # ----- Timers -----
         self.goal_timer: Timer = self.create_timer(
             self.goal_process_interval, callback=self.goal_timer_callback
+        )
+
+        self.training_timer: Timer = self.create_timer(
+            self.training_interval, callback=self.training_timer_callback
         )
 
         self.discovery_timer: Timer = self.create_timer(
@@ -86,6 +99,16 @@ class RobotNode(Node):
         # ----- Clients -----
 
         # ----- Services -----
+        self.create_service(
+            Trigger,
+            f"{self.namespace}/save_model",
+            lambda req, res: self.decision_network.save_model(req, res, self.model_path),
+        )
+        self.create_service(
+            Trigger,
+            f"{self.namespace}/load_model",
+            lambda req, res: self.decision_network.load_model(req, res, self.model_path),
+        )
 
         # ----- Subscribers -----
         self.odom_sub: Subscription[Odometry] = self.create_subscription(
@@ -133,7 +156,6 @@ class RobotNode(Node):
 
     def local_map_callback(self, msg: OccupancyGrid):
         self.current_local_map = msg
-        self.env.sync_state(self.current_map, self.last_odom, self.current_local_map)
 
     def goal_timer_callback(self):
         if self.current_local_map is None or self.last_odom is None or self.current_map is None:
@@ -156,6 +178,21 @@ class RobotNode(Node):
                 self.publish_goal(
                     new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
                 )
+
+    def training_timer_callback(self):
+        metrics = self.decision_network.train_epoch()
+        if metrics is None:
+            return
+
+        self.get_logger().info(
+            "train_epoch: "
+            f"loss={metrics['loss']:.4f}, "
+            f"policy={metrics['policy_loss']:.4f}, "
+            f"value={metrics['value_loss']:.4f}, "
+            f"entropy={metrics['entropy']:.4f}, "
+            f"avg_reward={metrics['avg_reward']:.4f}, "
+            f"batch={metrics['batch_size']}"
+        )
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         goal_pose = PoseStamped()

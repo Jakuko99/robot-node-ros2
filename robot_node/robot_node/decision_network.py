@@ -2,72 +2,280 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 import numpy as np
 import torch.nn as nn
 from torch.optim import Adam
+from torch.distributions import Categorical
+from std_srvs.srv import Trigger
 import torch
 from random import random
 import math
+import copy
 
 
 EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.02
+LEARNING_RATE: float = 0.2
 REWARD_EPSILON: float = 1e-6
+GAMMA: float = 0.99
+ENTROPY_COEF: float = 0.01
+VALUE_COEF: float = 0.5
+ACTION_COUNT: int = 8
+PATCH_RADIUS: int = 4
+MIN_GOAL_DISTANCE_M: float = 0.8
+OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
 
 
-class DecisionNetwork:
+def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
+class DecisionNetwork(nn.Module):
     def __init__(self, robot_name: str, pheromone_decay: float):
+        super().__init__()
         self.robot_name = robot_name
         self.pheromone_decay = pheromone_decay
         self.feedback_layer = FeedbackLayer(self)
+        self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.current_map: OccupancyGrid = None
         self.input_map: np.ndarray = None
         self.current_odom: Odometry = None
 
-        self.construct_nn(hidden_sizes=[32], obs_dim=5, n_acts=8)
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(OBS_DIM, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(OBS_DIM, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, ACTION_COUNT), std=0.01),
+        )
+        self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)
+        self.to(self.device)
+
+        # ----- Rollout storage -----
+        self.rollout_obs: list[torch.Tensor] = []
+        self.rollout_actions: list[int] = []
+        self.rollout_rewards: list[float] = []
+
+        # Pending transition for delayed reward assignment
+        self.pending_obs: torch.Tensor = None
+        self.pending_action: int = None
+
+    def get_value(self, x):
+        x = self._obs_to_tensor(x)
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        x = self._obs_to_tensor(x)
+        logits = self.actor(x)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
     def update_state(self, map: OccupancyGrid, odom: Odometry):
         self.current_map = map
         self.input_map = self.transform_map(map)
         self.current_odom = odom
 
-        if random() > EXPLOITATION_RATIO:
-            self.feedback_layer.save_state(map, odom)
-
     def generate_goal(self) -> tuple[float, float]:
         if not self.current_map or not self.current_odom:
             return None
 
-    def construct_nn(self, hidden_sizes: list[int], obs_dim: int, n_acts: int):
-        self.logits_net = self.mlp(sizes=[obs_dim] + hidden_sizes + [n_acts])
-        self.optimizer = Adam(self.logits_net.parameters(), lr=LEARNING_RATE)
+        # Finalize reward for previously issued action once a new state is available.
+        self._finalize_pending_transition()
 
-    def get_policy(self, obs: np.ndarray) -> torch.Tensor:
-        obs_tensor = torch.from_numpy(obs.astype(np.float32).reshape(-1)).float()
-        if obs_tensor.numel() != 5:
-            raise ValueError(f"Expected observation with 5 features, got {obs_tensor.numel()}")
-        logits = self.logits_net(obs_tensor)
-        return torch.softmax(logits, dim=0)
+        obs_vec = self.extract_observation(self.current_map, self.current_odom)
+        obs_tensor = self._obs_to_tensor(obs_vec)
 
-    def compute_loss(self, obs: np.ndarray, action: int, reward: float) -> torch.Tensor:
-        policy = self.get_policy(obs)
-        log_prob = torch.log(policy[action].clamp(min=REWARD_EPSILON))
-        loss = -log_prob * reward  # REINFORCE loss
-        return loss
+        logits = self.actor(obs_tensor)
+        policy = torch.softmax(logits, dim=-1)
 
-    def update_policy(self, obs: np.ndarray, action: int, reward: float):
-        loss = self.compute_loss(obs, action, reward)
+        if random() < EXPLOITATION_RATIO:
+            # Try higher-probability actions first, then fall back to the rest.
+            candidate_actions = torch.argsort(policy, descending=True).tolist()
+        else:
+            sampled_order = torch.multinomial(policy, num_samples=ACTION_COUNT, replacement=False)
+            candidate_actions = sampled_order.tolist()
+
+        action_int = None
+        goal = None
+        for cand_action in candidate_actions:
+            candidate_goal = self.action_to_goal(cand_action, self.current_odom, self.current_map)
+            if candidate_goal is not None:
+                action_int = int(cand_action)
+                goal = candidate_goal
+                break
+
+        if goal is None or action_int is None:
+            return None
+
+        action_tensor = torch.tensor(action_int, dtype=torch.int64, device=self.device)
+        action, _, _, _ = self.get_action_and_value(obs_tensor, action_tensor)
+
+        # Save transition context and source state for delayed reward computation.
+        self.pending_obs = obs_tensor.detach()
+        self.pending_action = int(action.item())
+        # Capture "old" state exactly at action commit time.
+        self.feedback_layer.save_state(self.current_map, self.current_odom)
+        return goal
+
+    def train_epoch(self):
+        # Finalize potential pending transition before optimization.
+        self._finalize_pending_transition()
+
+        if len(self.rollout_rewards) == 0:
+            return None
+
+        obs_batch = torch.stack(self.rollout_obs).to(self.device)
+        action_batch = torch.as_tensor(
+            self.rollout_actions,
+            dtype=torch.int64,
+            device=self.device,
+        )
+        rewards = torch.tensor(self.rollout_rewards, dtype=torch.float32, device=self.device)
+
+        logits = self.actor(obs_batch)
+        dist = Categorical(logits=logits)
+        log_probs = dist.log_prob(action_batch)
+        entropies = dist.entropy()
+        values = self.critic(obs_batch).squeeze(-1)
+
+        returns = torch.zeros_like(rewards)
+        running_return = torch.tensor(0.0, device=self.device)
+        for t in range(len(rewards) - 1, -1, -1):
+            running_return = rewards[t] + GAMMA * running_return
+            returns[t] = running_return
+
+        advantages = returns - values
+
+        policy_loss = -(log_probs * advantages.detach()).mean()
+        value_loss = (advantages.pow(2)).mean()
+        entropy_bonus = entropies.mean()
+
+        loss = policy_loss + VALUE_COEF * value_loss - ENTROPY_COEF * entropy_bonus
+
         self.optimizer.zero_grad()
         loss.backward()
+        nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
-        return float(loss.item())
+
+        metrics = {
+            "loss": float(loss.item()),
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy_bonus.item()),
+            "avg_reward": float(rewards.mean().item()),
+            "batch_size": len(self.rollout_rewards),
+        }
+        self._clear_rollout()
+        return metrics
+
+    def extract_observation(
+        self,
+        map: OccupancyGrid,
+        odom: Odometry,
+        patch_radius: int = PATCH_RADIUS,
+    ) -> np.ndarray:
+        local_patch = self.get_local_patch(map, odom, patch_size=patch_radius)
+        transformed = self.transform_map(local_patch).astype(np.float32)
+
+        # Convert 5-channel occupancy encoding into a single scalar utility map.
+        unexplored = transformed[:, :, 0]
+        occupied = transformed[:, :, 1]
+        overlap = transformed[:, :, 2]
+        others = transformed[:, :, 4]
+        utility = unexplored + 0.3 * overlap - occupied - 0.2 * others
+        obs_vec = utility.reshape(-1)
+
+        # Keep NN input size stable even if patch radius/config drifts at runtime.
+        if obs_vec.size < OBS_DIM:
+            padded = np.zeros((OBS_DIM,), dtype=np.float32)
+            padded[: obs_vec.size] = obs_vec
+            return padded
+        if obs_vec.size > OBS_DIM:
+            return obs_vec[:OBS_DIM]
+        return obs_vec
 
     @staticmethod
-    def mlp(sizes, activation=nn.Tanh, output_activation=nn.Identity):
-        # Build a feedforward neural network.
-        layers = []
-        for j in range(len(sizes) - 1):
-            act = activation if j < len(sizes) - 2 else output_activation
-            layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
-        return nn.Sequential(*layers)
+    def action_to_goal(
+        action: int,
+        odom: Odometry,
+        map: OccupancyGrid,
+        step_cells: int = 3,
+    ) -> tuple[float, float]:
+        if odom is None or map is None:
+            return None
+
+        if action < 0 or action >= ACTION_COUNT:
+            raise ValueError(f"Action must be in [0, {ACTION_COUNT - 1}], got {action}")
+
+        angle = (2.0 * math.pi * action) / ACTION_COUNT
+        step = max(step_cells, 1) * map.info.resolution
+        step = max(step, MIN_GOAL_DISTANCE_M)
+
+        goal_x = odom.pose.pose.position.x + (math.cos(angle) * step)
+        goal_y = odom.pose.pose.position.y + (math.sin(angle) * step)
+
+        min_x = map.info.origin.position.x
+        min_y = map.info.origin.position.y
+        max_x = min_x + (map.info.width - 1) * map.info.resolution
+        max_y = min_y + (map.info.height - 1) * map.info.resolution
+
+        clamped_goal_x = float(np.clip(goal_x, min_x, max_x))
+        clamped_goal_y = float(np.clip(goal_y, min_y, max_y))
+
+        goal_distance = math.hypot(
+            clamped_goal_x - odom.pose.pose.position.x,
+            clamped_goal_y - odom.pose.pose.position.y,
+        )
+
+        # If clipping collapses the target near current pose (often near map edges), skip this action.
+        if goal_distance < (MIN_GOAL_DISTANCE_M * 0.5):
+            return None
+
+        return (clamped_goal_x, clamped_goal_y)
+
+    def _obs_to_tensor(self, obs) -> torch.Tensor:
+        if isinstance(obs, torch.Tensor):
+            return obs.to(self.device, dtype=torch.float32).view(-1)
+        return torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(-1)
+
+    def _finalize_pending_transition(self):
+        if (
+            self.pending_obs is None
+            or self.pending_action is None
+            or not self.feedback_layer.has_state()
+            or self.current_map is None
+            or self.current_odom is None
+        ):
+            return
+
+        local_map = self.get_local_patch(self.current_map, self.current_odom, PATCH_RADIUS)
+        reward = self.feedback_layer.calculate_reward(
+            self.current_map,
+            self.current_odom,
+            local_map,
+        )
+        if not np.isfinite(reward):
+            reward = 0.0
+
+        self.rollout_obs.append(self.pending_obs)
+        self.rollout_actions.append(self.pending_action)
+        self.rollout_rewards.append(float(reward))
+
+        self.pending_obs = None
+        self.pending_action = None
+
+    def _clear_rollout(self):
+        self.rollout_obs.clear()
+        self.rollout_actions.clear()
+        self.rollout_rewards.clear()
 
     @staticmethod
     def pos_to_map_index(
@@ -158,6 +366,17 @@ class DecisionNetwork:
 
         return local_map
 
+    def save_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
+        torch.save(self.state_dict(), path)
+        response.success = True
+        return response
+
+    def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
+        self.load_state_dict(torch.load(path, map_location=self.device))
+        self.to(self.device)
+        response.success = True
+        return response
+
 
 class FeedbackLayer:
     def __init__(self, network: DecisionNetwork):
@@ -166,15 +385,22 @@ class FeedbackLayer:
         self.current_odom: Odometry = None
 
     def save_state(self, map: OccupancyGrid, odom: Odometry):
-        self.current_state = map
-        self.current_odom = odom
+        # Keep snapshots so later callbacks cannot overwrite reward baseline semantics.
+        self.current_state = copy.deepcopy(map)
+        self.current_odom = copy.deepcopy(odom)
+
+    def has_state(self) -> bool:
+        return self.current_state is not None and self.current_odom is not None
 
     def calculate_reward(
         self,
         new_map: OccupancyGrid,
         new_odom: Odometry,
-        local_map: OccupancyGrid,
+        local_map: OccupancyGrid = None,
     ) -> float:
+        if not self.has_state() or new_map is None or new_odom is None:
+            return 0.0
+
         total_reward: float = 0.0
 
         # Criterion 1: Ratio of explored to unexplored cells
@@ -188,7 +414,7 @@ class FeedbackLayer:
         )
         new_ratio: float = np.sum((new_map_data >= 0) & (new_map_data < 100)) / new_map_data.size
 
-        # total_reward += (new_ratio - old_ratio) * 100.0  # Scale reward
+        total_reward += (new_ratio - old_ratio) * 1.0  # Scale reward
 
         # Criterion 2: Traveled distance to information gain from exploration
         old_position: np.array = np.array(
@@ -198,11 +424,15 @@ class FeedbackLayer:
             [new_odom.pose.pose.position.x, new_odom.pose.pose.position.y]
         )
         distance_traveled: float = np.linalg.norm(new_position - old_position)
-        information_gain: float = (new_ratio - old_ratio) * 100.0
+        information_gain: float = (new_ratio - old_ratio) * 1.0
 
-        total_reward += information_gain / (distance_traveled * 0.1)  # Penalize excessive movement
+        total_reward += information_gain / max(
+            distance_traveled * 0.1,
+            REWARD_EPSILON,
+        )  # Penalize excessive movement
 
         # # Criterion 3: Contribution to total coverage of the map per robot
+        # if local_map:
         # local_map_data: np.ndarray = np.array(local_map.data).reshape(
         #     local_map.info.height, local_map.info.width
         # )

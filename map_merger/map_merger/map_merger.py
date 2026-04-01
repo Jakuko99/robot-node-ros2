@@ -206,7 +206,7 @@ class MapMerger(Node):
                             if (
                                 map.data[index] == 0
                                 and merged_map.data[merged_i] >= 0
-                                and merged_map.data[merged_i] < 100
+                                and merged_map.data[merged_i] < 89  # cap value to 90
                             ):
                                 merged_map.data[merged_i] += 10
 

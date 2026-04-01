@@ -1,14 +1,9 @@
 import rclpy
 from std_srvs.srv import Trigger
 from rclpy.node import Node
-from rclpy.task import Future
 from rclpy.timer import Timer
-from rclpy.action import ActionClient
-from nav2_msgs.action import NavigateToPose
 from rclpy.node import Node, Publisher, Subscription
 from nav_msgs.msg import OccupancyGrid, Odometry
-from action_msgs.msg import GoalStatus
-from rclpy.action.client import ClientGoalHandle
 from geometry_msgs.msg import PoseStamped
 from rclpy.qos import (
     QoSProfile,
@@ -35,6 +30,7 @@ class RobotNode(Node):
         self.declare_parameter("goal_topic", "goal_pose")
         self.declare_parameter("static_transform_x", 0.0)
         self.declare_parameter("static_transform_y", 0.0)
+        self.declare_parameter("goal_timeout", 30.0)
 
         self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.map_frame_id: str = (
@@ -53,10 +49,11 @@ class RobotNode(Node):
         self.static_transform_y: float = (
             self.get_parameter("static_transform_y").get_parameter_value().double_value
         )
+        self.goal_timeout: float = (
+            self.get_parameter("goal_timeout").get_parameter_value().double_value
+        )
 
         # ----- Variables -----
-        self.goal_future: Future = None
-        self.goal_handle: ClientGoalHandle = None
         self.last_odom: Odometry = None
         self.last_goal: PoseStamped = None
         self.current_map: OccupancyGrid = None
@@ -65,9 +62,7 @@ class RobotNode(Node):
         self.y: float = 0.0
         self.theta: float = 0.0
         self.moving: bool = False
-        self.action_server_connected: bool = False
         self.goal_publish_time: float = time()
-        self.goal_timeout: float = 30.0  # seconds
         map_qos: QoSProfile = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -89,9 +84,6 @@ class RobotNode(Node):
         )
 
         # ----- Clients -----
-        self.nav_client: ActionClient = ActionClient(
-            self, NavigateToPose, f"{self.namespace}/navigate_to_pose"
-        )
 
         # ----- Services -----
 
@@ -125,14 +117,7 @@ class RobotNode(Node):
         )
 
         # ----- Initialization -----
-        self.get_logger().info("Attempting to connect to action server")
-        result: bool = self.nav_client.wait_for_server(timeout_sec=10.0)
-
-        if result:
-            self.get_logger().info("Successfully connected to action server")
-            self.action_server_connected = True
-        else:
-            self.get_logger().error("Failed to connect to action server within timeout")
+        self.get_logger().info(f"Robot node '{self.namespace}' initialized")
 
     def odom_callback(self, msg: Odometry):
         self.last_odom = msg
@@ -148,26 +133,29 @@ class RobotNode(Node):
 
     def local_map_callback(self, msg: OccupancyGrid):
         self.current_local_map = msg
+        self.env.sync_state(self.current_map, self.last_odom, self.current_local_map)
 
     def goal_timer_callback(self):
-        if self.moving or self.current_local_map is None or self.last_odom is None:
+        if self.current_local_map is None or self.last_odom is None or self.current_map is None:
             return
 
-        if (
-            self.is_moving
-            and self.action_server_connected
-            and time() - self.goal_publish_time > self.goal_timeout
-        ):
-            self.get_logger().warn(f"Goal timeout exceeded, canceling goal")
-            self.nav_client._cancel_goal_async(self.goal_handle)
-            self.moving = False
-            return  # robot is taking too long to reach goal
+        if self.moving:
+            if self.last_goal and self.goal_reached(self.last_goal, self.last_odom):
+                self.get_logger().info("Goal reached")
+                self.moving = False
+                return
 
-        new_goal: tuple[float, float] = self.decision_network.generate_goal()
-        if new_goal:
-            self.publish_goal(
-                new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
-            )
+            if time() - self.goal_publish_time > self.goal_timeout:
+                self.get_logger().warn("Goal timeout exceeded, canceling goal")
+                self.moving = False
+            return
+
+        if not self.moving:
+            new_goal: tuple[float, float] = self.decision_network.generate_goal()
+            if new_goal:
+                self.publish_goal(
+                    new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
+                )
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         goal_pose = PoseStamped()
@@ -190,40 +178,12 @@ class RobotNode(Node):
 
         self.last_goal = goal_pose
 
-        if not self.action_server_connected:
-            self.get_logger().warn(
-                "Published goal, but action server is not connected, cannot receive completion from nav stack!"
-            )
-            self.goal_pub.publish(goal_pose)
-
-        else:
-            self.goal_future = self.nav_client.send_goal_async(NavigateToPose.Goal(pose=goal_pose))
-            self.goal_future.add_done_callback(self.goal_response_callback)
-            self.get_logger().info(f"Published new goal [{x}, {y}, {theta}]")
-            self.goal_publish_time = time()
-            self.moving = True
+        self.goal_pub.publish(goal_pose)
+        self.goal_publish_time = time()
+        self.moving = True
 
     def other_goal_callback(self, msg: PoseStamped, namespace: str):
         pass
-
-    def goal_response_callback(self, future: Future):
-        self.goal_handle: ClientGoalHandle = future.result()  # goal result
-        result_future: Future = self.goal_handle.get_result_async()
-        result_future.add_done_callback(self.goal_done_callback)
-
-    def goal_done_callback(self, future: Future):
-        result: ClientGoalHandle = future.result()
-        if result.status == GoalStatus.STATUS_SUCCEEDED:  # SUCCEEDED
-            self.get_logger().info(f"Goal completed successfully")
-        elif result.status in [
-            GoalStatus.STATUS_ABORTED,
-            GoalStatus.STATUS_CANCELED,
-        ]:  # ABORTED or CANCELED
-            self.get_logger().warn(f"Goal was abandoned")
-        else:
-            self.get_logger().error(f"Goal failed with status {result.status}")
-
-        self.moving = False  # goal is done, so we are no longer moving
 
     def robot_discovery_callback(self):
         # nodes: list[str] = self.get_node_names()
@@ -248,6 +208,15 @@ class RobotNode(Node):
     @property
     def is_moving(self) -> bool:
         return self.moving
+
+    @staticmethod
+    def goal_reached(
+        goal_pose: PoseStamped, current_odom: Odometry, threshold: float = 0.5
+    ) -> bool:
+        dx: float = goal_pose.pose.position.x - current_odom.pose.pose.position.x
+        dy: float = goal_pose.pose.position.y - current_odom.pose.pose.position.y
+        distance: float = math.sqrt(dx**2 + dy**2)
+        return distance < threshold
 
 
 def main():

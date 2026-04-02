@@ -11,7 +11,7 @@ import copy
 
 
 EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.2
+LEARNING_RATE: float = 0.05
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
 ENTROPY_COEF: float = 0.01
@@ -29,12 +29,15 @@ def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
 
 
 class DecisionNetwork(nn.Module):
-    def __init__(self, robot_name: str, pheromone_decay: float):
+    def __init__(self, robot_name: str, pheromone_decay: float, parent=None):
         super().__init__()
         self.robot_name = robot_name
         self.pheromone_decay = pheromone_decay
         self.feedback_layer = FeedbackLayer(self)
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if parent:
+            self.logger = parent.get_logger()
 
         self.current_map: OccupancyGrid = None
         self.input_map: np.ndarray = None
@@ -144,7 +147,7 @@ class DecisionNetwork(nn.Module):
         dist = Categorical(logits=logits)
         log_probs = dist.log_prob(action_batch)
         entropies = dist.entropy()
-        values = self.critic(obs_batch).squeeze(-1)
+        values: torch.Tensor = self.critic(obs_batch).squeeze(-1)
 
         returns = torch.zeros_like(rewards)
         running_return = torch.tensor(0.0, device=self.device)
@@ -152,13 +155,13 @@ class DecisionNetwork(nn.Module):
             running_return = rewards[t] + GAMMA * running_return
             returns[t] = running_return
 
-        advantages = returns - values
+        advantages: torch.Tensor = returns - values
 
-        policy_loss = -(log_probs * advantages.detach()).mean()
-        value_loss = (advantages.pow(2)).mean()
-        entropy_bonus = entropies.mean()
+        policy_loss: torch.Tensor = -(log_probs * advantages.detach()).mean()
+        value_loss: torch.Tensor = (advantages.pow(2)).mean()
+        entropy_bonus: torch.Tensor = entropies.mean()
 
-        loss = policy_loss + VALUE_COEF * value_loss - ENTROPY_COEF * entropy_bonus
+        loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - ENTROPY_COEF * entropy_bonus
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -414,7 +417,7 @@ class FeedbackLayer:
         )
         new_ratio: float = np.sum((new_map_data >= 0) & (new_map_data < 100)) / new_map_data.size
 
-        total_reward += (new_ratio - old_ratio) * 1.0  # Scale reward
+        # total_reward += (new_ratio - old_ratio) * 1.0  # Scale reward
 
         # Criterion 2: Traveled distance to information gain from exploration
         old_position: np.array = np.array(
@@ -424,14 +427,14 @@ class FeedbackLayer:
             [new_odom.pose.pose.position.x, new_odom.pose.pose.position.y]
         )
         distance_traveled: float = np.linalg.norm(new_position - old_position)
-        information_gain: float = (new_ratio - old_ratio) * 1.0
+        information_gain: float = new_ratio - old_ratio
 
         total_reward += information_gain / max(
             distance_traveled * 0.1,
             REWARD_EPSILON,
         )  # Penalize excessive movement
 
-        # # Criterion 3: Contribution to total coverage of the map per robot
+        # Criterion 3: Contribution to total coverage of the map per robot
         # if local_map:
         # local_map_data: np.ndarray = np.array(local_map.data).reshape(
         #     local_map.info.height, local_map.info.width
@@ -440,5 +443,13 @@ class FeedbackLayer:
         # total_explored: int = np.sum((new_map_data >= 0) & (new_map_data < 100))
 
         # total_reward += (local_explored / total_explored) * 20.0  # Scale reward
+
+        # Criterion 4: Penalize travel through overlap areas to encourage efficient coverage
+        current_loc: OccupancyGrid = self.network.get_local_patch(new_map, new_odom, PATCH_RADIUS)
+        current_loc_data: np.ndarray = np.array(current_loc.data).reshape(
+            current_loc.info.height, current_loc.info.width
+        )
+        overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
+        total_reward -= overlap_cells * 0.05  # Penalize overlap to encourage spreading out
 
         return float(total_reward)

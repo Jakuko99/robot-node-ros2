@@ -15,6 +15,7 @@ from time import time
 import math
 import torch
 import numpy as np
+import os
 
 from robot_node.decision_network import DecisionNetwork
 
@@ -78,10 +79,14 @@ class RobotNode(Node):
         )  # correct map QoS profile
 
         self.decision_network: DecisionNetwork = DecisionNetwork(
-            self.namespace, pheromone_decay=0.1
+            self.namespace, pheromone_decay=0.1, parent=self
         )
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.decision_network.to(device)
+
+        if os.path.exists(self.model_path):  # auto load model if it exists
+            self.get_logger().info(f"Loading model from {self.model_path}")
+            self.decision_network.load_state_dict(torch.load(self.model_path, map_location=device))
 
         # ----- Timers -----
         self.goal_timer: Timer = self.create_timer(
@@ -162,7 +167,7 @@ class RobotNode(Node):
             return
 
         if self.moving:
-            if self.last_goal and self.goal_reached(self.last_goal, self.last_odom):
+            if self.last_goal and self.goal_reached(self.last_goal, self.last_odom, threshold=0.75):
                 self.get_logger().info("Goal reached")
                 self.moving = False
                 return
@@ -248,7 +253,9 @@ class RobotNode(Node):
 
     @staticmethod
     def goal_reached(
-        goal_pose: PoseStamped, current_odom: Odometry, threshold: float = 0.5
+        goal_pose: PoseStamped,
+        current_odom: Odometry,
+        threshold: float = 0.5,
     ) -> bool:
         dx: float = goal_pose.pose.position.x - current_odom.pose.pose.position.x
         dy: float = goal_pose.pose.position.y - current_odom.pose.pose.position.y

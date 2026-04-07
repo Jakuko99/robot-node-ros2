@@ -4,9 +4,16 @@ From: ubuntu:22.04
 %environment
     ROS_DISTRO=humble
     DEBIAN_FRONTEND=noninteractive
+    TZ="Europe/Helsinki"
+    RCUTILS_COLORIZED_OUTPUT=1
+    GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:/tmp/ros_ws/src/robot_sim/gazebo
 
 %post
-    apt update && apt install -y software-properties-common lsb-release curl git wget gnupg
+    apt update && apt install -y tzdata
+    ln -fs /usr/share/zoneinfo/Europe/Helsinki /etc/localtime
+    dpkg-reconfigure --frontend noninteractive tzdata
+
+    apt update && apt install -y software-properties-common lsb-release curl git wget gnupg --no-install-recommends
     add-apt-repository universe -y
     ROS_APT_SOURCE_VERSION=$(
     curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest \
@@ -17,7 +24,7 @@ From: ubuntu:22.04
 
     apt install -y /tmp/ros2-apt-source.deb
     apt update && apt upgrade -y
-    apt install -y ros-humble-ros-base ros-dev-tools
+    apt install -y ros-humble-ros-base ros-dev-tools --no-install-recommends
     mkdir -p /etc/apt/keyrings
 
     curl -fsSL https://packages.osrfoundation.org/gazebo.key \
@@ -35,21 +42,21 @@ From: ubuntu:22.04
     ros-humble-ros-gz-bridge \
     ros-humble-slam-toolbox \
     ros-humble-navigation2 \
-    ros-humble-nav2-bringup 
+    ros-humble-nav2-bringup --no-install-recommends
+    apt autoremove -y && apt clean -y
 
     apt install python3 python3-pip -y
-    pip3 install torch torchvision
-    mkdir -p /ros_ws/ && cd /ros_ws/ && git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git src
-    source /opt/ros/humble/setup.bash && colcon build --symlink-install
+    pip3 install torch
+    mkdir -p /tmp/ros_ws/ && cd /tmp/ros_ws/ && git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git src
+    . /opt/ros/humble/setup.sh && colcon build --symlink-install
 
 %runscript
-    cd /ros_ws/src && git pull
-    cd .. && source install/setup.bash
-    colcon build --symlink-install
-    source install/setup.bash
+    cd /tmp/ros_ws/src && git pull
+    cd .. && . install/setup.sh && colcon build --symlink-install
+    . install/setup.sh
     python3 src/run_model_training.py
 
 %labels
     Author jakub.krsko@feit.uniza.sk
     Version 1.0
-    Description ROS 2 environment for training navigation models in simulation
+    Description ROS 2 environment for training swarm optimization models in simulation

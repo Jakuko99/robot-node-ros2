@@ -82,6 +82,7 @@ if __name__ == "__main__":
     node: Node = rclpy.create_node("training_launcher")
     cli1: Client = node.create_client(Trigger, "/kris_robot1/save_model")
     cli2: Client = node.create_client(Trigger, "/kris_robot2/save_model")
+    cli3: Client = node.create_client(Trigger, "/kris_robot1/export_map")
 
     try:
         for i in range(NUM_SIMULATIONS):
@@ -102,7 +103,7 @@ if __name__ == "__main__":
                 target=lambda: sim_shutdown(
                     ls=launch_service,
                     node=node,
-                    clients=[cli1, cli2],
+                    clients=[cli1, cli2, cli3],
                     wait_period=SIM_PERIOD,
                 )
             )

@@ -4,6 +4,7 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 from map_msgs.msg import OccupancyGridUpdate
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped
+from std_srvs.srv import Trigger
 import numpy as np
 from rclpy.qos import (
     QoSProfile,
@@ -11,6 +12,8 @@ from rclpy.qos import (
     QoSHistoryPolicy,
     QoSDurabilityPolicy,
 )
+import cv2
+import time
 
 from map_merger.aco_creator import ACOCreator
 
@@ -98,6 +101,8 @@ class MapMerger(Node):
             TFMessage, "/tf_static", self.tf_callback, 10
         )
 
+        self.create_service(Trigger, f"/{self.robot_name}/export_map", self.save_map_callback)
+
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
         self.aco_creator: ACOCreator = ACOCreator(self.robot_name, self)
@@ -106,6 +111,38 @@ class MapMerger(Node):
         )
 
         self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps_v1)
+
+    def save_map_callback(
+        self, request: Trigger.Request, response: Trigger.Response
+    ) -> Trigger.Response:
+        if self.aco_creator.global_map:
+            try:
+                width = self.aco_creator.global_map.info.width
+                height = self.aco_creator.global_map.info.height
+
+                map_array = np.array(self.aco_creator.global_map.data, dtype=np.int8).reshape(
+                    (height, width)
+                )
+                map_image = np.zeros((height, width, 3), dtype=np.uint8)
+                map_image[map_array == 0] = [255, 255, 255]
+                map_image[map_array == 100] = [0, 0, 0]
+                map_image[map_array == -1] = [127, 127, 127]
+                map_image[(map_array >= 10) & (map_array < 100)] = [255, 0, 0]
+                map_image[map_array == -10] = [0, 0, 255]
+                map_image[map_array == 110] = [0, 255, 0]
+                cv2.imwrite(f"global_map-{int(time.time())}.png", map_image)
+                response.success = True
+                response.message = "Map saved successfully as global_map.png"
+
+            except Exception as e:
+                response.success = False
+                response.message = f"Failed to save map: {e}"
+
+        else:
+            response.success = False
+            response.message = "No map data available to save."
+
+        return response
 
     def tf_callback(self, msg: TFMessage):
         transform: TransformStamped  # type hint for transform in msg.transforms

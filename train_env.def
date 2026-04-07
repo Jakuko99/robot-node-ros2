@@ -46,7 +46,7 @@ From: ubuntu:22.04
     apt autoremove -y && apt clean -y
 
     apt install python3 python3-pip -y
-    pip3 install torch
+    pip3 install torch opencv-python
     mkdir -p /tmp/ros_ws/ && cd /tmp/ros_ws/ && git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git src
     . /opt/ros/humble/setup.sh && colcon build --symlink-install
 

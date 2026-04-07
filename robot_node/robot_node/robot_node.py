@@ -85,8 +85,13 @@ class RobotNode(Node):
         self.decision_network.to(device)
 
         if os.path.exists(self.model_path):  # auto load model if it exists
-            self.get_logger().info(f"Loading model from {self.model_path}")
-            self.decision_network.load_state_dict(torch.load(self.model_path, map_location=device))
+            try:
+                self.decision_network.load_state_dict(
+                    torch.load(self.model_path, map_location=device)
+                )
+                self.get_logger().info(f"Loaded model from {self.model_path}")
+            except RuntimeError as e:
+                self.get_logger().error(f"Error loading model from {self.model_path}: {e}")
 
         # ----- Timers -----
         self.goal_timer: Timer = self.create_timer(

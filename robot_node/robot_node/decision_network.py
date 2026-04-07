@@ -11,10 +11,10 @@ import copy
 
 
 EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.05
+LEARNING_RATE: float = 0.005
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
-ENTROPY_COEF: float = 0.01
+ENTROPY_COEF: float = 0.05
 VALUE_COEF: float = 0.5
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
@@ -48,10 +48,14 @@ class DecisionNetwork(nn.Module):
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor = nn.Sequential(
             layer_init(nn.Linear(OBS_DIM, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
@@ -450,6 +454,7 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
+        self.network.logger.warn(f"Overlap cells in current location: {overlap_cells}")
         total_reward -= overlap_cells * 0.05  # Penalize overlap to encourage spreading out
 
         return float(total_reward)

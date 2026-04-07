@@ -2,16 +2,30 @@
 import os
 import sys
 import asyncio
+import threading
+from time import sleep
 
 from launch import LaunchService, LaunchDescription
 from launch.launch_description_sources import (
     get_launch_description_from_python_launch_file as load_launch_description,
 )
 from ament_index_python.packages import get_package_share_directory
+import rclpy
+from rclpy.client import Client
+from rclpy.node import Node
+from std_srvs.srv import Trigger
+from rclpy import Future
+
+from robot_sim.generate_environment import EnvironmentGenerator
 
 
-async def main(random_env: bool = False):
-    sim_launch_file = "sim_launch.py" if not random_env else "random_sim_launch.py"
+RANDOM_ENV: bool = True
+NUM_SIMULATIONS: int = 1
+SIM_PERIOD: int = 120  # seconds to run each simulation for
+
+
+def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
+    sim_launch_file = "sim_launch.py" if not random_env else "train_sim_launch.py"
 
     sim_launch_file_path = os.path.join(
         get_package_share_directory("robot_sim"), "launch", sim_launch_file
@@ -24,22 +38,83 @@ async def main(random_env: bool = False):
         print(f"Error: One or more launch files not found at the specified paths")
         sys.exit(1)
 
-    launch_service = LaunchService(noninteractive=True)
-
     launch_description: LaunchDescription = load_launch_description(sim_launch_file_path)
     optimizer_launch_description: LaunchDescription = load_launch_description(optimizer_file_path)
 
-    launch_service.include_launch_description(launch_description)
-    launch_service.include_launch_description(optimizer_launch_description)
-
-    launch_service.run()
-    return await launch_service.run_async()
+    launch_serv.include_launch_description(launch_description)
+    launch_serv.include_launch_description(optimizer_launch_description)
 
 
-# TODO: figure out how to interrupt this after fixed time and start again
+async def run_sim(launch_serv: LaunchService):
+    await launch_serv.run_async()
+
+
+def sim_shutdown(
+    ls: LaunchService,
+    node: Node,
+    clients: list[Client],
+    wait_period: int = 5,
+    save_model: bool = True,
+):
+    sleep(wait_period)
+    if save_model:
+        for client in clients:
+            while not client.wait_for_service(timeout_sec=1.0):
+                print(f"Waiting for service {client.srv_name} to become available...")
+
+            try:
+                req = Trigger.Request()
+                future: Future = client.call_async(req)
+                rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+                if future.result() is not None:
+                    print(f"Service call to {client.srv_name} succeeded: {future.result().message}")
+                else:
+                    print(f"Service call to {client.srv_name} failed")
+            except Exception as e:
+                print(f"Error calling service {client.srv_name}: {e}")
+
+    ls.shutdown()
+
 
 if __name__ == "__main__":
+    # ROS 2 environment setup
+    rclpy.init()
+    node: Node = rclpy.create_node("training_launcher")
+    cli1: Client = node.create_client(Trigger, "/kris_robot1/save_model")
+    cli2: Client = node.create_client(Trigger, "/kris_robot2/save_model")
+
     try:
-        asyncio.run(main())
+        for i in range(NUM_SIMULATIONS):
+            launch_service = LaunchService(noninteractive=True)
+            prepare_launch(launch_service, random_env=RANDOM_ENV)
+
+            if RANDOM_ENV:  # generate new random environment for each simulation run
+                generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
+                generator.generate()
+                generator.export_to_world(
+                    f"{os.path.dirname(__file__)}/robot_sim/gazebo/random_environment.sdf",
+                    include_robots=True,
+                )
+
+            sim_thread = threading.Thread(
+                target=lambda: sim_shutdown(
+                    ls=launch_service,
+                    node=node,
+                    clients=[cli1, cli2],
+                    wait_period=SIM_PERIOD,
+                )
+            )
+            sim_thread.start()  # start shutdown thread
+            asyncio.run(run_sim(launch_service))  # run simulation
+
+            # Clean up and prepare for next run
+            sim_thread.join()
+            del launch_service
+            del sim_thread
+
+            if i < NUM_SIMULATIONS - 1:
+                print(f"Simulation run completed. Restarting in 5 seconds...")
+                sleep(5)
+
     except KeyboardInterrupt:
         print("\nLaunch interrupted by user.")

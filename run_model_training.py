@@ -89,12 +89,14 @@ if __name__ == "__main__":
             prepare_launch(launch_service, random_env=RANDOM_ENV)
 
             if RANDOM_ENV:  # generate new random environment for each simulation run
+                print(f"Generating random environment for simulation run {i + 1}...")
                 generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
                 generator.generate()
                 generator.export_to_world(
                     f"{os.path.dirname(__file__)}/robot_sim/gazebo/random_environment.sdf",
                     include_robots=True,
                 )
+                print("Done generating environment.")
 
             sim_thread = threading.Thread(
                 target=lambda: sim_shutdown(
@@ -104,6 +106,7 @@ if __name__ == "__main__":
                     wait_period=SIM_PERIOD,
                 )
             )
+            print(f"Starting simulation run {i + 1}...")
             sim_thread.start()  # start shutdown thread
             asyncio.run(run_sim(launch_service))  # run simulation
 

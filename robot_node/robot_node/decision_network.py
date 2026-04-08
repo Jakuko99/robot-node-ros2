@@ -22,9 +22,9 @@ PATCH_RADIUS: int = 4
 MIN_GOAL_DISTANCE_M: float = 0.8
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
 REPLAY_BUFFER_SIZE: int = 50000
-BATCH_SIZE: int = 64
+BATCH_SIZE: int = 32
 UPDATES_PER_TRAIN: int = 4
-MIN_REPLAY_SIZE: int = 8
+MIN_REPLAY_SIZE: int = 4
 TARGET_TAU: float = 0.005
 INITIAL_ALPHA: float = 0.2
 TARGET_ENTROPY: float = 0.8 * math.log(ACTION_COUNT)
@@ -499,9 +499,16 @@ class DecisionNetwork(nn.Module):
         return response
 
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
-        self.load_state_dict(torch.load(path, map_location=self.device))
-        self.to(self.device)
-        response.success = True
+        try:
+            self.load_state_dict(torch.load(path, map_location=self.device))
+            self.to(self.device)
+            response.success = True
+            response.message = "Model loaded successfully."
+
+        except RuntimeError as e:
+            response.message = f"Error loading model from {path}: {e}"
+            response.success = False
+
         return response
 
 

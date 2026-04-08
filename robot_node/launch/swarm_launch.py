@@ -21,7 +21,7 @@ def generate_launch_description():
                         "goal_topic": "goal_pose",
                         "static_transform_x": 0.0,
                         "static_transform_y": 0.0,
-                        "model_path": os.path.join(resource_dir, "kris_robot1_model.pth"),
+                        "model_path": os.path.join(resource_dir, "kris_robot1_model.pt"),
                     }
                 ],
             ),
@@ -39,7 +39,7 @@ def generate_launch_description():
                         "goal_topic": "goal_pose",
                         "static_transform_x": 1.0,
                         "static_transform_y": 0.0,
-                        "model_path": os.path.join(resource_dir, "kris_robot2_model.pth"),
+                        "model_path": os.path.join(resource_dir, "kris_robot2_model.pt"),
                     }
                 ],
             ),

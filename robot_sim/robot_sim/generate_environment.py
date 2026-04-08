@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from typing import List, Tuple
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+import cv2
+import numpy as np
 
 
 @dataclass
@@ -34,6 +36,10 @@ class EnvironmentGenerator:
         self.wall_thickness = wall_thickness
         self.rooms = []
         self.walls = []
+        self.robot_spawn_points = [
+            ("kris_robot", 0.0, 0.0, 0.5, 0.0, -0.0, 3.14),
+            ("kris_robot1", -1.0, 0.0, 0.5, 0.0, -0.0, 3.14),
+        ]
 
     def generate(self):
         self._generate_rooms()
@@ -528,6 +534,57 @@ class EnvironmentGenerator:
         with open(filename, "w") as f:
             f.write("\n".join(lines))
 
+    def export_ground_truth(self, filename, pixels_per_meter=40, margin_px=20):
+        """Export a top-down 2D occupancy-style image of the generated environment."""
+        if not self.walls:
+            raise ValueError("No walls available. Call generate() before exporting an image.")
+
+        min_x = min(x for x, _, _, _ in self.walls)
+        min_y = min(y for _, y, _, _ in self.walls)
+        max_x = max(x + width for x, _, width, _ in self.walls)
+        max_y = max(y + height for _, y, _, height in self.walls)
+
+        world_width = max_x - min_x
+        world_height = max_y - min_y
+        image_width = int(np.ceil(world_width * pixels_per_meter)) + 2 * margin_px
+        image_height = int(np.ceil(world_height * pixels_per_meter)) + 2 * margin_px
+
+        image = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
+
+        def world_to_image(px, py):
+            ix = int(round((px - min_x) * pixels_per_meter)) + margin_px
+            # Flip Y so +Y in world points upward in the image.
+            iy = image_height - (int(round((py - min_y) * pixels_per_meter)) + margin_px)
+            return ix, iy
+
+        for x, y, width, height in self.walls:
+            x1, y1 = world_to_image(x, y + height)
+            x2, y2 = world_to_image(x + width, y)
+            left = min(x1, x2)
+            right = max(x1, x2)
+            top = min(y1, y2)
+            bottom = max(y1, y2)
+            cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 0), thickness=-1)
+
+        # Draw spawn points for robots used in world export.
+        for name, sx, sy, _, _, _, _ in self.robot_spawn_points:
+            cx, cy = world_to_image(sx, sy)
+            cv2.circle(image, (cx, cy), 6, (0, 0, 255), thickness=-1)
+            cv2.circle(image, (cx, cy), 10, (0, 0, 180), thickness=2)
+            cv2.putText(
+                image,
+                name,
+                (cx + 12, cy - 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 0, 200),
+                1,
+                cv2.LINE_AA,
+            )
+
+        if not cv2.imwrite(filename, image):
+            raise IOError(f"Failed to write ground truth image to {filename}")
+
     def _add_gui_plugins(self, gui):
         """Add GUI plugins configuration"""
         # 3D View plugin
@@ -645,17 +702,11 @@ class EnvironmentGenerator:
 
     def _add_robot_includes(self, world):
         """Add robot model includes"""
-        # First robot
-        include1 = ET.SubElement(world, "include")
-        ET.SubElement(include1, "uri").text = "file://src/robot_sim/gazebo/kris_robot"
-        ET.SubElement(include1, "name").text = "kris_robot"
-        ET.SubElement(include1, "pose").text = "0 0 0.5 0 -0 3.14"
-
-        # Second robot
-        include2 = ET.SubElement(world, "include")
-        ET.SubElement(include2, "uri").text = "file://src/robot_sim/gazebo/kris_robot1"
-        ET.SubElement(include2, "name").text = "kris_robot1"
-        ET.SubElement(include2, "pose").text = "-1.0 0 0.5 0 -0 3.14"
+        for name, x, y, z, roll, pitch, yaw in self.robot_spawn_points:
+            include = ET.SubElement(world, "include")
+            ET.SubElement(include, "uri").text = f"file://src/robot_sim/gazebo/{name}"
+            ET.SubElement(include, "name").text = name
+            ET.SubElement(include, "pose").text = f"{x} {y} {z} {roll} {pitch} {yaw}"
 
     def _add_ground_plane(self, world):
         model = ET.SubElement(world, "model", name="ground_plane")
@@ -711,4 +762,7 @@ if __name__ == "__main__":
     generator.export_to_world(
         f"{os.path.dirname(__file__)}/../gazebo/random_environment.sdf",
         include_robots=True,
+    )
+    generator.export_ground_truth(
+        f"{os.path.dirname(__file__)}/../gazebo/random_environment_ground_truth.png"
     )

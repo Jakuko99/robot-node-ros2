@@ -3,7 +3,7 @@ import os
 import sys
 import asyncio
 import threading
-from time import sleep
+from time import sleep, time
 
 from launch import LaunchService, LaunchDescription
 from launch.launch_description_sources import (
@@ -20,8 +20,8 @@ from robot_sim.generate_environment import EnvironmentGenerator
 
 
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 1
-SIM_PERIOD: int = 120  # seconds to run each simulation for
+NUM_SIMULATIONS: int = 2
+SIM_PERIOD: int = 240  # seconds to run each simulation for
 
 
 def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
@@ -97,6 +97,7 @@ if __name__ == "__main__":
                     f"{os.path.dirname(__file__)}/robot_sim/gazebo/random_environment.sdf",
                     include_robots=True,
                 )
+                generator.export_ground_truth(f"export/ground_truth-{int(time())}.png")
                 print("Done generating environment.")
 
             sim_thread = threading.Thread(

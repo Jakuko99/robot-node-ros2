@@ -47,16 +47,17 @@ From: ubuntu:22.04
 
     apt install python3 python3-pip -y
     pip3 install torch opencv-python
-    mkdir -p /tmp/ros_ws/ && cd /tmp/ros_ws/ && git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git src
-    . /opt/ros/humble/setup.sh && colcon build --symlink-install
+    git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git /src
 
 %runscript
-    cd /tmp/ros_ws/src && git pull
-    cd .. && . install/setup.sh && colcon build --symlink-install
+    mkdir -p /tmp/ros_ws /tmp/ros_ws/export && cd /tmp/ros_ws && cp -r /src .
+    cd src && git pull
+    cd .. && . /opt/ros/humble/setup.sh && colcon build --symlink-install
     . install/setup.sh
     python3 src/run_model_training.py
+    mv /tmp/ros_ws/src/robot_node/resource/*.pth /tmp/ros_ws/export && cp -r /tmp/ros_ws/export $WRKDIR
 
 %labels
     Author jakub.krsko@feit.uniza.sk
-    Version 1.0
+    Version 1.1
     Description ROS 2 environment for training swarm optimization models in simulation

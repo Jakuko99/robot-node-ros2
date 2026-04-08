@@ -47,6 +47,7 @@ class EnvironmentGenerator:
         self._add_room_walls()
         self._add_outer_walls()
         self._center_environment()
+        self._clear_spawn_point_obstacles()
 
     def _generate_rooms(self):
         attempts = 0
@@ -452,6 +453,39 @@ class EnvironmentGenerator:
             centered_walls.append((x - offset_x, y - offset_y, w, h))
         self.walls = centered_walls
 
+    def _clear_spawn_point_obstacles(self, clearance_radius=0.5):
+        """Remove or delete walls that collide with robot spawn point clearance zones."""
+        walls_to_remove = []
+
+        for robot_name, spawn_x, spawn_y, _, _, _, _ in self.robot_spawn_points:
+            for wall_idx, (wall_x, wall_y, wall_w, wall_h) in enumerate(self.walls):
+                # Check if wall intersects with the circular clearance zone around the spawn point
+                if self._wall_intersects_circle(
+                    wall_x, wall_y, wall_w, wall_h, spawn_x, spawn_y, clearance_radius
+                ):
+                    walls_to_remove.append(wall_idx)
+
+        # Remove walls in reverse order to avoid index shifting
+        for idx in sorted(set(walls_to_remove), reverse=True):
+            removed_wall = self.walls.pop(idx)
+            print(
+                f"  Removed wall at ({removed_wall[0]:.2f}, {removed_wall[1]:.2f}) "
+                f"size ({removed_wall[2]:.2f}x{removed_wall[3]:.2f}) that blocked spawn point"
+            )
+
+    def _wall_intersects_circle(
+        self, wall_x, wall_y, wall_w, wall_h, circle_cx, circle_cy, circle_r
+    ):
+        """Check if a rectangular wall intersects with a circular clearance zone."""
+        # Find the closest point on the rectangle to the circle center
+        closest_x = max(wall_x, min(circle_cx, wall_x + wall_w))
+        closest_y = max(wall_y, min(circle_cy, wall_y + wall_h))
+
+        # Calculate distance between circle center and closest point
+        distance = ((closest_x - circle_cx) ** 2 + (closest_y - circle_cy) ** 2) ** 0.5
+
+        return distance < circle_r
+
     def export_to_world(self, filename, include_robots=True):
         sdf = ET.Element("sdf", version="1.9")
         world = ET.SubElement(sdf, "world", name="random_environment")
@@ -753,10 +787,6 @@ class EnvironmentGenerator:
 
 
 if __name__ == "__main__":
-    # Remove seed to get different environments each run
-    # random.seed(42)
-    # np.random.seed(42)
-
     generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
     generator.generate()
     generator.export_to_world(

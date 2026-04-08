@@ -192,16 +192,22 @@ class RobotNode(Node):
     def training_timer_callback(self):
         metrics = self.decision_network.train_epoch()
         if metrics is None:
+            self.get_logger().info(
+                f"train_epoch: warming up, replay_buffer={len(self.decision_network.replay_buffer)}"
+            )
             return
 
         self.get_logger().info(
             "train_epoch: "
             f"loss={metrics['loss']:.4f}, "
-            f"policy={metrics['policy_loss']:.4f}, "
-            f"value={metrics['value_loss']:.4f}, "
+            f"actor={metrics['actor_loss']:.4f}, "
+            f"critic={metrics['critic_loss']:.4f}, "
+            f"alpha={metrics['alpha_loss']:.4f}, "
             f"entropy={metrics['entropy']:.4f}, "
+            f"temp={metrics['alpha']:.4f}, "
             f"avg_reward={metrics['avg_reward']:.4f}, "
-            f"batch={metrics['batch_size']}"
+            f"batch={metrics['batch_size']}, "
+            f"updates={metrics['updates']}"
         )
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):

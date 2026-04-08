@@ -18,10 +18,11 @@ from rclpy import Future
 
 from robot_sim.generate_environment import EnvironmentGenerator
 
-
+# ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 2
-SIM_PERIOD: int = 240  # seconds to run each simulation for
+NUM_SIMULATIONS: int = 6
+SIM_PERIOD: int = 600  # duration of each simulation run in seconds
+# -------------------------
 
 
 def prepare_launch(launch_serv: LaunchService, random_env: bool = False):

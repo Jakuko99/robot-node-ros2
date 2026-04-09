@@ -20,7 +20,7 @@ from robot_sim.generate_environment import EnvironmentGenerator
 
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 6
+NUM_SIMULATIONS: int = 4
 SIM_PERIOD: int = 600  # duration of each simulation run in seconds
 # -------------------------
 
@@ -74,6 +74,7 @@ def sim_shutdown(
             except Exception as e:
                 print(f"Error calling service {client.srv_name}: {e}")
 
+    sleep(2)  # give some time for services to complete before shutting down
     ls.shutdown()
 
 
@@ -122,5 +123,5 @@ if __name__ == "__main__":
                 print(f"Simulation run completed. Restarting in 5 seconds...")
                 sleep(5)
 
-    except KeyboardInterrupt:
-        print("\nLaunch interrupted by user.")
+    except Exception as e:
+        print(f"\nAn error occurred: {e}")

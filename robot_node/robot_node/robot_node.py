@@ -34,7 +34,7 @@ class RobotNode(Node):
         self.declare_parameter("static_transform_y", 0.0)
         self.declare_parameter("goal_timeout", 30.0)
         self.declare_parameter("training_interval", 10.0)
-        self.declare_parameter("model_path", "model.pth")
+        self.declare_parameter("model_path", "model.pt")
 
         self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.map_frame_id: str = (

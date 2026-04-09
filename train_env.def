@@ -53,11 +53,14 @@ From: ubuntu:22.04
     mkdir -p /tmp/ros_ws /tmp/ros_ws/export && cd /tmp/ros_ws && cp -r /src .
     cd src && git pull
     cd .. && . /opt/ros/humble/setup.sh && colcon build --symlink-install
-    . install/setup.sh
+    . install/setup.sh    
+    if [ -n "$MODEL_PATH" ]; then
+        cp $MODEL_PATH/*.pt /tmp/ros_ws/src/robot_node/resource
+    fi
     python3 src/run_model_training.py
-    mv /tmp/ros_ws/src/robot_node/resource/*.pth /tmp/ros_ws/export && cp -r /tmp/ros_ws/export "${WRKDIR:=$HOME/robotic_swarm}"
+    mv /tmp/ros_ws/src/robot_node/resource/*.pt /tmp/ros_ws/export && cp -r /tmp/ros_ws/export "${WRKDIR:=$HOME/robotic_swarm}"
 
 %labels
     Author jakub.krsko@feit.uniza.sk
-    Version 1.1
+    Version 1.2
     Description ROS 2 environment for training swarm optimization models in simulation

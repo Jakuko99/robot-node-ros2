@@ -581,6 +581,6 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 0.05  # Penalize overlap to encourage spreading out
+        total_reward -= overlap_cells * 0.1  # Penalize overlap to encourage spreading out
 
         return float(total_reward)

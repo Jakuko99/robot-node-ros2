@@ -16,12 +16,14 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot1",
                         "goal_process_interval": 5.0,
+                        "goal_reach_threshold": 0.75,
                         "pheromone_map_topic": "pheromones",
                         "map_frame_id": "global_map",
                         "goal_topic": "goal_pose",
                         "static_transform_x": 0.0,
                         "static_transform_y": 0.0,
                         "model_path": os.path.join(resource_dir, "kris_robot1_model.pt"),
+                        "train_network": True,
                     }
                 ],
             ),
@@ -34,12 +36,14 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot2",
                         "goal_process_interval": 5.0,
+                        "goal_reach_threshold": 0.75,
                         "pheromone_map_topic": "pheromones",
                         "map_frame_id": "kris_robot2_pheromone_map",
                         "goal_topic": "goal_pose",
                         "static_transform_x": 1.0,
                         "static_transform_y": 0.0,
                         "model_path": os.path.join(resource_dir, "kris_robot2_model.pt"),
+                        "train_network": True,
                     }
                 ],
             ),

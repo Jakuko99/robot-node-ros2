@@ -14,7 +14,6 @@ from rclpy.qos import (
 from time import time
 import math
 import torch
-import numpy as np
 import os
 
 from robot_node.decision_network import DecisionNetwork
@@ -29,12 +28,14 @@ class RobotNode(Node):
         self.declare_parameter("pheromone_map_topic", "pheromone_map")
         self.declare_parameter("map_frame_id", "map")
         self.declare_parameter("goal_process_interval", 5.0)
+        self.declare_parameter("goal_reach_threshold", 0.5)
         self.declare_parameter("goal_topic", "goal_pose")
         self.declare_parameter("static_transform_x", 0.0)
         self.declare_parameter("static_transform_y", 0.0)
         self.declare_parameter("goal_timeout", 30.0)
         self.declare_parameter("training_interval", 10.0)
         self.declare_parameter("model_path", "model.pt")
+        self.declare_parameter("train_network", True)
 
         self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.map_frame_id: str = (
@@ -45,6 +46,9 @@ class RobotNode(Node):
         )
         self.goal_process_interval: float = (
             self.get_parameter("goal_process_interval").get_parameter_value().double_value
+        )
+        self.goal_reach_threshold: float = (
+            self.get_parameter("goal_reach_threshold").get_parameter_value().double_value
         )
         self.goal_topic: str = self.get_parameter("goal_topic").get_parameter_value().string_value
         self.static_transform_x: float = (
@@ -60,6 +64,7 @@ class RobotNode(Node):
             self.get_parameter("training_interval").get_parameter_value().double_value
         )
         self.model_path: str = self.get_parameter("model_path").get_parameter_value().string_value
+        self.train: bool = self.get_parameter("train_network").get_parameter_value().bool_value
 
         # ----- Variables -----
         self.last_odom: Odometry = None
@@ -77,9 +82,11 @@ class RobotNode(Node):
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
         )  # correct map QoS profile
+        self.other_goals: dict[str, PoseStamped] = dict()  # track other robots' goals by namespace
 
+        # ----- Optimization NN -----
         self.decision_network: DecisionNetwork = DecisionNetwork(
-            self.namespace, pheromone_decay=0.1, parent=self
+            self.namespace, pheromone_decay=0.1, train=self.train, parent=self
         )
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.decision_network.to(device)
@@ -98,15 +105,14 @@ class RobotNode(Node):
             self.goal_process_interval, callback=self.goal_timer_callback
         )
 
-        self.training_timer: Timer = self.create_timer(
-            self.training_interval, callback=self.training_timer_callback
-        )
+        if self.train:
+            self.training_timer = self.create_timer(
+                self.training_interval, callback=self.training_timer_callback
+            )
 
         self.discovery_timer: Timer = self.create_timer(
             10.0, callback=self.robot_discovery_callback
         )
-
-        # ----- Clients -----
 
         # ----- Services -----
         self.create_service(
@@ -172,7 +178,11 @@ class RobotNode(Node):
             return
 
         if self.moving:
-            if self.last_goal and self.goal_reached(self.last_goal, self.last_odom, threshold=0.75):
+            if self.last_goal and self.goal_reached(
+                self.last_goal,
+                self.last_odom,
+                threshold=self.goal_reach_threshold,
+            ):
                 self.get_logger().info("Goal reached")
                 self.moving = False
                 return
@@ -184,10 +194,12 @@ class RobotNode(Node):
 
         if not self.moving:
             new_goal: tuple[float, float] = self.decision_network.generate_goal()
-            if new_goal:
+            if new_goal and not self.goal_collision(new_goal):
                 self.publish_goal(
                     new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
                 )
+            else:
+                self.get_logger().warn("No valid goal generated or goal collision detected")
 
     def training_timer_callback(self):
         metrics = self.decision_network.train_epoch()
@@ -236,7 +248,16 @@ class RobotNode(Node):
         self.moving = True
 
     def other_goal_callback(self, msg: PoseStamped, namespace: str):
-        pass
+        self.other_goals[namespace] = msg
+
+    def goal_collision(self, goal: tuple[float, float]) -> bool:
+        for other_goal in self.other_goals.values():
+            other_x, other_y = other_goal.pose.position.x, other_goal.pose.position.y
+            distance = math.sqrt((goal[0] - other_x) ** 2 + (goal[1] - other_y) ** 2)
+            if distance < self.goal_reach_threshold * 2:  # simple collision threshold
+                return True
+
+        return False
 
     def robot_discovery_callback(self):
         # nodes: list[str] = self.get_node_names()

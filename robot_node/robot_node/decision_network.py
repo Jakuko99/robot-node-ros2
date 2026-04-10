@@ -11,6 +11,7 @@ import random
 import math
 import copy
 
+# TODO: allow loading hyperparameters from config file or ROS params
 
 ACTOR_LR: float = 3e-4
 CRITIC_LR: float = 3e-4
@@ -50,10 +51,11 @@ def build_mlp(input_dim: int, output_dim: int, output_std: float = 1.0) -> nn.Se
 
 
 class DecisionNetwork(nn.Module):
-    def __init__(self, robot_name: str, pheromone_decay: float, parent=None):
+    def __init__(self, robot_name: str, pheromone_decay: float, train: bool = True, parent=None):
         super().__init__()
         self.robot_name = robot_name
         self.pheromone_decay = pheromone_decay
+        self.train_enabled = train
         self.feedback_layer = FeedbackLayer(self)
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -71,11 +73,12 @@ class DecisionNetwork(nn.Module):
         self.target_q2 = copy.deepcopy(self.q2)
         self.log_alpha = nn.Parameter(torch.tensor(math.log(INITIAL_ALPHA), dtype=torch.float32))
 
-        self.actor_optimizer = Adam(self.actor.parameters(), lr=ACTOR_LR)
-        self.critic_optimizer = Adam(
-            list(self.q1.parameters()) + list(self.q2.parameters()), lr=CRITIC_LR
-        )
-        self.alpha_optimizer = Adam([self.log_alpha], lr=ALPHA_LR)
+        if self.train_enabled:
+            self.actor_optimizer = Adam(self.actor.parameters(), lr=ACTOR_LR)
+            self.critic_optimizer = Adam(
+                list(self.q1.parameters()) + list(self.q2.parameters()), lr=CRITIC_LR
+            )
+            self.alpha_optimizer = Adam([self.log_alpha], lr=ALPHA_LR)
 
         for target_network in (self.target_q1, self.target_q2):
             for parameter in target_network.parameters():
@@ -135,8 +138,9 @@ class DecisionNetwork(nn.Module):
         if not self.current_map or not self.current_odom:
             return None
 
-        # Finalize reward for previously issued action once a new state is available.
-        self._finalize_pending_transition()
+        if self.train_enabled:
+            # Finalize reward for previously issued action once a new state is available.
+            self._finalize_pending_transition()
 
         obs_vec = self.extract_observation(self.current_map, self.current_odom)
         obs_tensor = self._obs_to_tensor(obs_vec)
@@ -164,14 +168,18 @@ class DecisionNetwork(nn.Module):
         action_tensor = torch.tensor(action_int, dtype=torch.int64, device=self.device)
         action, _, _, _, _ = self.get_action_and_value(obs_tensor, action_tensor)
 
-        # Save transition context and source state for delayed reward computation.
-        self.pending_obs = obs_tensor.detach().cpu()
-        self.pending_action = int(action.item())
-        # Capture "old" state exactly at action commit time.
-        self.feedback_layer.save_state(self.current_map, self.current_odom)
+        if self.train_enabled:
+            # Save transition context and source state for delayed reward computation.
+            self.pending_obs = obs_tensor.detach().cpu()
+            self.pending_action = int(action.item())
+            # Capture "old" state exactly at action commit time.
+            self.feedback_layer.save_state(self.current_map, self.current_odom)
         return goal
 
     def train_epoch(self):
+        if not self.train_enabled:
+            return None
+
         # Finalize potential pending transition before optimization.
         self._finalize_pending_transition()
 
@@ -347,6 +355,9 @@ class DecisionNetwork(nn.Module):
         return torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(-1)
 
     def _finalize_pending_transition(self):
+        if not self.train_enabled:
+            return
+
         if (
             self.pending_obs is None
             or self.pending_action is None

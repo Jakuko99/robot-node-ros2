@@ -92,7 +92,9 @@ if __name__ == "__main__":
             prepare_launch(launch_service, random_env=RANDOM_ENV)
 
             if RANDOM_ENV:  # generate new random environment for each simulation run
-                print(f"Generating random environment for simulation run {i + 1}...")
+                print(
+                    f"Generating random environment for simulation run {i + 1}/{NUM_SIMULATIONS} ..."
+                )
                 generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
                 generator.generate()
                 generator.export_to_world(
@@ -110,7 +112,7 @@ if __name__ == "__main__":
                     wait_period=SIM_PERIOD,
                 )
             )
-            print(f"Starting simulation run {i + 1}...")
+            print(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")
             sim_thread.start()  # start shutdown thread
             asyncio.run(run_sim(launch_service))  # run simulation
 
@@ -120,7 +122,9 @@ if __name__ == "__main__":
             del sim_thread
 
             if i < NUM_SIMULATIONS - 1:
-                print(f"Simulation run completed. Restarting in 5 seconds...")
+                print(
+                    f"Simulation run {i + 1}/{NUM_SIMULATIONS} completed. Restarting in 5 seconds..."
+                )
                 sleep(5)
 
     except Exception as e:

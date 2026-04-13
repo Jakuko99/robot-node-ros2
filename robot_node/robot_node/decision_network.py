@@ -521,6 +521,10 @@ class DecisionNetwork(nn.Module):
             response.message = f"Error loading model from {path}: {e}"
             response.success = False
 
+        except FileNotFoundError:
+            response.message = f"Model file not found at {path}!"
+            response.success = False
+
         return response
 
 

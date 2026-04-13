@@ -66,11 +66,13 @@ def sim_shutdown(
             try:
                 req = Trigger.Request()
                 future: Future = client.call_async(req)
-                rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+                rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
                 if future.result() is not None:
                     print(f"Service call to {client.srv_name} succeeded: {future.result().message}")
+
                 else:
                     print(f"Service call to {client.srv_name} failed")
+
             except Exception as e:
                 print(f"Error calling service {client.srv_name}: {e}")
 
@@ -85,6 +87,7 @@ if __name__ == "__main__":
     cli1: Client = node.create_client(Trigger, "/kris_robot1/save_model")
     cli2: Client = node.create_client(Trigger, "/kris_robot2/save_model")
     cli3: Client = node.create_client(Trigger, "/kris_robot1/export_map")
+    cli4: Client = node.create_client(Trigger, "/kris_robot2/export_map")  # backup export
 
     try:
         for i in range(NUM_SIMULATIONS):
@@ -108,7 +111,7 @@ if __name__ == "__main__":
                 target=lambda: sim_shutdown(
                     ls=launch_service,
                     node=node,
-                    clients=[cli1, cli2, cli3],
+                    clients=[cli1, cli2, cli3, cli4],
                     wait_period=SIM_PERIOD,
                 )
             )
@@ -129,3 +132,6 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"\nAn error occurred: {e}")
+
+    print("\nAll simulation runs completed. Shutting down ROS 2 environment.")
+    rclpy.shutdown()

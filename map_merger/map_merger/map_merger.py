@@ -130,9 +130,9 @@ class MapMerger(Node):
                 map_image[(map_array >= 10) & (map_array < 100)] = [255, 0, 0]
                 map_image[map_array == -10] = [0, 0, 255]
                 map_image[map_array == 110] = [0, 255, 0]
-                cv2.imwrite(f"export/global_map-{int(time.time())}.png", map_image)
+                cv2.imwrite(f"export/{self.robot_name}_map-{int(time.time())}.png", map_image)
                 response.success = True
-                response.message = "Map saved successfully as global_map.png"
+                response.message = f"Map saved successfully as {self.robot_name}_map.png"
 
             except Exception as e:
                 response.success = False

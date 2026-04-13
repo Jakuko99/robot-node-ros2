@@ -50,15 +50,15 @@ From: ubuntu:22.04
     git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git /src
 
 %runscript
-    mkdir -p /tmp/ros_ws /tmp/ros_ws/export && cd /tmp/ros_ws && cp -r /src .
+    mkdir -p $SIM_FOLDER/ros_ws/export && cd $SIM_FOLDER/ros_ws && cp -r /src .
     cd src && git pull
     cd .. && . /opt/ros/humble/setup.sh && colcon build --symlink-install
     . install/setup.sh
     if [ -n "$MODEL_PATH" ]; then
-        cp $MODEL_PATH/*.pt /tmp/ros_ws/src/robot_node/resource
+        cp $MODEL_PATH/*.pt $SIM_FOLDER/ros_ws/src/robot_node/resource
     fi
     python3 src/run_model_training.py
-    mv /tmp/ros_ws/src/robot_node/resource/*.pt /tmp/ros_ws/export && cp -r /tmp/ros_ws/export "${WRKDIR:=$HOME/robotic_swarm}"
+    mv $SIM_FOLDER/ros_ws/src/robot_node/resource/*.pt $SIM_FOLDER/ros_ws/export
 
 %labels
     Author jakub.krsko@feit.uniza.sk

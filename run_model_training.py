@@ -20,8 +20,8 @@ from robot_sim.generate_environment import EnvironmentGenerator
 
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 4
-SIM_PERIOD: int = 600  # duration of each simulation run in seconds
+NUM_SIMULATIONS: int = 1
+SIM_PERIOD: int = 60  # duration of each simulation run in seconds
 # -------------------------
 
 

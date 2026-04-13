@@ -21,7 +21,7 @@ from sim_srvs.srv import SimulationOutput
 
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 2
+NUM_SIMULATIONS: int = 4
 SIM_PERIOD: int = 600  # duration of each simulation run in seconds
 # -------------------------
 
@@ -72,7 +72,7 @@ def sim_shutdown(
                     else SimulationOutput.Request(id=sim_nr)
                 )
                 future: Future = client.call_async(req)
-                rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
+                rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
                 if future.result() is not None:
                     print(f"Service call to {client.srv_name} succeeded: {future.result().message}")
 
@@ -82,7 +82,7 @@ def sim_shutdown(
             except Exception as e:
                 print(f"Error calling service {client.srv_name}: {e}")
 
-    sleep(2)  # give some time for services to complete before shutting down
+    sleep(5)  # give some time for services to complete before shutting down
     ls.shutdown()
 
 

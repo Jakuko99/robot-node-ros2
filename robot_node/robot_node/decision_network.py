@@ -507,6 +507,7 @@ class DecisionNetwork(nn.Module):
     def save_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
         torch.save(self.state_dict(), path)
         response.success = True
+        response.message = f"Model saved successfully to {path}."
         return response
 
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):

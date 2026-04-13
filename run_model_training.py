@@ -17,10 +17,11 @@ from std_srvs.srv import Trigger
 from rclpy import Future
 
 from robot_sim.generate_environment import EnvironmentGenerator
+from sim_srvs.srv import SimulationOutput
 
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 4
+NUM_SIMULATIONS: int = 2
 SIM_PERIOD: int = 600  # duration of each simulation run in seconds
 # -------------------------
 
@@ -54,6 +55,7 @@ def sim_shutdown(
     ls: LaunchService,
     node: Node,
     clients: list[Client],
+    sim_nr: int,
     wait_period: int = 5,
     save_model: bool = True,
 ):
@@ -64,7 +66,11 @@ def sim_shutdown(
                 print(f"Waiting for service {client.srv_name} to become available...")
 
             try:
-                req = Trigger.Request()
+                req = (
+                    Trigger.Request()
+                    if client.srv_type == Trigger
+                    else SimulationOutput.Request(id=sim_nr)
+                )
                 future: Future = client.call_async(req)
                 rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
                 if future.result() is not None:
@@ -86,8 +92,8 @@ if __name__ == "__main__":
     node: Node = rclpy.create_node("training_launcher")
     cli1: Client = node.create_client(Trigger, "/kris_robot1/save_model")
     cli2: Client = node.create_client(Trigger, "/kris_robot2/save_model")
-    cli3: Client = node.create_client(Trigger, "/kris_robot1/export_map")
-    cli4: Client = node.create_client(Trigger, "/kris_robot2/export_map")  # backup export
+    cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
+    cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup export
 
     try:
         for i in range(NUM_SIMULATIONS):
@@ -104,7 +110,7 @@ if __name__ == "__main__":
                     f"{os.path.dirname(__file__)}/robot_sim/gazebo/random_environment.sdf",
                     include_robots=True,
                 )
-                generator.export_ground_truth(f"export/ground_truth-{int(time())}.png")
+                generator.export_ground_truth(f"export/ground_truth-{i + 1}.png")
                 print("Done generating environment.")
 
             sim_thread = threading.Thread(
@@ -113,6 +119,7 @@ if __name__ == "__main__":
                     node=node,
                     clients=[cli1, cli2, cli3, cli4],
                     wait_period=SIM_PERIOD,
+                    sim_nr=i + 1,
                 )
             )
             print(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")

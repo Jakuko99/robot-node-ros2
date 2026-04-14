@@ -104,5 +104,7 @@ if __name__ == "__main__":
     data = DataLogger.load_from_csv(
         "export/kris_robot1_training_a8b860a1-de7b-4790-96fb-0222fe2f9ec0.csv"
     )
-    DataLogger.plot_data(data, "loss", "export/loss_plot.png")
+    DataLogger.plot_data(data, "critic_loss", "export/loss_plot.png")
+    DataLogger.plot_data(data, "actor_loss", "export/actor_loss_plot.png")
     DataLogger.plot_data(data, "avg_reward", "export/avg_reward_plot.png")
+    DataLogger.plot_data(data, "entropy", "export/entropy_plot.png")

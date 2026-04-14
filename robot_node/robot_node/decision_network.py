@@ -16,9 +16,9 @@ from robot_node.data_logger import DataLogger, Batch
 
 # TODO: allow loading hyperparameters from config file or ROS params
 
-ACTOR_LR: float = 3e-4
-CRITIC_LR: float = 3e-4
-ALPHA_LR: float = 3e-4
+ACTOR_LR: float = 3e-3
+CRITIC_LR: float = 3e-3
+ALPHA_LR: float = 3e-3
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
 ACTION_COUNT: int = 8
@@ -29,14 +29,14 @@ REPLAY_BUFFER_SIZE: int = 50000
 BATCH_SIZE: int = 32
 UPDATES_PER_TRAIN: int = 8
 MIN_REPLAY_SIZE: int = 8
-TARGET_TAU: float = 0.005
+TARGET_TAU: float = 0.003
 INITIAL_ALPHA: float = 0.7
 TARGET_ENTROPY: float = 0.95 * math.log(ACTION_COUNT)
 REWARD_NORMALIZATION_BETA: float = 0.01
 REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-6
-INFO_GAIN_REWARD_WEIGHT: float = 50.0
-DISTANCE_PENALTY_WEIGHT: float = 1.0
+CHECKPOINT_SCORE_KEY: str = "avg_reward"
+CHECKPOINT_ROLLING_WINDOW: int = 20
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -48,9 +48,9 @@ def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
 def build_mlp(input_dim: int, output_dim: int, output_std: float = 1.0) -> nn.Sequential:
     return nn.Sequential(
         layer_init(nn.Linear(input_dim, 128)),
-        nn.SiLU(),
+        nn.Tanh(),
         layer_init(nn.Linear(128, 128)),
-        nn.SiLU(),
+        nn.Tanh(),
         layer_init(nn.Linear(128, output_dim), std=output_std),
     )
 
@@ -96,6 +96,10 @@ class DecisionNetwork(nn.Module):
         self.reward_mean: float = 0.0
         self.reward_variance: float = 1.0
         self.reward_normalization_count: int = 0
+        self.best_checkpoint_state: dict[str, torch.Tensor] = None
+        self.best_checkpoint_score: float = float("-inf")
+        self.latest_training_score: float = float("-inf")
+        self.checkpoint_scores: deque[float] = deque(maxlen=CHECKPOINT_ROLLING_WINDOW)
         self.to(self.device)
 
         # ----- Rollout storage -----
@@ -289,6 +293,7 @@ class DecisionNetwork(nn.Module):
             metrics[key] /= updates
 
         self.data_logger.log_batch(metrics)
+        self._checkpoint(metrics)
         return metrics
 
     def extract_observation(
@@ -393,6 +398,27 @@ class DecisionNetwork(nn.Module):
 
         self.pending_obs = None
         self.pending_action = None
+
+    def _checkpoint(self, metrics: dict[str, float] | None = None) -> float:
+        score = float("-inf")
+        if metrics is not None:
+            score = float(metrics.get(CHECKPOINT_SCORE_KEY, float("-inf")))
+        self.checkpoint_scores.append(score)
+
+        rolling_score = float(np.mean(self.checkpoint_scores))
+        self.latest_training_score = rolling_score
+
+        if rolling_score >= self.best_checkpoint_score:
+            self.best_checkpoint_score = rolling_score
+            self.best_checkpoint_state = copy.deepcopy(self.state_dict())
+
+        return rolling_score
+
+    def _select_state_to_save(self) -> tuple[dict[str, torch.Tensor], str]:
+        current_score = self.latest_training_score
+        if self.best_checkpoint_state is None or current_score >= self.best_checkpoint_score:
+            return (copy.deepcopy(self.state_dict()), "current")
+        return (self.best_checkpoint_state, "checkpoint")
 
     @staticmethod
     def _soft_update(source_network: nn.Module, target_network: nn.Module, tau: float):
@@ -512,14 +538,15 @@ class DecisionNetwork(nn.Module):
         return local_map
 
     def save_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
-        torch.save(self.state_dict(), path)
+        state_to_save, state_label = self._select_state_to_save()
+        torch.save(state_to_save, path)
         try:
             self.data_logger.export_to_csv()
         except Exception as e:
             self.logger.error(f"Error exporting data to CSV: {e}")
 
         response.success = True
-        response.message = f"Model saved successfully to {path}."
+        response.message = f"Model saved successfully to {path} using {state_label} state."
         return response
 
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
@@ -578,7 +605,7 @@ class FeedbackLayer:
 
         # total_reward += (new_ratio - old_ratio) * 1.0  # Scale reward
 
-        # Criterion 2: Linear tradeoff between exploration gain and travel cost.
+        # Criterion 2: Traveled distance to information gain from exploration
         old_position: np.array = np.array(
             [self.current_odom.pose.pose.position.x, self.current_odom.pose.pose.position.y]
         )
@@ -588,9 +615,10 @@ class FeedbackLayer:
         distance_traveled: float = np.linalg.norm(new_position - old_position)
         information_gain: float = new_ratio - old_ratio
 
-        total_reward += (information_gain * INFO_GAIN_REWARD_WEIGHT) - (
-            distance_traveled * DISTANCE_PENALTY_WEIGHT
-        )
+        total_reward += information_gain / max(
+            distance_traveled * 0.1,
+            REWARD_EPSILON,
+        )  # Penalize excessive movement
 
         # Criterion 3: Contribution to total coverage of the map per robot
         # if local_map:
@@ -608,6 +636,6 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 0.2  # Penalize overlap to encourage spreading out
+        total_reward -= overlap_cells * 0.3  # Penalize overlap to encourage spreading out
 
         return float(total_reward)

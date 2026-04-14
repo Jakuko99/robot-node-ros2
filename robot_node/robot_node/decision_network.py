@@ -2,36 +2,28 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 from collections import deque
 import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.optim import Adam
 from torch.distributions import Categorical
 from std_srvs.srv import Trigger
 import torch
-import random
+from random import random
 import math
 import copy
 from uuid import uuid4
 
 from robot_node.data_logger import DataLogger, Batch
 
-# TODO: allow loading hyperparameters from config file or ROS params
 
-ACTOR_LR: float = 3e-3
-CRITIC_LR: float = 3e-3
-ALPHA_LR: float = 3e-3
+EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
+LEARNING_RATE: float = 0.005
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
+ENTROPY_COEF: float = 0.05
+VALUE_COEF: float = 0.5
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
 MIN_GOAL_DISTANCE_M: float = 2.0
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
-REPLAY_BUFFER_SIZE: int = 50000
-BATCH_SIZE: int = 32
-UPDATES_PER_TRAIN: int = 8
-MIN_REPLAY_SIZE: int = 8
-TARGET_TAU: float = 0.003
-INITIAL_ALPHA: float = 0.7
-TARGET_ENTROPY: float = 0.95 * math.log(ACTION_COUNT)
 REWARD_NORMALIZATION_BETA: float = 0.01
 REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-6
@@ -43,16 +35,6 @@ def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
-
-
-def build_mlp(input_dim: int, output_dim: int, output_std: float = 1.0) -> nn.Sequential:
-    return nn.Sequential(
-        layer_init(nn.Linear(input_dim, 128)),
-        nn.Tanh(),
-        layer_init(nn.Linear(128, 128)),
-        nn.Tanh(),
-        layer_init(nn.Linear(128, output_dim), std=output_std),
-    )
 
 
 class DecisionNetwork(nn.Module):
@@ -72,27 +54,25 @@ class DecisionNetwork(nn.Module):
         self.input_map: np.ndarray = None
         self.current_odom: Odometry = None
 
-        self.actor = build_mlp(OBS_DIM, ACTION_COUNT, output_std=0.01)
-        self.q1 = build_mlp(OBS_DIM, ACTION_COUNT, output_std=1.0)
-        self.q2 = build_mlp(OBS_DIM, ACTION_COUNT, output_std=1.0)
-        self.target_q1 = copy.deepcopy(self.q1)
-        self.target_q2 = copy.deepcopy(self.q2)
-        self.log_alpha = nn.Parameter(torch.tensor(math.log(INITIAL_ALPHA), dtype=torch.float32))
-
-        if self.train_enabled:
-            self.actor_optimizer = Adam(self.actor.parameters(), lr=ACTOR_LR)
-            self.critic_optimizer = Adam(
-                list(self.q1.parameters()) + list(self.q2.parameters()), lr=CRITIC_LR
-            )
-            self.alpha_optimizer = Adam([self.log_alpha], lr=ALPHA_LR)
-
-        for target_network in (self.target_q1, self.target_q2):
-            for parameter in target_network.parameters():
-                parameter.requires_grad = False
-
-        self.replay_buffer: deque[tuple[torch.Tensor, int, float, torch.Tensor, float]] = deque(
-            maxlen=REPLAY_BUFFER_SIZE
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(OBS_DIM, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
         )
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(OBS_DIM, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, ACTION_COUNT), std=0.01),
+        )
+        self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)
         self.reward_mean: float = 0.0
         self.reward_variance: float = 1.0
         self.reward_normalization_count: int = 0
@@ -103,41 +83,25 @@ class DecisionNetwork(nn.Module):
         self.to(self.device)
 
         # ----- Rollout storage -----
+        self.rollout_obs: list[torch.Tensor] = []
+        self.rollout_actions: list[int] = []
+        self.rollout_rewards: list[float] = []
+
         # Pending transition for delayed reward assignment
         self.pending_obs: torch.Tensor = None
         self.pending_action: int = None
 
     def get_value(self, x):
         x = self._obs_to_tensor(x)
-        q1 = self.q1(x)
-        q2 = self.q2(x)
-        return torch.min(q1, q2)
+        return self.critic(x)
 
     def get_action_and_value(self, x, action=None):
         x = self._obs_to_tensor(x)
         logits = self.actor(x)
-        if logits.dim() == 1:
-            logits = logits.unsqueeze(0)
-        q1_values = self.q1(x)
-        q2_values = self.q2(x)
-        if q1_values.dim() == 1:
-            q1_values = q1_values.unsqueeze(0)
-        if q2_values.dim() == 1:
-            q2_values = q2_values.unsqueeze(0)
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
-        action_tensor = action.long()
-        if action_tensor.dim() == 0:
-            action_tensor = action_tensor.unsqueeze(0)
-        q1 = q1_values.gather(-1, action_tensor.view(-1, 1)).squeeze(-1)
-        q2 = q2_values.gather(-1, action_tensor.view(-1, 1)).squeeze(-1)
-
-        if q1.numel() == 1:
-            q1 = q1.squeeze(0)
-        if q2.numel() == 1:
-            q2 = q2.squeeze(0)
-        return action, probs.log_prob(action), probs.entropy(), q1, q2
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
     def update_state(self, map: OccupancyGrid, odom: Odometry):
         self.current_map = map
@@ -158,25 +122,27 @@ class DecisionNetwork(nn.Module):
         logits = self.actor(obs_tensor)
         policy = torch.softmax(logits, dim=-1)
 
-        valid_actions: list[int] = []
-        valid_goals: dict[int, tuple[float, float]] = {}
-        for cand_action in range(ACTION_COUNT):
+        if random() < EXPLOITATION_RATIO:
+            # Try higher-probability actions first, then fall back to the rest.
+            candidate_actions = torch.argsort(policy, descending=True).tolist()
+        else:
+            sampled_order = torch.multinomial(policy, num_samples=ACTION_COUNT, replacement=False)
+            candidate_actions = sampled_order.tolist()
+
+        action_int = None
+        goal = None
+        for cand_action in candidate_actions:
             candidate_goal = self.action_to_goal(cand_action, self.current_odom, self.current_map)
             if candidate_goal is not None:
-                valid_actions.append(cand_action)
-                valid_goals[cand_action] = candidate_goal
+                action_int = int(cand_action)
+                goal = candidate_goal
+                break
 
-        if len(valid_actions) == 0:
+        if goal is None or action_int is None:
             return None
 
-        valid_probs = policy[valid_actions]
-        valid_probs = valid_probs / valid_probs.sum().clamp_min(REWARD_EPSILON)
-        chosen_index = int(torch.multinomial(valid_probs, num_samples=1).item())
-        action_int = valid_actions[chosen_index]
-        goal = valid_goals[action_int]
-
         action_tensor = torch.tensor(action_int, dtype=torch.int64, device=self.device)
-        action, _, _, _, _ = self.get_action_and_value(obs_tensor, action_tensor)
+        action, _, _, _ = self.get_action_and_value(obs_tensor, action_tensor)
 
         if self.train_enabled:
             # Save transition context and source state for delayed reward computation.
@@ -193,107 +159,53 @@ class DecisionNetwork(nn.Module):
         # Finalize potential pending transition before optimization.
         self._finalize_pending_transition()
 
-        if len(self.replay_buffer) < MIN_REPLAY_SIZE:
+        if len(self.rollout_rewards) == 0:
             return None
 
-        batch_size = min(BATCH_SIZE, len(self.replay_buffer))
-        updates = min(UPDATES_PER_TRAIN, max(1, len(self.replay_buffer) // batch_size))
+        obs_batch = torch.stack(self.rollout_obs).to(self.device)
+        action_batch = torch.as_tensor(
+            self.rollout_actions,
+            dtype=torch.int64,
+            device=self.device,
+        )
+        rewards = torch.tensor(self.rollout_rewards, dtype=torch.float32, device=self.device)
+
+        logits = self.actor(obs_batch)
+        dist = Categorical(logits=logits)
+        log_probs = dist.log_prob(action_batch)
+        entropies = dist.entropy()
+        values: torch.Tensor = self.critic(obs_batch).squeeze(-1)
+
+        returns = torch.zeros_like(rewards)
+        running_return = torch.tensor(0.0, device=self.device)
+        for t in range(len(rewards) - 1, -1, -1):
+            running_return = rewards[t] + GAMMA * running_return
+            returns[t] = running_return
+
+        advantages: torch.Tensor = returns - values
+
+        policy_loss: torch.Tensor = -(log_probs * advantages.detach()).mean()
+        value_loss: torch.Tensor = (advantages.pow(2)).mean()
+        entropy_bonus: torch.Tensor = entropies.mean()
+
+        loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - ENTROPY_COEF * entropy_bonus
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.parameters(), 1.0)
+        self.optimizer.step()
 
         metrics = {
-            "loss": 0.0,
-            "actor_loss": 0.0,
-            "critic_loss": 0.0,
-            "alpha_loss": 0.0,
-            "entropy": 0.0,
-            "alpha": 0.0,
-            "avg_reward": 0.0,
-            "avg_raw_reward": 0.0,
-            "batch_size": batch_size,
-            "updates": updates,
+            "loss": float(loss.item()),
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy_bonus.item()),
+            "avg_reward": float(rewards.mean().item()),
+            "batch_size": len(self.rollout_rewards),
         }
-
-        for _ in range(updates):
-            batch = random.sample(self.replay_buffer, batch_size)
-            obs_batch = torch.stack([item[0] for item in batch]).to(self.device)
-            action_batch = torch.as_tensor(
-                [item[1] for item in batch], dtype=torch.int64, device=self.device
-            )
-            reward_batch = torch.as_tensor(
-                [item[2] for item in batch], dtype=torch.float32, device=self.device
-            )
-            raw_reward_batch = torch.as_tensor(
-                [item[5] for item in batch], dtype=torch.float32, device=self.device
-            )
-            next_obs_batch = torch.stack([item[3] for item in batch]).to(self.device)
-            done_batch = torch.as_tensor(
-                [item[4] for item in batch], dtype=torch.float32, device=self.device
-            )
-
-            with torch.no_grad():
-                next_logits = self.actor(next_obs_batch)
-                next_log_probs = torch.log_softmax(next_logits, dim=-1)
-                next_probs = next_log_probs.exp()
-                next_q1 = self.target_q1(next_obs_batch)
-                next_q2 = self.target_q2(next_obs_batch)
-                next_min_q = torch.min(next_q1, next_q2)
-                alpha = self.log_alpha.exp()
-                next_v = (next_probs * (next_min_q - alpha * next_log_probs)).sum(dim=-1)
-                target_q = reward_batch + (1.0 - done_batch) * GAMMA * next_v
-
-            current_q1 = self.q1(obs_batch).gather(1, action_batch.unsqueeze(-1)).squeeze(-1)
-            current_q2 = self.q2(obs_batch).gather(1, action_batch.unsqueeze(-1)).squeeze(-1)
-            critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
-
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            nn.utils.clip_grad_norm_(list(self.q1.parameters()) + list(self.q2.parameters()), 5.0)
-            self.critic_optimizer.step()
-
-            logits = self.actor(obs_batch)
-            log_probs = torch.log_softmax(logits, dim=-1)
-            probs = log_probs.exp()
-            min_q = torch.min(self.q1(obs_batch), self.q2(obs_batch)).detach()
-            alpha = self.log_alpha.exp().detach()
-            actor_loss = (probs * (alpha * log_probs - min_q)).sum(dim=-1).mean()
-
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-            nn.utils.clip_grad_norm_(self.actor.parameters(), 5.0)
-            self.actor_optimizer.step()
-
-            entropy = -(probs * log_probs).sum(dim=-1).mean()
-            alpha_loss = -(self.log_alpha * (entropy.detach() - TARGET_ENTROPY)).mean()
-
-            self.alpha_optimizer.zero_grad()
-            alpha_loss.backward()
-            self.alpha_optimizer.step()
-
-            self._soft_update(self.q1, self.target_q1, TARGET_TAU)
-            self._soft_update(self.q2, self.target_q2, TARGET_TAU)
-
-            metrics["loss"] += float((critic_loss + actor_loss + alpha_loss).item())
-            metrics["actor_loss"] += float(actor_loss.item())
-            metrics["critic_loss"] += float(critic_loss.item())
-            metrics["alpha_loss"] += float(alpha_loss.item())
-            metrics["entropy"] += float(entropy.item())
-            metrics["alpha"] += float(self.log_alpha.exp().item())
-            metrics["avg_reward"] += float(reward_batch.mean().item())
-            metrics["avg_raw_reward"] += float(raw_reward_batch.mean().item())
-
-        for key in (
-            "loss",
-            "actor_loss",
-            "critic_loss",
-            "alpha_loss",
-            "entropy",
-            "alpha",
-            "avg_reward",
-            "avg_raw_reward",
-        ):
-            metrics[key] /= updates
-
         self.data_logger.log_batch(metrics)
         self._checkpoint(metrics)
+        self._clear_rollout()
         return metrics
 
     def extract_observation(
@@ -379,9 +291,6 @@ class DecisionNetwork(nn.Module):
         ):
             return
 
-        current_obs = self.extract_observation(self.current_map, self.current_odom)
-        next_obs = self._obs_to_tensor(current_obs).detach().cpu()
-
         local_map = self.get_local_patch(self.current_map, self.current_odom, PATCH_RADIUS)
         reward = self.feedback_layer.calculate_reward(
             self.current_map,
@@ -390,14 +299,18 @@ class DecisionNetwork(nn.Module):
         )
         if not np.isfinite(reward):
             reward = 0.0
-        normalized_reward = self._normalize_reward(float(reward))
 
-        self.replay_buffer.append(
-            (self.pending_obs, self.pending_action, normalized_reward, next_obs, 0.0, float(reward))
-        )
+        self.rollout_obs.append(self.pending_obs)
+        self.rollout_actions.append(self.pending_action)
+        self.rollout_rewards.append(float(reward))
 
         self.pending_obs = None
         self.pending_action = None
+
+    def _clear_rollout(self):
+        self.rollout_obs.clear()
+        self.rollout_actions.clear()
+        self.rollout_rewards.clear()
 
     def _checkpoint(self, metrics: dict[str, float] | None = None) -> float:
         score = float("-inf")

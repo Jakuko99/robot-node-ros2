@@ -10,6 +10,9 @@ import torch
 import random
 import math
 import copy
+from uuid import uuid4
+
+from robot_node.data_logger import DataLogger, Batch
 
 # TODO: allow loading hyperparameters from config file or ROS params
 
@@ -20,18 +23,20 @@ REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
-MIN_GOAL_DISTANCE_M: float = 0.8
+MIN_GOAL_DISTANCE_M: float = 2.0
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
 REPLAY_BUFFER_SIZE: int = 50000
 BATCH_SIZE: int = 32
-UPDATES_PER_TRAIN: int = 4
-MIN_REPLAY_SIZE: int = 4
+UPDATES_PER_TRAIN: int = 8
+MIN_REPLAY_SIZE: int = 8
 TARGET_TAU: float = 0.005
-INITIAL_ALPHA: float = 0.2
-TARGET_ENTROPY: float = 0.8 * math.log(ACTION_COUNT)
+INITIAL_ALPHA: float = 0.7
+TARGET_ENTROPY: float = 0.95 * math.log(ACTION_COUNT)
 REWARD_NORMALIZATION_BETA: float = 0.01
 REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-6
+INFO_GAIN_REWARD_WEIGHT: float = 50.0
+DISTANCE_PENALTY_WEIGHT: float = 1.0
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -58,6 +63,7 @@ class DecisionNetwork(nn.Module):
         self.train_enabled = train
         self.feedback_layer = FeedbackLayer(self)
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.data_logger = DataLogger(f"export/{self.robot_name}_training_{str(uuid4())}.csv")
 
         if parent:
             self.logger = parent.get_logger()
@@ -282,6 +288,7 @@ class DecisionNetwork(nn.Module):
         ):
             metrics[key] /= updates
 
+        self.data_logger.log_batch(metrics)
         return metrics
 
     def extract_observation(
@@ -506,6 +513,11 @@ class DecisionNetwork(nn.Module):
 
     def save_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
         torch.save(self.state_dict(), path)
+        try:
+            self.data_logger.export_to_csv()
+        except Exception as e:
+            self.logger.error(f"Error exporting data to CSV: {e}")
+
         response.success = True
         response.message = f"Model saved successfully to {path}."
         return response
@@ -566,7 +578,7 @@ class FeedbackLayer:
 
         # total_reward += (new_ratio - old_ratio) * 1.0  # Scale reward
 
-        # Criterion 2: Traveled distance to information gain from exploration
+        # Criterion 2: Linear tradeoff between exploration gain and travel cost.
         old_position: np.array = np.array(
             [self.current_odom.pose.pose.position.x, self.current_odom.pose.pose.position.y]
         )
@@ -576,10 +588,9 @@ class FeedbackLayer:
         distance_traveled: float = np.linalg.norm(new_position - old_position)
         information_gain: float = new_ratio - old_ratio
 
-        total_reward += information_gain / max(
-            distance_traveled * 0.1,
-            REWARD_EPSILON,
-        )  # Penalize excessive movement
+        total_reward += (information_gain * INFO_GAIN_REWARD_WEIGHT) - (
+            distance_traveled * DISTANCE_PENALTY_WEIGHT
+        )
 
         # Criterion 3: Contribution to total coverage of the map per robot
         # if local_map:
@@ -597,6 +608,6 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 0.1  # Penalize overlap to encourage spreading out
+        total_reward -= overlap_cells * 0.2  # Penalize overlap to encourage spreading out
 
         return float(total_reward)

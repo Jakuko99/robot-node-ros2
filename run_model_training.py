@@ -3,7 +3,7 @@ import os
 import sys
 import asyncio
 import threading
-from time import sleep, time
+from time import sleep
 
 from launch import LaunchService, LaunchDescription
 from launch.launch_description_sources import (

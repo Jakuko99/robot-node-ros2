@@ -14,12 +14,12 @@ from uuid import uuid4
 from robot_node.data_logger import DataLogger
 
 
-EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
+EXPLOITATION_RATIO: float = 0.4  # Probability of choosing the best action vs exploring
 LEARNING_RATE: float = 0.5
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.95
 ENTROPY_COEF: float = 0.05
-VALUE_COEF: float = 0.5
+VALUE_COEF: float = 0.25
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
 MIN_GOAL_DISTANCE_M: float = 2.0
@@ -29,6 +29,7 @@ REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
+MIN_TRAINING_BATCH_SIZE: int = 4
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -54,6 +55,7 @@ class DecisionNetwork(nn.Module):
         self.input_map: np.ndarray = None
         self.current_odom: Odometry = None
 
+        # PPO actor-critic architecture with separate networks for policy and value estimation.
         self.critic = nn.Sequential(
             layer_init(nn.Linear(OBS_DIM, 64)),
             nn.Tanh(),
@@ -159,7 +161,7 @@ class DecisionNetwork(nn.Module):
         # Finalize potential pending transition before optimization.
         self._finalize_pending_transition()
 
-        if len(self.rollout_rewards) == 0:
+        if len(self.rollout_rewards) < MIN_TRAINING_BATCH_SIZE:
             return None
 
         obs_batch = torch.stack(self.rollout_obs).to(self.device)
@@ -183,6 +185,9 @@ class DecisionNetwork(nn.Module):
             returns[t] = running_return
 
         advantages: torch.Tensor = returns - values
+
+        if advantages.numel() > 1:
+            advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
 
         policy_loss: torch.Tensor = -(log_probs * advantages.detach()).mean()
         value_loss: torch.Tensor = (advantages.pow(2)).mean()

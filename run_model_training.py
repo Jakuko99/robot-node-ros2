@@ -152,7 +152,7 @@ if __name__ == "__main__":
                 data: dict[int, Batch] = DataLogger.load_from_csv(file)
                 DataLogger.subplot_data(
                     data,
-                    ["loss", "avg_reward", "entropy", "policy_loss"],
+                    ["loss", "policy_loss", "avg_reward", "entropy"],
                     f"{os.path.splitext(file)[0]}.png",
                 )
 

@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
+from math import ceil
 
 
 @dataclass
@@ -91,17 +92,17 @@ class DataLogger:
     def subplot_data(data: dict[int, Batch], plot_labels: list[str], save_path: str):
         batch_nrs = [batch.batch_nr for batch in data.values()]
         num_plots = len(plot_labels)
-        plt.figure(figsize=(10, 5 * num_plots))
+        plt.figure(figsize=(15, 5 * int(ceil(num_plots / 2))))
 
         for i, plot_label in enumerate(plot_labels):
             if plot_label in Batch.__dataclass_fields__:
                 values = [getattr(batch, plot_label) for batch in data.values()]
-                plt.subplot(num_plots, 1, i + 1)
+                plt.subplot(int(ceil(num_plots / 2)), 2, i + 1)
                 plt.plot(batch_nrs, values, label=plot_label)
                 plt.xlabel("Batch Number")
                 plt.ylabel(plot_label.replace("_", " ").title())
                 plt.title(f"{plot_label.replace('_', ' ').title()} over Batches")
-                plt.legend()
+                # plt.legend()
                 plt.grid()
             else:
                 print(
@@ -114,6 +115,8 @@ class DataLogger:
 
 if __name__ == "__main__":
     data = DataLogger.load_from_csv(
-        "export/kris_robot2_training_2776e698-d0c2-44fe-8690-44b313eb63ae.csv"
+        "export/kris_robot1_training_6a8fec3e-4b6d-4384-8288-87c666d0ecff.csv"
     )
-    DataLogger.subplot_data(data, ["loss", "avg_reward", "entropy"], "export/subplot.png")
+    DataLogger.subplot_data(
+        data, ["loss", "policy_loss", "avg_reward", "entropy"], "export/subplot.png"
+    )

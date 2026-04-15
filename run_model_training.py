@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import glob
 import asyncio
 import threading
 from time import sleep
@@ -17,12 +18,14 @@ from std_srvs.srv import Trigger
 from rclpy import Future
 
 from robot_sim.generate_environment import EnvironmentGenerator
+from robot_node.data_logger import DataLogger, Batch
 from sim_srvs.srv import SimulationOutput
 
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
-NUM_SIMULATIONS: int = 2
-SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
+PLOT_RESULTS: bool = True
+NUM_SIMULATIONS: int = 4
+SIM_PERIOD: int = 600  # duration of each simulation run in seconds
 # -------------------------
 
 
@@ -142,3 +145,18 @@ if __name__ == "__main__":
 
     print("\nAll simulation runs completed. Shutting down ROS 2 environment.")
     rclpy.shutdown()
+
+    if PLOT_RESULTS:
+        try:
+            for file in glob.glob("export/kris_robot*_training_*.csv"):
+                data: dict[int, Batch] = DataLogger.load_from_csv(file)
+                DataLogger.subplot_data(
+                    data,
+                    ["loss", "avg_reward", "entropy", "policy_loss"],
+                    f"{os.path.splitext(file)[0]}.png",
+                )
+
+            print("Plots generated and saved in export directory.")
+
+        except Exception as e:
+            print(f"Error generating plots: {e}")

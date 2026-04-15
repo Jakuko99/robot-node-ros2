@@ -7,13 +7,10 @@ class Batch:
     batch_nr: int
     batch_size: int
     loss: float
-    actor_loss: float
-    critic_loss: float
-    alpha_loss: float
+    policy_loss: float
+    value_loss: float
     entropy: float
-    alpha: float
     avg_reward: float
-    updates: float
 
 
 class DataLogger:
@@ -26,13 +23,10 @@ class DataLogger:
         self.data[self.batch_nr] = Batch(
             batch_nr=self.batch_nr,
             loss=data.get("loss", 0.0),
-            actor_loss=data.get("actor_loss", 0.0),
-            critic_loss=data.get("critic_loss", 0.0),
-            alpha_loss=data.get("alpha_loss", 0.0),
+            policy_loss=data.get("policy_loss", 0.0),
+            value_loss=data.get("value_loss", 0.0),
             entropy=data.get("entropy", 0.0),
-            alpha=data.get("alpha", 0.0),
             avg_reward=data.get("avg_reward", 0.0),
-            updates=data.get("updates", 0),
             batch_size=data.get("batch_size", 0),
         )
         self.batch_nr += 1
@@ -43,13 +37,10 @@ class DataLogger:
                 "batch_nr",
                 "batch_size",
                 "loss",
-                "actor_loss",
-                "critic_loss",
-                "alpha_loss",
+                "policy_loss",
+                "value_loss",
                 "entropy",
-                "alpha",
                 "avg_reward",
-                "updates",
             ]
             with open(self.log_file, "w") as f:
                 f.write(",".join(fieldnames) + "\n")
@@ -68,13 +59,10 @@ class DataLogger:
                     batch_nr=int(values[0]),
                     batch_size=int(values[1]),
                     loss=float(values[2]),
-                    actor_loss=float(values[3]),
-                    critic_loss=float(values[4]),
-                    alpha_loss=float(values[5]),
-                    entropy=float(values[6]),
-                    alpha=float(values[7]),
-                    avg_reward=float(values[8]),
-                    updates=float(values[9]),
+                    policy_loss=float(values[3]),
+                    value_loss=float(values[4]),
+                    entropy=float(values[5]),
+                    avg_reward=float(values[6]),
                 )
                 data[batch.batch_nr] = batch
         return data
@@ -99,12 +87,33 @@ class DataLogger:
                 f"Error: Invalid plot label '{plot_label}'. Valid labels are: {list(Batch.__dataclass_fields__.keys())}"
             )
 
+    @staticmethod
+    def subplot_data(data: dict[int, Batch], plot_labels: list[str], save_path: str):
+        batch_nrs = [batch.batch_nr for batch in data.values()]
+        num_plots = len(plot_labels)
+        plt.figure(figsize=(10, 5 * num_plots))
+
+        for i, plot_label in enumerate(plot_labels):
+            if plot_label in Batch.__dataclass_fields__:
+                values = [getattr(batch, plot_label) for batch in data.values()]
+                plt.subplot(num_plots, 1, i + 1)
+                plt.plot(batch_nrs, values, label=plot_label)
+                plt.xlabel("Batch Number")
+                plt.ylabel(plot_label.replace("_", " ").title())
+                plt.title(f"{plot_label.replace('_', ' ').title()} over Batches")
+                plt.legend()
+                plt.grid()
+            else:
+                print(
+                    f"Error: Invalid plot label '{plot_label}'. Valid labels are: {list(Batch.__dataclass_fields__.keys())}"
+                )
+
+        plt.tight_layout()
+        plt.savefig(save_path)
+
 
 if __name__ == "__main__":
     data = DataLogger.load_from_csv(
-        "export/kris_robot1_training_a8b860a1-de7b-4790-96fb-0222fe2f9ec0.csv"
+        "export/kris_robot2_training_2776e698-d0c2-44fe-8690-44b313eb63ae.csv"
     )
-    DataLogger.plot_data(data, "critic_loss", "export/loss_plot.png")
-    DataLogger.plot_data(data, "actor_loss", "export/actor_loss_plot.png")
-    DataLogger.plot_data(data, "avg_reward", "export/avg_reward_plot.png")
-    DataLogger.plot_data(data, "entropy", "export/entropy_plot.png")
+    DataLogger.subplot_data(data, ["loss", "avg_reward", "entropy"], "export/subplot.png")

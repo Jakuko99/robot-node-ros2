@@ -15,18 +15,18 @@ from robot_node.data_logger import DataLogger
 
 
 EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.05
+LEARNING_RATE: float = 0.5
 REWARD_EPSILON: float = 1e-6
-GAMMA: float = 0.99
+GAMMA: float = 0.95
 ENTROPY_COEF: float = 0.05
 VALUE_COEF: float = 0.5
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
 MIN_GOAL_DISTANCE_M: float = 2.0
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
-REWARD_NORMALIZATION_BETA: float = 0.01
+REWARD_NORMALIZATION_BETA: float = 0.1
 REWARD_NORMALIZATION_CLIP: float = 5.0
-REWARD_NORMALIZATION_EPS: float = 1e-6
+REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
 

@@ -14,11 +14,11 @@ from uuid import uuid4
 from robot_node.data_logger import DataLogger, Batch
 
 
-EXPLOITATION_RATIO: float = 0.6  # Probability of choosing the best action vs exploring
+EXPLOITATION_RATIO: float = 0.5  # Probability of choosing the best action vs exploring
 LEARNING_RATE: float = 0.005
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
-ENTROPY_COEF: float = 0.05
+ENTROPY_COEF: float = 0.07
 VALUE_COEF: float = 0.5
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
@@ -549,6 +549,6 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 1.0  # Penalize overlap to encourage spreading out
+        total_reward -= overlap_cells * 0.5  # Penalize overlap to encourage spreading out
 
         return float(total_reward)

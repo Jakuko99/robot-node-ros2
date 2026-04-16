@@ -22,15 +22,15 @@ from robot_node.data_logger import DataLogger, Batch
 from sim_srvs.srv import SimulationOutput
 
 # ----- CONFIGURATION -----
-RANDOM_ENV: bool = True
-PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 4
-SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
+RANDOM_ENV: bool = False
+PLOT_RESULTS: bool = False
+NUM_SIMULATIONS: int = 2
+SIM_PERIOD: int = 600  # duration of each simulation run in seconds
 # -------------------------
 
 
 def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
-    sim_launch_file = "sim_launch.py" if not random_env else "train_sim_launch.py"
+    sim_launch_file = "static_train_launch.py" if not random_env else "train_sim_launch.py"
 
     sim_launch_file_path = os.path.join(
         get_package_share_directory("robot_sim"), "launch", sim_launch_file
@@ -47,7 +47,7 @@ def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
     optimizer_launch_description: LaunchDescription = load_launch_description(optimizer_file_path)
 
     launch_serv.include_launch_description(launch_description)
-    launch_serv.include_launch_description(optimizer_launch_description)
+    # launch_serv.include_launch_description(optimizer_launch_description)
 
 
 async def run_sim(launch_serv: LaunchService):
@@ -69,11 +69,7 @@ def sim_shutdown(
                 print(f"Waiting for service {client.srv_name} to become available...")
 
             try:
-                req = (
-                    Trigger.Request()
-                    if client.srv_type == Trigger
-                    else SimulationOutput.Request(id=sim_nr)
-                )
+                req: SimulationOutput.Request = SimulationOutput.Request(id=sim_nr)
                 future: Future = client.call_async(req)
                 rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
                 if future.result() is not None:
@@ -93,8 +89,8 @@ if __name__ == "__main__":
     # ROS 2 environment setup
     rclpy.init()
     node: Node = rclpy.create_node("training_launcher")
-    cli1: Client = node.create_client(Trigger, "/kris_robot1/save_model")
-    cli2: Client = node.create_client(Trigger, "/kris_robot2/save_model")
+    cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
+    cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
     cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
     cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup export
 
@@ -120,7 +116,7 @@ if __name__ == "__main__":
                 target=lambda: sim_shutdown(
                     ls=launch_service,
                     node=node,
-                    clients=[cli1, cli2, cli3, cli4],
+                    clients=[cli3, cli4],
                     wait_period=SIM_PERIOD,
                     sim_nr=i + 1,
                 )

@@ -9,7 +9,6 @@ import torch
 from random import random
 import math
 import copy
-from uuid import uuid4
 
 from robot_node.data_logger import DataLogger
 
@@ -46,7 +45,7 @@ class DecisionNetwork(nn.Module):
         self.train_enabled = train
         self.feedback_layer = FeedbackLayer(self)
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.data_logger = DataLogger(f"export/{self.robot_name}_training_{str(uuid4())}.csv")
+        self.data_logger = DataLogger()
 
         if parent:
             self.logger = parent.get_logger()
@@ -455,17 +454,10 @@ class DecisionNetwork(nn.Module):
 
         return local_map
 
-    def save_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
-        state_to_save, state_label = self._select_state_to_save()
+    def save_model(self, path: str):
+        state_to_save, save_label = self._select_state_to_save()
         torch.save(state_to_save, path)
-        try:
-            self.data_logger.export_to_csv()
-        except Exception as e:
-            self.logger.error(f"Error exporting data to CSV: {e}")
-
-        response.success = True
-        response.message = f"Model saved successfully to {path} using {state_label} state."
-        return response
+        self.logger.info(f"Model saved to {path} from {save_label}")
 
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
         try:
@@ -483,6 +475,21 @@ class DecisionNetwork(nn.Module):
             response.success = False
 
         return response
+
+    def load_model_from_path(self, path: str) -> bool:
+        try:
+            self.load_state_dict(torch.load(path, map_location=self.device))
+            self.to(self.device)
+            self.logger.info(f"Model loaded successfully from {path}")
+            return True
+
+        except RuntimeError as e:
+            self.logger.error(f"Error loading model from {path}: {e}")
+            return False
+
+        except FileNotFoundError:
+            self.logger.error(f"Model file not found at {path}!")
+            return False
 
 
 class FeedbackLayer:

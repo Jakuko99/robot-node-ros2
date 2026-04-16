@@ -15,8 +15,7 @@ class Batch:
 
 
 class DataLogger:
-    def __init__(self, log_file):
-        self.log_file = log_file
+    def __init__(self):
         self.data: dict[int, Batch] = {}
         self.batch_nr: int = 0
 
@@ -32,21 +31,21 @@ class DataLogger:
         )
         self.batch_nr += 1
 
-    def export_to_csv(self):
-        with open(self.log_file, mode="w", newline="") as f:
-            fieldnames = [
-                "batch_nr",
-                "batch_size",
-                "loss",
-                "policy_loss",
-                "value_loss",
-                "entropy",
-                "avg_reward",
-            ]
-            with open(self.log_file, "w") as f:
-                f.write(",".join(fieldnames) + "\n")
-                for batch in self.data.values():
-                    f.write(",".join(str(getattr(batch, field)) for field in fieldnames) + "\n")
+    def export_to_csv(self, log_file: str):
+        fieldnames: list[str] = [
+            "batch_nr",
+            "batch_size",
+            "loss",
+            "policy_loss",
+            "value_loss",
+            "entropy",
+            "avg_reward",
+        ]
+
+        with open(log_file, "w") as f:
+            f.write(",".join(fieldnames) + "\n")
+            for batch in self.data.values():
+                f.write(",".join(str(getattr(batch, field)) for field in fieldnames) + "\n")
 
     @staticmethod
     def load_from_csv(csv_file: str) -> dict[int, Batch]:
@@ -55,7 +54,7 @@ class DataLogger:
             for line in f.readlines():
                 if line.startswith("batch_nr"):
                     continue  # skip header
-                values: list = line.strip().split(",")
+                values: list[str] = line.strip().split(",")
                 batch = Batch(
                     batch_nr=int(values[0]),
                     batch_size=int(values[1]),

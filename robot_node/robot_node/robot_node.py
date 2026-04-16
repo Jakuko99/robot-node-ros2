@@ -17,6 +17,7 @@ import torch
 import os
 
 from robot_node.decision_network import DecisionNetwork
+from sim_srvs.srv import SimulationOutput
 
 
 class RobotNode(Node):
@@ -116,9 +117,9 @@ class RobotNode(Node):
 
         # ----- Services -----
         self.create_service(
-            Trigger,
+            SimulationOutput,
             f"{self.namespace}/save_model",
-            lambda req, res: self.decision_network.save_model(req, res, self.model_path),
+            self.save_model,
         )
         self.create_service(
             Trigger,
@@ -157,6 +158,32 @@ class RobotNode(Node):
 
         # ----- Initialization -----
         self.get_logger().info(f"Robot node '{self.namespace}' initialized")
+
+    def save_model(
+        self, req: SimulationOutput.Request, res: SimulationOutput.Response
+    ) -> SimulationOutput.Response:
+        try:
+            res: bool = self.decision_network.save_model(self.model_path)
+            self.decision_network.data_logger.export_to_csv(
+                f"export/{self.namespace}_training_{req.id}.csv"
+            )
+
+            if res:
+                res.success = True
+                res.message = f"Model saved to {self.model_path}"
+                self.get_logger().info(res.message)
+
+            else:
+                res.success = False
+                res.message = f"Failed to save model to {self.model_path}"
+                self.get_logger().error(res.message)
+
+        except Exception as e:
+            res.success = False
+            res.message = f"Error saving model: {e}"
+            self.get_logger().error(res.message)
+
+        return res
 
     def odom_callback(self, msg: Odometry):
         self.last_odom = msg

@@ -14,7 +14,6 @@ from ament_index_python.packages import get_package_share_directory
 import rclpy
 from rclpy.client import Client
 from rclpy.node import Node
-from std_srvs.srv import Trigger
 from rclpy import Future
 
 from robot_sim.generate_environment import EnvironmentGenerator
@@ -24,13 +23,13 @@ from sim_srvs.srv import SimulationOutput
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
-SIM_PERIOD: int = 600  # duration of each simulation run in seconds
+NUM_SIMULATIONS: int = 4
+SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 
 
 def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
-    sim_launch_file = "static_train_launch.py" if not random_env else "train_sim_launch.py"
+    sim_launch_file = "gibson_launch.py" if not random_env else "train_sim_launch.py"
 
     sim_launch_file_path = os.path.join(
         get_package_share_directory("robot_sim"), "launch", sim_launch_file

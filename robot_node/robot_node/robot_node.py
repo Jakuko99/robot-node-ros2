@@ -3,7 +3,7 @@ from std_srvs.srv import Trigger
 from rclpy.node import Node
 from rclpy.timer import Timer
 from rclpy.node import Node, Publisher, Subscription
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from geometry_msgs.msg import PoseStamped
 from rclpy.qos import (
     QoSProfile,
@@ -17,6 +17,7 @@ import torch
 import os
 
 from robot_node.decision_network import DecisionNetwork
+from robot_node.trajectory_recorder import TrajectoryRecorder
 from sim_srvs.srv import SimulationOutput
 
 
@@ -84,6 +85,7 @@ class RobotNode(Node):
             depth=1,
         )  # correct map QoS profile
         self.other_goals: dict[str, PoseStamped] = dict()  # track other robots' goals by namespace
+        self.trajectory_recorder: TrajectoryRecorder = TrajectoryRecorder()
 
         # ----- Optimization NN -----
         self.decision_network: DecisionNetwork = DecisionNetwork(
@@ -149,6 +151,13 @@ class RobotNode(Node):
             map_qos,
         )
 
+        self.plan_sub: Subscription[Path] = self.create_subscription(
+            Path,
+            f"{self.namespace}/plan",
+            self.trajectory_recorder.track_route,
+            10,
+        )
+
         self.goal_sub: list[Subscription[PoseStamped]] = list()
 
         # ----- Publishers -----
@@ -166,6 +175,10 @@ class RobotNode(Node):
             res: bool = self.decision_network.save_model(self.model_path)
             self.decision_network.data_logger.export_to_csv(
                 f"export/{self.namespace}_training_{req.id}.csv"
+            )
+            self.trajectory_recorder.export_trajectory(
+                f"export/{self.namespace}_trajectory_{req.id}.txt",
+                create_plot=True,
             )
 
             if res:

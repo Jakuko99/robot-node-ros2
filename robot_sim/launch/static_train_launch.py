@@ -72,11 +72,5 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(launch_dir, "nav_launch.py")),
             ),
-            Node(
-                package="robot_control",
-                executable="robot_control",
-                name="robot_control",
-                output="screen",
-            ),
         ]
     )

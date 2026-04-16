@@ -23,7 +23,7 @@ from sim_srvs.srv import SimulationOutput
 
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = False
-PLOT_RESULTS: bool = False
+PLOT_RESULTS: bool = True
 NUM_SIMULATIONS: int = 2
 SIM_PERIOD: int = 600  # duration of each simulation run in seconds
 # -------------------------
@@ -47,7 +47,7 @@ def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
     optimizer_launch_description: LaunchDescription = load_launch_description(optimizer_file_path)
 
     launch_serv.include_launch_description(launch_description)
-    # launch_serv.include_launch_description(optimizer_launch_description)
+    launch_serv.include_launch_description(optimizer_launch_description)
 
 
 async def run_sim(launch_serv: LaunchService):
@@ -116,7 +116,7 @@ if __name__ == "__main__":
                 target=lambda: sim_shutdown(
                     ls=launch_service,
                     node=node,
-                    clients=[cli3, cli4],
+                    clients=[cli1, cli2, cli3, cli4],
                     wait_period=SIM_PERIOD,
                     sim_nr=i + 1,
                 )

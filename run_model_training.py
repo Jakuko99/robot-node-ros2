@@ -23,7 +23,7 @@ from sim_srvs.srv import SimulationOutput
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = True
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 4
+NUM_SIMULATIONS: int = 2
 SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 

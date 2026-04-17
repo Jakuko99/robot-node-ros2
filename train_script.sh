@@ -5,7 +5,8 @@
 #SBATCH --tmp=10G
 
 export SIM_FOLDER="/tmp/$SLURM_JOB_ID"
-# export MODEL_PATH="$HOME/robotic_swarm/models"
+# export MODEL_PATH="$WRKDIR/robotic_swarm/models"
+export MESH_PATH="$WRKDIR/robotic_swarm/meshes"
 
 mkdir -p /tmp/$SLURM_JOB_ID
 module load apptainer/1.3.1-1

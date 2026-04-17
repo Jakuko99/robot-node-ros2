@@ -21,14 +21,22 @@ from robot_node.data_logger import DataLogger, Batch
 from sim_srvs.srv import SimulationOutput
 
 # ----- CONFIGURATION -----
-RANDOM_ENV: bool = False
+RANDOM_ENV: bool = True
 PLOT_RESULTS: bool = True
 NUM_SIMULATIONS: int = 4
 SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 
 
-def prepare_launch(launch_serv: LaunchService, random_env: bool = False):
+def prepare_launch(launch_serv: LaunchService, random_env: bool = False, sim_nr: int = 1):
+    if os.getenv("MESH_PATH") is None and random_env is False:
+        print(
+            "ERROR: MESH_PATH environment variable not set. Forcing random environment generation for all simulation runs."
+        )
+        global RANDOM_ENV
+        RANDOM_ENV = True
+        random_env = True
+
     sim_launch_file = "gibson_launch.py" if not random_env else "train_sim_launch.py"
 
     sim_launch_file_path = os.path.join(
@@ -96,7 +104,7 @@ if __name__ == "__main__":
     try:
         for i in range(NUM_SIMULATIONS):
             launch_service = LaunchService(noninteractive=True)
-            prepare_launch(launch_service, random_env=RANDOM_ENV)
+            prepare_launch(launch_service, random_env=RANDOM_ENV, sim_nr=i + 1)
 
             if RANDOM_ENV:  # generate new random environment for each simulation run
                 print(

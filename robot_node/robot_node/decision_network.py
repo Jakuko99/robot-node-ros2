@@ -14,11 +14,11 @@ from robot_node.data_logger import DataLogger
 
 
 EXPLOITATION_RATIO: float = 0.4  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.5
+LEARNING_RATE: float = 0.05
 REWARD_EPSILON: float = 1e-6
-GAMMA: float = 0.95
+GAMMA: float = 0.99
 ENTROPY_COEF: float = 0.05
-VALUE_COEF: float = 0.25
+VALUE_COEF: float = 0.3
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
 MIN_GOAL_DISTANCE_M: float = 2.0

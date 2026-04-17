@@ -85,7 +85,9 @@ class RobotNode(Node):
             depth=1,
         )  # correct map QoS profile
         self.other_goals: dict[str, PoseStamped] = dict()  # track other robots' goals by namespace
-        self.trajectory_recorder: TrajectoryRecorder = TrajectoryRecorder()
+        self.trajectory_recorder: TrajectoryRecorder = TrajectoryRecorder(
+            self.static_transform_x, self.static_transform_y
+        )
 
         # ----- Optimization NN -----
         self.decision_network: DecisionNetwork = DecisionNetwork(
@@ -169,34 +171,44 @@ class RobotNode(Node):
         self.get_logger().info(f"Robot node '{self.namespace}' initialized")
 
     def save_model(
-        self, req: SimulationOutput.Request, res: SimulationOutput.Response
+        self, request: SimulationOutput.Request, response: SimulationOutput.Response
     ) -> SimulationOutput.Response:
         try:
             res: bool = self.decision_network.save_model(self.model_path)
             self.decision_network.data_logger.export_to_csv(
-                f"export/{self.namespace}_training_{req.id}.csv"
+                f"export/{self.namespace}_training_{request.id}.csv"
             )
+
             self.trajectory_recorder.export_trajectory(
-                f"export/{self.namespace}_trajectory_{req.id}.txt",
+                f"export/{self.namespace}_trajectory_{request.id}.txt",
+                create_plot=False,
+            )
+            self.trajectory_recorder.export_odometry(
+                f"export/{self.namespace}_odometry_{request.id}.txt",
                 create_plot=True,
+            )
+            self.trajectory_recorder.create_map_overlay(
+                self.current_map,
+                f"export/{self.namespace}_map_overlay_{request.id}.png",
+                source="odometry",
             )
 
             if res:
-                res.success = True
-                res.message = f"Model saved to {self.model_path}"
-                self.get_logger().info(res.message)
+                response.success = True
+                response.message = f"Model saved to {self.model_path}"
+                self.get_logger().info(response.message)
 
             else:
-                res.success = False
-                res.message = f"Failed to save model to {self.model_path}"
-                self.get_logger().error(res.message)
+                response.success = False
+                response.message = f"Failed to save model to {self.model_path}"
+                self.get_logger().error(response.message)
 
         except Exception as e:
-            res.success = False
-            res.message = f"Error saving model: {e}"
-            self.get_logger().error(res.message)
+            response.success = False
+            response.message = f"Error saving model: {e}"
+            self.get_logger().error(response.message)
 
-        return res
+        return response
 
     def odom_callback(self, msg: Odometry):
         self.last_odom = msg
@@ -205,6 +217,7 @@ class RobotNode(Node):
         qz = msg.pose.pose.orientation.z
         qw = msg.pose.pose.orientation.w
         self.theta = 2.0 * math.atan2(qz, qw)
+        self.trajectory_recorder.store_odometry(msg, update_distance=0.25)
 
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg

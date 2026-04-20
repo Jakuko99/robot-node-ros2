@@ -24,7 +24,7 @@ from launch.actions import SetLaunchConfiguration
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
+NUM_SIMULATIONS: int = 4
 SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 

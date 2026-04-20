@@ -22,9 +22,9 @@ from sim_srvs.srv import SimulationOutput
 from launch.actions import SetLaunchConfiguration
 
 # ----- CONFIGURATION -----
-RANDOM_ENV: bool = True
+RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 4
+NUM_SIMULATIONS: int = 1
 SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 

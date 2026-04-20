@@ -131,10 +131,13 @@ class TrajectoryRecorder:
 
         plt.scatter(x_values, y_values)
         plt.scatter(odom_x_values, odom_y_values, c="red", marker="x")
+        plt.scatter(odom_x_values[0], odom_y_values[0], c="lime", marker="o", label="Start")
+        plt.scatter(odom_x_values[-1], odom_y_values[-1], c="purple", marker="o", label="End")
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
-        plt.legend(["Trajectory", "Odometry"])
+        plt.legend(["Trajectory", "Odometry", "Odometry start", "Odometry end"])
+        plt.tight_layout()
         plt.savefig(filename)
 
     def load_trajectory(self, filename: str):
@@ -186,6 +189,6 @@ class TrajectoryRecorder:
 
 if __name__ == "__main__":
     recorder = TrajectoryRecorder()
-    recorder.load_trajectory("export/kris_robot2_trajectory_2.txt")
-    recorder.load_odometry("export/kris_robot2_odometry_2.txt")
-    recorder.plot_trajectory("export/kris_robot2_trajectory_2_plot.png", include_odometry=True)
+    recorder.load_trajectory("export/kris_robot2_trajectory_1.txt")
+    recorder.load_odometry("export/kris_robot2_odometry_1.txt")
+    recorder.plot_movement("export/kris_robot2_trajectory_1_plot.png")

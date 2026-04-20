@@ -50,6 +50,7 @@ From: ubuntu:22.04
     git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git /src
 
 %runscript
+    export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:$SIM_FOLDER/src/robot_sim/gazebo
     mkdir -p $SIM_FOLDER/ros_ws/export && cd $SIM_FOLDER/ros_ws && cp -r /src .
     cd src && git pull
     cd .. && . /opt/ros/humble/setup.sh && colcon build --symlink-install
@@ -67,5 +68,5 @@ From: ubuntu:22.04
 
 %labels
     Author jakub.krsko@feit.uniza.sk
-    Version 1.4
+    Version 1.5
     Description ROS 2 environment for training swarm optimization models in simulation

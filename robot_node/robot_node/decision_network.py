@@ -57,20 +57,20 @@ class DecisionNetwork(nn.Module):
         # PPO actor-critic architecture with separate networks for policy and value estimation.
         self.critic = nn.Sequential(
             layer_init(nn.Linear(OBS_DIM, 64)),
-            nn.Tanh(),
+            nn.SiLU(),
             layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
+            nn.SiLU(),
             layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
+            nn.SiLU(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor = nn.Sequential(
             layer_init(nn.Linear(OBS_DIM, 64)),
-            nn.Tanh(),
+            nn.SiLU(),
             layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
+            nn.SiLU(),
             layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
+            nn.SiLU(),
             layer_init(nn.Linear(64, ACTION_COUNT), std=0.01),
         )
         self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)

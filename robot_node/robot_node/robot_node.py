@@ -16,6 +16,7 @@ import math
 import torch
 import os
 
+from robot_node.data_collector import DataCollector
 from robot_node.decision_network import DecisionNetwork
 from robot_node.trajectory_recorder import TrajectoryRecorder
 from sim_srvs.srv import SimulationOutput
@@ -38,6 +39,8 @@ class RobotNode(Node):
         self.declare_parameter("training_interval", 10.0)
         self.declare_parameter("model_path", "model.pt")
         self.declare_parameter("train_network", True)
+        self.declare_parameter("collect_offline_data", True)
+        self.declare_parameter("offline_dataset_name", "offline_dataset")
 
         self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.map_frame_id: str = (
@@ -67,6 +70,12 @@ class RobotNode(Node):
         )
         self.model_path: str = self.get_parameter("model_path").get_parameter_value().string_value
         self.train: bool = self.get_parameter("train_network").get_parameter_value().bool_value
+        self.collect_offline_data: bool = (
+            self.get_parameter("collect_offline_data").get_parameter_value().bool_value
+        )
+        self.offline_dataset_name: str = (
+            self.get_parameter("offline_dataset_name").get_parameter_value().string_value
+        )
 
         # ----- Variables -----
         self.last_odom: Odometry = None
@@ -88,6 +97,12 @@ class RobotNode(Node):
         self.trajectory_recorder: TrajectoryRecorder = TrajectoryRecorder(
             self.static_transform_x, self.static_transform_y
         )
+        self.data_collector: DataCollector = DataCollector(
+            robot_name=self.namespace,
+            output_dir="export",
+            dataset_name=self.offline_dataset_name,
+        )
+        self.data_collector.start_episode()
 
         # ----- Optimization NN -----
         self.decision_network: DecisionNetwork = DecisionNetwork(
@@ -197,6 +212,14 @@ class RobotNode(Node):
                 f"export/{self.namespace}_movement_{request.id}.png"
             )
 
+            if self.collect_offline_data:
+                dataset_path = self.data_collector.export_jsonl(
+                    f"export/{self.offline_dataset_name}_{self.namespace}_{request.id}.jsonl"
+                )
+                self.get_logger().info(
+                    f"Offline dataset exported to {dataset_path} ({len(self.data_collector.transitions)} transitions)"
+                )
+
             if res:
                 response.success = True
                 response.message = f"Model saved to {self.model_path}"
@@ -240,11 +263,13 @@ class RobotNode(Node):
                 self.last_odom,
                 threshold=self.goal_reach_threshold,
             ):
+                self._finalize_collected_transition(done=True, success=True, reason="goal_reached")
                 self.get_logger().info("Goal reached")
                 self.moving = False
                 return
 
             if time() - self.goal_publish_time > self.goal_timeout:
+                self._finalize_collected_transition(done=True, success=False, reason="timeout")
                 self.get_logger().warn("Goal timeout exceeded, canceling goal")
                 self.moving = False
             return
@@ -252,6 +277,7 @@ class RobotNode(Node):
         if not self.moving:
             new_goal: tuple[float, float] = self.decision_network.generate_goal()
             if new_goal and not self.goal_collision(new_goal):
+                self._begin_collected_transition(new_goal)
                 self.publish_goal(
                     new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
                 )
@@ -297,6 +323,57 @@ class RobotNode(Node):
         self.goal_pub.publish(goal_pose)
         self.goal_publish_time = time()
         self.moving = True
+
+    def _begin_collected_transition(self, goal: tuple[float, float]):
+        if not self.collect_offline_data:
+            return
+
+        if self.current_map is None or self.last_odom is None:
+            return
+
+        if self.data_collector.has_pending_transition:
+            self.get_logger().warn(
+                "Pending offline transition detected; finalizing as interrupted before recording new transition"
+            )
+            self._finalize_collected_transition(done=True, success=False, reason="interrupted")
+
+        self.data_collector.begin_transition(
+            current_map=self.current_map,
+            current_odom=self.last_odom,
+            action=self.decision_network.pending_action,
+            goal=goal,
+            metadata={
+                "moving": self.moving,
+                "goal_timeout": self.goal_timeout,
+                "other_goal_count": len(self.other_goals),
+            },
+        )
+
+    def _finalize_collected_transition(self, done: bool, success: bool, reason: str):
+        if not self.collect_offline_data or not self.data_collector.has_pending_transition:
+            return
+
+        if self.current_map is None or self.last_odom is None:
+            return
+
+        local_map = self.decision_network.get_local_patch(self.current_map, self.last_odom)
+        reward = self.decision_network.feedback_layer.calculate_reward(
+            self.current_map,
+            self.last_odom,
+            local_map,
+        )
+
+        self.data_collector.finalize_transition(
+            next_map=self.current_map,
+            next_odom=self.last_odom,
+            reward=reward,
+            done=done,
+            success=success,
+            metadata={
+                "reason": reason,
+                "moving": self.moving,
+            },
+        )
 
     def other_goal_callback(self, msg: PoseStamped, namespace: str):
         self.other_goals[namespace] = msg

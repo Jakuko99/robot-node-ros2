@@ -19,16 +19,21 @@ from rclpy import Future
 from robot_sim.generate_environment import EnvironmentGenerator
 from robot_node.data_logger import DataLogger, Batch
 from sim_srvs.srv import SimulationOutput
+from launch.actions import SetLaunchConfiguration
 
 # ----- CONFIGURATION -----
-RANDOM_ENV: bool = True
+RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
+NUM_SIMULATIONS: int = 4
 SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 
 
-def prepare_launch(launch_serv: LaunchService, random_env: bool = False, sim_nr: int = 1):
+def prepare_launch(
+    launch_serv: LaunchService,
+    random_env: bool = False,
+    sdf_file: str = "gibson.sdf",
+):
     if os.getenv("MESH_PATH") is None and random_env is False:
         print(
             "ERROR: MESH_PATH environment variable not set. Forcing random environment generation for all simulation runs."
@@ -51,6 +56,12 @@ def prepare_launch(launch_serv: LaunchService, random_env: bool = False, sim_nr:
         sys.exit(1)
 
     launch_description: LaunchDescription = load_launch_description(sim_launch_file_path)
+    if not random_env:
+        launch_description.entities.insert(
+            0,
+            SetLaunchConfiguration("sdf_file", sdf_file),
+        )
+
     optimizer_launch_description: LaunchDescription = load_launch_description(optimizer_file_path)
 
     launch_serv.include_launch_description(launch_description)
@@ -101,10 +112,21 @@ if __name__ == "__main__":
     cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
     cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup export
 
+    gibson_files: list[str] = [
+        "gibson.sdf",
+        "gibson_shelbyville.sdf",
+        "gibson_uvalda.sdf",
+        "gibson_marstons.sdf",
+    ]
+
     try:
         for i in range(NUM_SIMULATIONS):
             launch_service = LaunchService(noninteractive=True)
-            prepare_launch(launch_service, random_env=RANDOM_ENV, sim_nr=i + 1)
+            prepare_launch(
+                launch_service,
+                random_env=RANDOM_ENV,
+                sdf_file=gibson_files[i % len(gibson_files)],
+            )
 
             if RANDOM_ENV:  # generate new random environment for each simulation run
                 print(

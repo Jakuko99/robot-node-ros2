@@ -24,7 +24,7 @@ from launch.actions import SetLaunchConfiguration
 # ----- CONFIGURATION -----
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 4
+NUM_SIMULATIONS: int = 2
 SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 
@@ -83,8 +83,16 @@ def sim_shutdown(
     sleep(wait_period)
     if save_model:
         for client in clients:
+            retry_count: int = 0
             while not client.wait_for_service(timeout_sec=1.0):
                 print(f"Waiting for service {client.srv_name} to become available...")
+                retry_count += 1
+
+                if retry_count >= 10:
+                    print(
+                        f"Service {client.srv_name} did not become available after 10 attempts. Skipping."
+                    )
+                    break
 
             try:
                 req: SimulationOutput.Request = SimulationOutput.Request(id=sim_nr)

@@ -185,12 +185,16 @@ class RobotNode(Node):
             )
             self.trajectory_recorder.export_odometry(
                 f"export/{self.namespace}_odometry_{request.id}.txt",
-                create_plot=True,
+                create_plot=False,
             )
             self.trajectory_recorder.create_map_overlay(
                 self.current_map,
                 f"export/{self.namespace}_map_overlay_{request.id}.png",
                 source="odometry",
+                include_goals=True,
+            )
+            self.trajectory_recorder.plot_movement(
+                f"export/{self.namespace}_movement_{request.id}.png"
             )
 
             if res:
@@ -217,7 +221,7 @@ class RobotNode(Node):
         qz = msg.pose.pose.orientation.z
         qw = msg.pose.pose.orientation.w
         self.theta = 2.0 * math.atan2(qz, qw)
-        self.trajectory_recorder.store_odometry(msg, update_distance=0.25)
+        self.trajectory_recorder.store_odometry(msg, update_distance=0.2)
 
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg

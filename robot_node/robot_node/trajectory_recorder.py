@@ -114,3 +114,78 @@ class TrajectoryRecorder:
                     map_image[map_height - 1 - map_y, map_x] = [255, 0, 255]
 
         cv2.imwrite(filename, map_image)
+
+    def plot_movement(self, filename: str):
+        x_values: list[float] = []
+        y_values: list[float] = []
+        for path in self.trajectory:
+            for pose in path.poses:
+                x_values.append(pose.pose.position.x)
+                y_values.append(pose.pose.position.y)
+
+        odom_x_values: list[float] = []
+        odom_y_values: list[float] = []
+        for odom in self.odometry_history:
+            odom_x_values.append(odom.pose.pose.position.x)
+            odom_y_values.append(odom.pose.pose.position.y)
+
+        plt.scatter(x_values, y_values)
+        plt.scatter(odom_x_values, odom_y_values, c="red", marker="x")
+        plt.xlabel("X Position")
+        plt.ylabel("Y Position")
+        plt.title("Robot Trajectory")
+        plt.legend(["Trajectory", "Odometry"])
+        plt.savefig(filename)
+
+    def load_trajectory(self, filename: str):
+        self.trajectory.clear()
+        with open(filename, "r") as f:
+            path = Path()
+            for line in f:
+                x_str, y_str = line.strip().split(",")
+                pose = PoseStamped()
+                pose.pose.position.x = float(x_str)
+                pose.pose.position.y = float(y_str)
+                path.poses.append(pose)
+            self.trajectory.append(path)
+
+    def load_odometry(self, filename: str):
+        self.odometry_history.clear()
+        with open(filename, "r") as f:
+            for line in f:
+                x_str, y_str = line.strip().split(",")
+                odom = Odometry()
+                odom.pose.pose.position.x = float(x_str)
+                odom.pose.pose.position.y = float(y_str)
+                self.odometry_history.append(odom)
+
+    def plot_trajectory(self, filename: str, include_odometry: bool = False):
+        x_values: list[float] = []
+        y_values: list[float] = []
+        for path in self.trajectory:
+            for pose in path.poses:
+                x_values.append(pose.pose.position.x)
+                y_values.append(pose.pose.position.y)
+
+        if include_odometry:
+            odom_x_values: list[float] = []
+            odom_y_values: list[float] = []
+            for odom in self.odometry_history:
+                odom_x_values.append(odom.pose.pose.position.x)
+                odom_y_values.append(odom.pose.pose.position.y)
+
+        plt.scatter(x_values, y_values)
+        if include_odometry:
+            plt.scatter(odom_x_values, odom_y_values, c="red", marker="x")
+        plt.xlabel("X Position")
+        plt.ylabel("Y Position")
+        plt.title("Robot Trajectory")
+        plt.legend(["Trajectory", "Odometry"] if include_odometry else ["Trajectory"])
+        plt.savefig(filename)
+
+
+if __name__ == "__main__":
+    recorder = TrajectoryRecorder()
+    recorder.load_trajectory("export/kris_robot2_trajectory_2.txt")
+    recorder.load_odometry("export/kris_robot2_odometry_2.txt")
+    recorder.plot_trajectory("export/kris_robot2_trajectory_2_plot.png", include_odometry=True)

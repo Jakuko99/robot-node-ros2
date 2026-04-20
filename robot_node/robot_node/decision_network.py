@@ -438,9 +438,12 @@ class DecisionNetwork(nn.Module):
             local_map.info.height = patch_size * 2 + 1
             local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
-            center_index = DecisionNetwork.pos_to_map_index(
-                map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
-            )
+            try:
+                center_index = DecisionNetwork.pos_to_map_index(
+                    map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
+                )
+            except ValueError:
+                return local_map
 
             for i in range(-patch_size, patch_size + 1):
                 for j in range(-patch_size, patch_size + 1):
@@ -454,10 +457,11 @@ class DecisionNetwork(nn.Module):
 
         return local_map
 
-    def save_model(self, path: str):
+    def save_model(self, path: str) -> bool:
         state_to_save, save_label = self._select_state_to_save()
         torch.save(state_to_save, path)
         self.logger.info(f"Model saved to {path} from {save_label}")
+        return True
 
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
         try:

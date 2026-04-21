@@ -13,8 +13,8 @@ import copy
 from robot_node.data_logger import DataLogger
 
 
-EXPLOITATION_RATIO: float = 0.4  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.05
+EXPLOITATION_RATIO: float = 0.5  # Probability of choosing the best action vs exploring
+LEARNING_RATE: float = 0.005
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
 ENTROPY_COEF: float = 0.05
@@ -28,7 +28,7 @@ REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
-MIN_TRAINING_BATCH_SIZE: int = 4
+MIN_TRAINING_BATCH_SIZE: int = 8
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):

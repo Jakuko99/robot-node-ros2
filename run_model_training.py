@@ -23,6 +23,7 @@ from sim_srvs.srv import SimulationOutput
 from launch.actions import SetLaunchConfiguration
 
 # ----- CONFIGURATION -----
+ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
 NUM_SIMULATIONS: int = 2
@@ -114,88 +115,109 @@ def sim_shutdown(
 
 
 if __name__ == "__main__":
-    # ROS 2 environment setup
-    rclpy.init()
-    node: Node = rclpy.create_node("training_launcher")
-    cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
-    cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
-    cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
-    cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup export
+    if ONLINE_TRAINING:
+        # ROS 2 environment setup
+        rclpy.init()
+        node: Node = rclpy.create_node("training_launcher")
+        cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
+        cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
+        cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
+        cli4: Client = node.create_client(
+            SimulationOutput, "/kris_robot2/export_map"
+        )  # backup export
 
-    gibson_files: list[str] = [
-        "gibson.sdf",
-        "gibson_shelbyville.sdf",
-        "gibson_uvalda.sdf",
-        "gibson_marstons.sdf",
-        "gibson_corozal.sdf",
-        "gibson_ihlen.sdf",
-        "gibson_wiconisco.sdf",
-        "gibson_woodbine.sdf",
-    ]
+        gibson_files: list[str] = [
+            "gibson.sdf",
+            "gibson_shelbyville.sdf",
+            "gibson_uvalda.sdf",
+            "gibson_marstons.sdf",
+            "gibson_corozal.sdf",
+            "gibson_ihlen.sdf",
+            "gibson_wiconisco.sdf",
+            "gibson_woodbine.sdf",
+        ]
 
-    try:
-        for i in range(NUM_SIMULATIONS):
-            launch_service = LaunchService(noninteractive=True)
-            prepare_launch(
-                launch_service,
-                random_env=RANDOM_ENV,
-                sdf_file=choice(gibson_files),
-            )
-
-            if RANDOM_ENV:  # generate new random environment for each simulation run
-                print(
-                    f"Generating random environment for simulation run {i + 1}/{NUM_SIMULATIONS} ..."
-                )
-                generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
-                generator.generate()
-                generator.export_to_world(
-                    f"{os.path.dirname(__file__)}/robot_sim/gazebo/random_environment.sdf",
-                    include_robots=True,
-                )
-                generator.export_ground_truth(f"export/ground_truth-{i + 1}.png")
-                print("Done generating environment.")
-
-            sim_thread = threading.Thread(
-                target=lambda: sim_shutdown(
-                    ls=launch_service,
-                    node=node,
-                    clients=[cli1, cli2, cli3, cli4],
-                    wait_period=SIM_PERIOD,
-                    sim_nr=i + 1,
-                )
-            )
-            print(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")
-            sim_thread.start()  # start shutdown thread
-            asyncio.run(run_sim(launch_service))  # run simulation
-
-            # Clean up and prepare for next run
-            sim_thread.join()
-            del launch_service
-            del sim_thread
-
-            if i < NUM_SIMULATIONS - 1:
-                print(
-                    f"Simulation run {i + 1}/{NUM_SIMULATIONS} completed. Restarting in 5 seconds..."
-                )
-                sleep(5)
-
-    except Exception as e:
-        print(f"\nAn error occurred: {e}")
-
-    print("\nAll simulation runs completed. Shutting down ROS 2 environment.")
-    rclpy.shutdown()
-
-    if PLOT_RESULTS:
         try:
-            for file in glob.glob("export/kris_robot*_training_*.csv"):
-                data: dict[int, Batch] = DataLogger.load_from_csv(file)
-                DataLogger.subplot_data(
-                    data,
-                    ["loss", "policy_loss", "avg_reward", "entropy"],
-                    f"{os.path.splitext(file)[0]}.png",
+            for i in range(NUM_SIMULATIONS):
+                launch_service = LaunchService(noninteractive=True)
+                prepare_launch(
+                    launch_service,
+                    random_env=RANDOM_ENV,
+                    sdf_file=choice(gibson_files),
                 )
 
-            print("Plots generated and saved in export directory.")
+                if RANDOM_ENV:  # generate new random environment for each simulation run
+                    print(
+                        f"Generating random environment for simulation run {i + 1}/{NUM_SIMULATIONS} ..."
+                    )
+                    generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
+                    generator.generate()
+                    generator.export_to_world(
+                        f"{os.path.dirname(__file__)}/robot_sim/gazebo/random_environment.sdf",
+                        include_robots=True,
+                    )
+                    generator.export_ground_truth(f"export/ground_truth-{i + 1}.png")
+                    print("Done generating environment.")
+
+                sim_thread = threading.Thread(
+                    target=lambda: sim_shutdown(
+                        ls=launch_service,
+                        node=node,
+                        clients=[cli1, cli2, cli3, cli4],
+                        wait_period=SIM_PERIOD,
+                        sim_nr=i + 1,
+                    )
+                )
+                print(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")
+                sim_thread.start()  # start shutdown thread
+                asyncio.run(run_sim(launch_service))  # run simulation
+
+                # Clean up and prepare for next run
+                sim_thread.join()
+                del launch_service
+                del sim_thread
+
+                if i < NUM_SIMULATIONS - 1:
+                    print(
+                        f"Simulation run {i + 1}/{NUM_SIMULATIONS} completed. Restarting in 5 seconds..."
+                    )
+                    sleep(5)
 
         except Exception as e:
-            print(f"Error generating plots: {e}")
+            print(f"\nAn error occurred: {e}")
+
+        print("\nAll simulation runs completed. Shutting down ROS 2 environment.")
+        rclpy.shutdown()
+
+        if PLOT_RESULTS:
+            try:
+                for file in glob.glob("export/kris_robot*_training_*.csv"):
+                    data: dict[int, Batch] = DataLogger.load_from_csv(file)
+                    DataLogger.subplot_data(
+                        data,
+                        ["loss", "policy_loss", "avg_reward", "entropy"],
+                        f"{os.path.splitext(file)[0]}.png",
+                    )
+
+                print("Plots generated and saved in export directory.")
+
+            except Exception as e:
+                print(f"Error generating plots: {e}")
+
+    else:
+        from robot_node.offline_trainer import train_model
+
+        train_model(
+            dataset_dir="export/datasets",
+            output_model="export/trained_model.pt",
+            epochs=100,
+            batch_size=64,
+            gamma=0.99,
+            learning_rate=1e-3,
+            value_coef=0.5,
+            entropy_coef=0.01,
+            checkpoint_dir="export/checkpoints",
+            checkpoint_every=10,
+        )
+
+        print("Model training completed.")

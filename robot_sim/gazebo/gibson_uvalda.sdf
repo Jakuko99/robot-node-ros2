@@ -119,7 +119,7 @@
     <model name="allensville">
       <static>true</static>
       <link name="link">
-        <pose>-0 0 -0.5 1.57 0 0</pose>
+        <pose>-0 0 -0.75 1.57 0 0</pose>
         <visual name="visual">
           <geometry>
             <mesh>
@@ -223,12 +223,12 @@
     <include>
       <uri>file://src/robot_sim/gazebo/kris_robot</uri>
       <name>kris_robot</name>
-      <pose>-1.0 0 0.75 0 -0 3.14</pose>
+      <pose>-1.0 -0.25 0.75 0 -0 3.14</pose>
     </include>
     <include>
       <uri>file://src/robot_sim/gazebo/kris_robot1</uri>
       <name>kris_robot1</name>
-      <pose>-2.0 0 0.75 0 -0 3.14</pose>
+      <pose>-2.0 -0.25 0.75 0 -0 3.14</pose>
     </include>
     <light name='sun' type='directional'>
       <pose>0 0 10 0 -0 0</pose>

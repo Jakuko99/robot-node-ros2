@@ -405,7 +405,7 @@ def train_model(
     checkpoint_dir: str,
     checkpoint_every: int,
 ):
-    dataset_paths = expand_dataset_paths(dataset_dir)
+    dataset_paths = expand_dataset_paths([dataset_dir])
     transitions = read_transitions(dataset_paths)
     if not transitions:
         raise ValueError("No valid transitions found in supplied datasets")

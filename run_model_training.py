@@ -213,9 +213,9 @@ if __name__ == "__main__":
             epochs=100,
             batch_size=64,
             gamma=0.99,
-            learning_rate=1e-3,
+            learning_rate=1e-2,
             value_coef=0.5,
-            entropy_coef=0.01,
+            entropy_coef=0.05,
             checkpoint_dir="export/checkpoints",
             checkpoint_every=10,
         )

@@ -5,6 +5,7 @@ import glob
 import asyncio
 import threading
 from time import sleep
+from random import choice
 
 from launch import LaunchService, LaunchDescription
 from launch.launch_description_sources import (
@@ -133,7 +134,7 @@ if __name__ == "__main__":
             prepare_launch(
                 launch_service,
                 random_env=RANDOM_ENV,
-                sdf_file=gibson_files[i % len(gibson_files)],
+                sdf_file=choice(gibson_files),
             )
 
             if RANDOM_ENV:  # generate new random environment for each simulation run

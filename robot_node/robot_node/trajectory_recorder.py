@@ -3,6 +3,7 @@ from geometry_msgs.msg import PoseStamped
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+import json
 import cv2
 
 
@@ -52,10 +53,29 @@ class TrajectoryRecorder:
             plt.savefig(filename.replace(".txt", ".png"))
 
     def export_trajectory(self, filename: str, create_plot: bool = False):
+        trajectory_dict: dict[str, list] = {"paths": []}
+        for path in self.trajectory:
+            path_dict: dict[str, list] = {"points": []}
+            for pose in path.poses:
+                pose_dict: dict[str, float] = {
+                    "x": pose.pose.position.x,
+                    "y": pose.pose.position.y,
+                }
+                path_dict["points"].append(pose_dict)
+
+            path_dict["start_point"] = {
+                "x": path.poses[0].pose.position.x,
+                "y": path.poses[0].pose.position.y,
+            }
+            path_dict["end_point"] = {
+                "x": path.poses[-1].pose.position.x,
+                "y": path.poses[-1].pose.position.y,
+            }
+
+            trajectory_dict["paths"].append(path_dict)
+
         with open(filename, "w") as f:
-            for path in self.trajectory:
-                for pose in path.poses:
-                    f.write(f"{pose.pose.position.x},{pose.pose.position.y}\n")
+            json.dump(trajectory_dict, f, indent=2)
 
         if create_plot:
             x_values: list[float] = []
@@ -123,34 +143,50 @@ class TrajectoryRecorder:
                 x_values.append(pose.pose.position.x)
                 y_values.append(pose.pose.position.y)
 
+        start_points_x: list[float] = []
+        start_points_y: list[float] = []
+        end_points_x: list[float] = []
+        end_points_y: list[float] = []
+        for path in self.trajectory:
+            start_points_x.append(path.poses[0].pose.position.x)
+            start_points_y.append(path.poses[0].pose.position.y)
+            end_points_x.append(path.poses[-1].pose.position.x)
+            end_points_y.append(path.poses[-1].pose.position.y)
+
         odom_x_values: list[float] = []
         odom_y_values: list[float] = []
         for odom in self.odometry_history:
             odom_x_values.append(odom.pose.pose.position.x)
             odom_y_values.append(odom.pose.pose.position.y)
 
-        plt.scatter(x_values, y_values)
-        plt.scatter(odom_x_values, odom_y_values, c="red", marker="x")
+        plt.scatter(x_values, y_values, marker=".", label="Trajectory")
+        plt.scatter(odom_x_values, odom_y_values, c="red", marker="x", label="Odometry")
         plt.scatter(odom_x_values[0], odom_y_values[0], c="lime", marker="o", label="Start")
         plt.scatter(odom_x_values[-1], odom_y_values[-1], c="purple", marker="o", label="End")
+        plt.scatter(start_points_x, start_points_y, c="cyan", marker="o", label="Path Start")
+        plt.scatter(end_points_x, end_points_y, c="orange", marker="o", label="Path End")
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
-        plt.legend(["Trajectory", "Odometry", "Odometry start", "Odometry end"])
+        plt.legend(
+            ["Trajectory", "Odometry", "Odometry start", "Odometry end", "Path start", "Path end"]
+        )
         plt.tight_layout()
         plt.savefig(filename)
 
     def load_trajectory(self, filename: str):
         self.trajectory.clear()
         with open(filename, "r") as f:
-            path = Path()
-            for line in f:
-                x_str, y_str = line.strip().split(",")
-                pose = PoseStamped()
-                pose.pose.position.x = float(x_str)
-                pose.pose.position.y = float(y_str)
-                path.poses.append(pose)
-            self.trajectory.append(path)
+            data = json.load(f)
+            for path_dict in data["paths"]:
+                path = Path()
+                for pose_dict in path_dict["points"]:
+                    pose = PoseStamped()
+                    pose.pose.position.x = pose_dict["x"]
+                    pose.pose.position.y = pose_dict["y"]
+                    path.poses.append(pose)
+
+                self.trajectory.append(path)
 
     def load_odometry(self, filename: str):
         self.odometry_history.clear()
@@ -162,33 +198,9 @@ class TrajectoryRecorder:
                 odom.pose.pose.position.y = float(y_str)
                 self.odometry_history.append(odom)
 
-    def plot_trajectory(self, filename: str, include_odometry: bool = False):
-        x_values: list[float] = []
-        y_values: list[float] = []
-        for path in self.trajectory:
-            for pose in path.poses:
-                x_values.append(pose.pose.position.x)
-                y_values.append(pose.pose.position.y)
-
-        if include_odometry:
-            odom_x_values: list[float] = []
-            odom_y_values: list[float] = []
-            for odom in self.odometry_history:
-                odom_x_values.append(odom.pose.pose.position.x)
-                odom_y_values.append(odom.pose.pose.position.y)
-
-        plt.scatter(x_values, y_values)
-        if include_odometry:
-            plt.scatter(odom_x_values, odom_y_values, c="red", marker="x")
-        plt.xlabel("X Position")
-        plt.ylabel("Y Position")
-        plt.title("Robot Trajectory")
-        plt.legend(["Trajectory", "Odometry"] if include_odometry else ["Trajectory"])
-        plt.savefig(filename)
-
 
 if __name__ == "__main__":
     recorder = TrajectoryRecorder()
-    recorder.load_trajectory("export/kris_robot2_trajectory_1.txt")
+    recorder.load_trajectory("export/kris_robot2_trajectory_1.json")
     recorder.load_odometry("export/kris_robot2_odometry_1.txt")
     recorder.plot_movement("export/kris_robot2_trajectory_1_plot.png")

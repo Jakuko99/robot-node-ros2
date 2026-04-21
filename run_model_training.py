@@ -58,6 +58,7 @@ def prepare_launch(
 
     launch_description: LaunchDescription = load_launch_description(sim_launch_file_path)
     if not random_env:
+        print(f"Using SDF file for simulation: {sdf_file}")
         launch_description.entities.insert(
             0,
             SetLaunchConfiguration("sdf_file", sdf_file),
@@ -126,6 +127,10 @@ if __name__ == "__main__":
         "gibson_shelbyville.sdf",
         "gibson_uvalda.sdf",
         "gibson_marstons.sdf",
+        "gibson_corozal.sdf",
+        "gibson_ihlen.sdf",
+        "gibson_wiconisco.sdf",
+        "gibson_woodbine.sdf",
     ]
 
     try:

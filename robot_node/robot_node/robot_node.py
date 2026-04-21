@@ -195,7 +195,7 @@ class RobotNode(Node):
             )
 
             self.trajectory_recorder.export_trajectory(
-                f"export/{self.namespace}_trajectory_{request.id}.txt",
+                f"export/{self.namespace}_trajectory_{request.id}.json",
                 create_plot=False,
             )
             self.trajectory_recorder.export_odometry(

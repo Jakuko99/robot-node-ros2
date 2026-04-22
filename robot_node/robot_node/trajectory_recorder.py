@@ -113,23 +113,41 @@ class TrajectoryRecorder:
 
         if source == "odometry":
             for odom in self.odometry_history:
-                map_x = int((odom.pose.pose.position.x - map_origin_x) / map_resolution)
-                map_y = int((odom.pose.pose.position.y - map_origin_y) / map_resolution)
+                map_x = int((odom.pose.pose.position.x - map_origin_x) / map_resolution) + int(
+                    self.static_transform_x
+                )
+                map_y = (
+                    map_height
+                    - int((odom.pose.pose.position.y - map_origin_y) / map_resolution)
+                    + int(self.static_transform_y)
+                )  # INFO: flip y-axis and apply static transform
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
                     map_image[map_height - 1 - map_y, map_x] = [255, 255, 0]
 
         elif source == "trajectory":
             for path in self.trajectory:
                 for pose in path.poses:
-                    map_x = int((pose.pose.position.x - map_origin_x) / map_resolution)
-                    map_y = int((pose.pose.position.y - map_origin_y) / map_resolution)
+                    map_x = int((pose.pose.position.x - map_origin_x) / map_resolution) + int(
+                        self.static_transform_x
+                    )
+                    map_y = (
+                        map_height
+                        - int((pose.pose.position.y - map_origin_y) / map_resolution)
+                        + int(self.static_transform_y)
+                    )
                     if 0 <= map_x < map_width and 0 <= map_y < map_height:
                         map_image[map_height - 1 - map_y, map_x] = [255, 255, 0]
 
         if include_goals:
             for goal in self.nav_goals:
-                map_x = int((goal.pose.position.x - map_origin_x) / map_resolution)
-                map_y = int((goal.pose.position.y - map_origin_y) / map_resolution)
+                map_x = int((goal.pose.position.x - map_origin_x) / map_resolution) + int(
+                    self.static_transform_x
+                )
+                map_y = (
+                    map_height
+                    - int((goal.pose.position.y - map_origin_y) / map_resolution)
+                    + int(self.static_transform_y)
+                )
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
                     map_image[map_height - 1 - map_y, map_x] = [255, 0, 255]
 
@@ -156,8 +174,8 @@ class TrajectoryRecorder:
         odom_x_values: list[float] = []
         odom_y_values: list[float] = []
         for odom in self.odometry_history:
-            odom_x_values.append(odom.pose.pose.position.x)
-            odom_y_values.append(odom.pose.pose.position.y)
+            odom_x_values.append(odom.pose.pose.position.x + self.static_transform_x)
+            odom_y_values.append(odom.pose.pose.position.y + self.static_transform_y)
 
         plt.scatter(x_values, y_values, marker=".", label="Trajectory")
         plt.scatter(odom_x_values, odom_y_values, c="red", marker="x", label="Odometry")

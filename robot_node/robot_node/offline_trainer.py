@@ -16,6 +16,8 @@ from robot_node.decision_network import (
     ACTION_COUNT,
     ENTROPY_COEF,
     OBS_DIM,
+    REWARD_NORMALIZATION_CLIP,
+    REWARD_NORMALIZATION_EPS,
     VALUE_COEF,
     DecisionNetwork,
 )
@@ -36,6 +38,7 @@ class OfflineDataset:
     observations: torch.Tensor
     actions: torch.Tensor
     returns: torch.Tensor
+    normalized_rewards: torch.Tensor
     rewards: torch.Tensor
 
 
@@ -46,6 +49,7 @@ class EpochMetrics:
     policy_loss: float
     value_loss: float
     entropy: float
+    avg_reward: float
 
 
 def parse_args() -> argparse.Namespace:
@@ -215,6 +219,7 @@ def read_transitions(dataset_paths: list[Path]) -> list[OfflineTransition]:
             reward = float(reward_raw) if reward_raw is not None else 0.0
             if not math.isfinite(reward):
                 reward = 0.0
+            reward = float(np.clip(reward, -REWARD_NORMALIZATION_CLIP, REWARD_NORMALIZATION_CLIP))
 
             done = bool(record.get("done", False))
             episode_id = int(record.get("episode_id", path_index))
@@ -257,12 +262,34 @@ def build_dataset(transitions: list[OfflineTransition], gamma: float) -> Offline
     observations = np.stack([t.observation for t in transitions], axis=0)
     actions = np.asarray([t.action for t in transitions], dtype=np.int64)
     rewards = np.asarray([t.reward for t in transitions], dtype=np.float32)
-    returns = compute_discounted_returns(transitions, gamma=gamma)
+
+    reward_mean = float(rewards.mean())
+    reward_std = float(rewards.std())
+    normalized_rewards = (rewards - reward_mean) / max(reward_std, REWARD_NORMALIZATION_EPS)
+    normalized_rewards = np.clip(
+        normalized_rewards,
+        -REWARD_NORMALIZATION_CLIP,
+        REWARD_NORMALIZATION_CLIP,
+    ).astype(np.float32)
+
+    train_transitions = [
+        OfflineTransition(
+            observation=transition.observation,
+            action=transition.action,
+            reward=float(normalized_rewards[index]),
+            done=transition.done,
+            episode_id=transition.episode_id,
+            step_id=transition.step_id,
+        )
+        for index, transition in enumerate(transitions)
+    ]
+    returns = compute_discounted_returns(train_transitions, gamma=gamma)
 
     return OfflineDataset(
         observations=torch.as_tensor(observations, dtype=torch.float32),
         actions=torch.as_tensor(actions, dtype=torch.int64),
         returns=torch.as_tensor(returns, dtype=torch.float32),
+        normalized_rewards=torch.as_tensor(normalized_rewards, dtype=torch.float32),
         rewards=torch.as_tensor(rewards, dtype=torch.float32),
     )
 
@@ -291,6 +318,8 @@ def train_offline(
         epoch_policy_loss = 0.0
         epoch_value_loss = 0.0
         epoch_entropy = 0.0
+        epoch_reward = 0.0
+        sample_counter = 0
         batch_counter = 0
 
         for start in range(0, sample_count, batch_size):
@@ -300,6 +329,7 @@ def train_offline(
             obs = dataset.observations[indices].to(network.device)
             actions = dataset.actions[indices].to(network.device)
             returns = dataset.returns[indices].to(network.device)
+            raw_rewards = dataset.rewards[indices].to(network.device)
 
             logits = network.actor(obs)
             dist = Categorical(logits=logits)
@@ -326,18 +356,22 @@ def train_offline(
             epoch_policy_loss += float(policy_loss.item())
             epoch_value_loss += float(value_loss.item())
             epoch_entropy += float(entropy.item())
+            epoch_reward += float(raw_rewards.sum().item())
+            sample_counter += int(raw_rewards.numel())
             batch_counter += 1
 
         avg_loss = epoch_loss / max(batch_counter, 1)
         avg_policy = epoch_policy_loss / max(batch_counter, 1)
         avg_value = epoch_value_loss / max(batch_counter, 1)
         avg_entropy = epoch_entropy / max(batch_counter, 1)
+        avg_reward = epoch_reward / max(sample_counter, 1)
         metrics = EpochMetrics(
             epoch=epoch,
             loss=avg_loss,
             policy_loss=avg_policy,
             value_loss=avg_value,
             entropy=avg_entropy,
+            avg_reward=avg_reward,
         )
 
         if best_metrics is None or metrics.loss < best_metrics.loss:
@@ -363,7 +397,8 @@ def train_offline(
             f"loss={avg_loss:.5f} "
             f"policy={avg_policy:.5f} "
             f"value={avg_value:.5f} "
-            f"entropy={avg_entropy:.5f}"
+            f"entropy={avg_entropy:.5f} "
+            f"avg_reward={avg_reward:.5f}"
         )
 
     if best_metrics is None:
@@ -387,6 +422,7 @@ def _save_checkpoint(
             "policy_loss": float(metrics.policy_loss),
             "value_loss": float(metrics.value_loss),
             "entropy": float(metrics.entropy),
+            "avg_reward": float(metrics.avg_reward),
         },
         "checkpoint_kind": kind,
     }

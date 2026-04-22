@@ -24,7 +24,7 @@ def generate_launch_description():
                         "static_transform_x": 0.0,
                         "static_transform_y": 0.0,
                         "model_path": os.path.join(resource_dir, "kris_robot1_model.pt"),
-                        "training_interval": 5.0,
+                        "training_interval": 10.0,
                         "train_network": True,
                     }
                 ],
@@ -46,7 +46,7 @@ def generate_launch_description():
                         "static_transform_x": 1.0,
                         "static_transform_y": 0.0,
                         "model_path": os.path.join(resource_dir, "kris_robot2_model.pt"),
-                        "training_interval": 5.0,
+                        "training_interval": 10.0,
                         "train_network": True,
                     }
                 ],

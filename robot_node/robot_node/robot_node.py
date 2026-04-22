@@ -36,7 +36,7 @@ class RobotNode(Node):
         self.declare_parameter("static_transform_x", 0.0)
         self.declare_parameter("static_transform_y", 0.0)
         self.declare_parameter("goal_timeout", 30.0)
-        self.declare_parameter("training_interval", 10.0)
+        self.declare_parameter("training_interval", 20.0)
         self.declare_parameter("model_path", "model.pt")
         self.declare_parameter("train_network", True)
         self.declare_parameter("collect_offline_data", True)
@@ -189,10 +189,13 @@ class RobotNode(Node):
         self, request: SimulationOutput.Request, response: SimulationOutput.Response
     ) -> SimulationOutput.Response:
         try:
-            res: bool = self.decision_network.save_model(self.model_path)
-            self.decision_network.data_logger.export_to_csv(
-                f"export/{self.namespace}_training_{request.id}.csv"
-            )
+            if self.train:
+                res: bool = self.decision_network.save_model(self.model_path)
+                self.decision_network.data_logger.export_to_csv(
+                    f"export/{self.namespace}_training_{request.id}.csv"
+                )
+            else:
+                res = True  # if not training, just export data without saving model
 
             self.trajectory_recorder.export_trajectory(
                 f"export/{self.namespace}_trajectory_{request.id}.json",

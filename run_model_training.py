@@ -128,11 +128,11 @@ if __name__ == "__main__":
 
         gibson_files: list[str] = [
             "gibson.sdf",
-            "gibson_shelbyville.sdf",
-            "gibson_uvalda.sdf",
-            "gibson_marstons.sdf",
             "gibson_corozal.sdf",
             "gibson_ihlen.sdf",
+            "gibson_marstons.sdf",
+            "gibson_shelbyville.sdf",
+            "gibson_uvalda.sdf",
             "gibson_wiconisco.sdf",
             "gibson_woodbine.sdf",
         ]
@@ -210,12 +210,12 @@ if __name__ == "__main__":
         train_model(
             dataset_dir="export/datasets",
             output_model="export/trained_model.pt",
-            epochs=100,
+            epochs=160,
             batch_size=64,
             gamma=0.99,
-            learning_rate=1e-2,
-            value_coef=0.5,
-            entropy_coef=0.05,
+            learning_rate=3e-4,
+            value_coef=0.3,
+            entropy_coef=0.02,
             checkpoint_dir="export/checkpoints",
             checkpoint_every=10,
         )

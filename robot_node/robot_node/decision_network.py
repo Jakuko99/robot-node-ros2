@@ -14,7 +14,7 @@ from robot_node.data_logger import DataLogger
 
 
 EXPLOITATION_RATIO: float = 0.5  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 0.005
+LEARNING_RATE: float = 3e-4
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
 ENTROPY_COEF: float = 0.05
@@ -29,6 +29,8 @@ REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
 MIN_TRAINING_BATCH_SIZE: int = 8
+MIN_REWARD_DISTANCE_M: float = 1.0
+REWARD_CLIP_ABS: float = 5.0
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -87,6 +89,7 @@ class DecisionNetwork(nn.Module):
         self.rollout_obs: list[torch.Tensor] = []
         self.rollout_actions: list[int] = []
         self.rollout_rewards: list[float] = []
+        self.rollout_raw_rewards: list[float] = []
 
         # Pending transition for delayed reward assignment
         self.pending_obs: torch.Tensor = None
@@ -170,6 +173,9 @@ class DecisionNetwork(nn.Module):
             device=self.device,
         )
         rewards = torch.tensor(self.rollout_rewards, dtype=torch.float32, device=self.device)
+        raw_rewards = torch.tensor(
+            self.rollout_raw_rewards, dtype=torch.float32, device=self.device
+        )
 
         logits = self.actor(obs_batch)
         dist = Categorical(logits=logits)
@@ -189,7 +195,7 @@ class DecisionNetwork(nn.Module):
             advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
 
         policy_loss: torch.Tensor = -(log_probs * advantages.detach()).mean()
-        value_loss: torch.Tensor = (advantages.pow(2)).mean()
+        value_loss: torch.Tensor = torch.nn.functional.mse_loss(values, returns)
         entropy_bonus: torch.Tensor = entropies.mean()
 
         loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - ENTROPY_COEF * entropy_bonus
@@ -204,7 +210,7 @@ class DecisionNetwork(nn.Module):
             "policy_loss": float(policy_loss.item()),
             "value_loss": float(value_loss.item()),
             "entropy": float(entropy_bonus.item()),
-            "avg_reward": float(rewards.mean().item()),
+            "avg_reward": float(raw_rewards.mean().item()),
             "batch_size": len(self.rollout_rewards),
         }
         self.data_logger.log_batch(metrics)
@@ -304,9 +310,13 @@ class DecisionNetwork(nn.Module):
         if not np.isfinite(reward):
             reward = 0.0
 
+        reward = float(np.clip(reward, -REWARD_CLIP_ABS, REWARD_CLIP_ABS))
+        normalized_reward = self._normalize_reward(reward)
+
         self.rollout_obs.append(self.pending_obs)
         self.rollout_actions.append(self.pending_action)
-        self.rollout_rewards.append(float(reward))
+        self.rollout_rewards.append(float(normalized_reward))
+        self.rollout_raw_rewards.append(float(reward))
 
         self.pending_obs = None
         self.pending_action = None
@@ -315,6 +325,7 @@ class DecisionNetwork(nn.Module):
         self.rollout_obs.clear()
         self.rollout_actions.clear()
         self.rollout_rewards.clear()
+        self.rollout_raw_rewards.clear()
 
     def _checkpoint(self, metrics: dict[str, float] | None = None) -> float:
         score = float("-inf")
@@ -545,8 +556,8 @@ class FeedbackLayer:
         information_gain: float = new_ratio - old_ratio
 
         total_reward += information_gain / max(
-            distance_traveled * 0.1,
-            REWARD_EPSILON,
+            distance_traveled,
+            MIN_REWARD_DISTANCE_M,
         )  # Penalize excessive movement
 
         # Criterion 3: Contribution to total coverage of the map per robot
@@ -567,4 +578,4 @@ class FeedbackLayer:
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
         total_reward -= overlap_cells * 0.2  # Penalize overlap to encourage spreading out
 
-        return float(total_reward)
+        return float(np.clip(total_reward, -REWARD_CLIP_ABS, REWARD_CLIP_ABS))

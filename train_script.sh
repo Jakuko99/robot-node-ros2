@@ -8,7 +8,7 @@ export SIM_FOLDER="/tmp/$SLURM_JOB_ID"
 # export MODEL_PATH="$WRKDIR/robotic_swarm/models"
 export MESH_PATH="$WRKDIR/robotic_swarm/meshes"
 
-mkdir -p /tmp/$SLURM_JOB_ID
+mkdir -p $SIM_FOLDER
 module load apptainer/1.3.1-1
 echo Starting job $SLURM_JOB_ID ...
 
@@ -16,5 +16,5 @@ srun singularity run robot_swarm.sif
 mv $SIM_FOLDER/ros_ws/export $WRKDIR/robotic_swarm/export-$SLURM_JOB_ID
 
 module purge
-rm -r /tmp/$SLURM_JOB_ID
+rm -r $SIM_FOLDER
 echo Job complete.

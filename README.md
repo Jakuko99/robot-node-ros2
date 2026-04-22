@@ -20,6 +20,8 @@ For starting robot simulation use the following commands:
 ros2 launch robot_sim sim_launch.py # static environment
 ros2 launch robot_sim random_sim_launch.py # randomly generated environment
 ros2 launch robot_sim gibson_launch.py sdf_file:="gibson_lindenwood.sdf" # Gibson environment
+
+ros2 launch robot_node swarm_launch.py # run node that uses reinforcement network to explore
 ```
 
 When launching Gibson environment you can select a SDF file that contains different models from `robot_sim/gazebo` directory, if no argument is given then file `gibson_lindenwood.sdf` is used, which contains, as the name suggests it, the Lindenwood model inside it. Every launch file lauches Rviz2 instance as well for vizualization purposes except the Gibson one, as this file is used mainly for training purposes and does not need GUI. If you need to run Rviz2 in this case you can start it using this command, while being in `ros_ws` directory:
@@ -30,14 +32,22 @@ It also remaps `goal_pose` topic in order to be able to manually send a target p
 
 
 ### Launch robot control 
+This node uses simple frontier detection algorithm to explore the environment around the robot based on the local map obtained from SLAM toolbox. Unlike the other nodes, which are written in Python, this one is written in C++ for its simplicity and can be used alongside static environment simulation to showcase the exploration. Run this node using:
+```bash
+ros2 run robot_control robot_control
+```
 
-## Robot node package
+## ROS2 package overview
+This repository contains all of the necessary packages to run the simulation and train a reinforcement learning model. Below is a short descriptions of each package and its main features.
 
-## Robot sim package
+### Robot node package
+This package is responsible for exploring the environment using a reinforcement learning network with PPO. Also the same node is used to train the model by changing the parameters in `swarm_launch.py`.
 
-## Map merger package
+### Robot sim package
 
-## Supporting packages
+### Map merger package
+
+### Supporting packages
 
 ## Scripts
 In the root directory of this repository are couple of scripts, that are either used for training or serve as a helpers for various usecases.
@@ -48,12 +58,17 @@ File `setup.sh` is used to setup entire ROS2 workspace, it installs required pac
 ### Training container
 Current version of training contrainer is created using Apptainer (previously Singularity) platform. The definition file `train_env.def` contains commands to install necessary ROS2 packages and setup the workspace in the container. Also it is made in the way that on every start-up it pulls code changes from GitHub, so there is no need to rebuild the image after each change in the code. For building and runnning the image you can use these commands:
 ```bash
-apptainer build train_env.sif train_env.def
-apptainer run train_env.sif
-```
-After starting the container the script `run_model_training.py` handles the simulation according to the created launch files and after defined time the simulation is stopped and necessary data are saved to the drive. In this file you can also configure the number of simulations or their type (random or predefined Gibson models).
+export SIM_FOLDER="/tmp/sim" # or other place where to store temporary files needed for simulation
+export WRKDIR="$PWD" # here the export directory will be copied
+export MESH_PATH="/path/to/mesh_files" # where are .obj files for Gibson simulation stored
 
-## Repository structure
+apptainer build train_env.sif train_env.def
+mkdir -p $SIM_FOLDER # create directory if it does not exist
+apptainer run train_env.sif
+mv $SIM_FOLDER/ros_ws/export $WRKDIR # move exported files from simulation into the work folder
+rm -r $SIM_FOLDER # cleanup
+```
+After starting the container the script `run_model_training.py` handles the simulation according to the created launch files and after defined time the simulation is stopped and necessary data are saved to the drive. In this file you can also configure the number of simulations or their type (random or predefined Gibson models). For example how to run training for example on a cluster that uses Slurm for job quierying see file `train_script.sh` in the root of this repository.
 
 ## Acknowledgements
-For more information about Gibson environement visit its [website](https://gibsonenv.github.io/) or check out the source code on [GitHub](https://github.com/StanfordVL/iGibson) to learn about usage and implementations.
+For more information about Gibson environment visit its [website](https://gibsonenv.github.io/) or check out the source code on [GitHub](https://github.com/StanfordVL/iGibson) to learn about usage and implementations.

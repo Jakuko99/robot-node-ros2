@@ -119,7 +119,7 @@
     <model name="allensville">
       <static>true</static>
       <link name="link">
-        <pose>0 0 -0.5 1.57 0 0</pose>
+        <pose>0 0 -0.25 1.57 0 0</pose>
         <visual name="visual">
           <geometry>
             <mesh>

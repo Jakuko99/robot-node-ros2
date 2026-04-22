@@ -13,11 +13,13 @@ import copy
 from robot_node.data_logger import DataLogger
 
 
-EXPLOITATION_RATIO: float = 0.5  # Probability of choosing the best action vs exploring
+EXPLOITATION_RATIO: float = 0.35  # Probability of choosing the best action vs exploring
 LEARNING_RATE: float = 3e-4
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.99
 ENTROPY_COEF: float = 0.05
+ENTROPY_COEF_MIN: float = 0.02
+TARGET_ENTROPY_RATIO: float = 0.75
 VALUE_COEF: float = 0.3
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
@@ -28,9 +30,10 @@ REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
-MIN_TRAINING_BATCH_SIZE: int = 8
+MIN_TRAINING_BATCH_SIZE: int = 4
 MIN_REWARD_DISTANCE_M: float = 1.0
 REWARD_CLIP_ABS: float = 5.0
+TARGET_ENTROPY: float = TARGET_ENTROPY_RATIO * math.log(ACTION_COUNT)
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -198,7 +201,13 @@ class DecisionNetwork(nn.Module):
         value_loss: torch.Tensor = torch.nn.functional.mse_loss(values, returns)
         entropy_bonus: torch.Tensor = entropies.mean()
 
-        loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - ENTROPY_COEF * entropy_bonus
+        entropy_value = float(entropy_bonus.detach().item())
+        entropy_scale = 1.0
+        if entropy_value > 1e-8:
+            entropy_scale = max(1.0, TARGET_ENTROPY / entropy_value)
+        entropy_coef = max(ENTROPY_COEF_MIN, ENTROPY_COEF * entropy_scale)
+
+        loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - entropy_coef * entropy_bonus
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -210,6 +219,7 @@ class DecisionNetwork(nn.Module):
             "policy_loss": float(policy_loss.item()),
             "value_loss": float(value_loss.item()),
             "entropy": float(entropy_bonus.item()),
+            "entropy_coef": float(entropy_coef),
             "avg_reward": float(raw_rewards.mean().item()),
             "batch_size": len(self.rollout_rewards),
         }
@@ -577,5 +587,9 @@ class FeedbackLayer:
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
         total_reward -= overlap_cells * 0.2  # Penalize overlap to encourage spreading out
+
+        # Criterion 5: Penalty for staying still
+        if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):
+            total_reward -= 0.5  # Penalize lack of movement
 
         return float(np.clip(total_reward, -REWARD_CLIP_ABS, REWARD_CLIP_ABS))

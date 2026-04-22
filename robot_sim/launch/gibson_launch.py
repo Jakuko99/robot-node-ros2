@@ -15,7 +15,7 @@ def generate_launch_description():
     launch_description.add_action(
         DeclareLaunchArgument(
             "sdf_file",
-            default_value="gibson.sdf",
+            default_value="gibson_lindenwood.sdf",
             description="Name of the SDF file for the simulation environment",
         )
     )

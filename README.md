@@ -12,6 +12,25 @@ source install/setup.bash
 ros2 launch robot_sim sim_launch.py # launch robot simulation for example
 ```
 
+### Launch robot simulation
+In order to run the roboti simulation you have few options: simple world containing multiple rooms, randomly generated rooms or Gibson environments, that were adjusted by removing the roof and floor of the models, so they only provide walls for the robot to move around. The Gibson models are not part of this repository as some of them are larger, but you can find archive containing these models in the [Release section](https://github.com/Jakuko99/robot-node-ros2/releases/tag/GIBSON_ENV), then place the desired models inside `robot_sim/gazebo/allensville/meshes` in order for the simulation to work properly. Each simulation launch file also executes SLAMtoolbox for mapping, Nav2 for robot movement and custom map merging node to create global map of the environment from mapping data from multiple robots.
+
+For starting robot simulation use the following commands:
+```bash
+ros2 launch robot_sim sim_launch.py # static environment
+ros2 launch robot_sim random_sim_launch.py # randomly generated environment
+ros2 launch robot_sim gibson_launch.py sdf_file:="gibson_lindenwood.sdf" # Gibson environment
+```
+
+When launching Gibson environment you can select a SDF file that contains different models from `robot_sim/gazebo` directory, if no argument is given then file `gibson_lindenwood.sdf` is used, which contains, as the name suggests it, the Lindenwood model inside it. Every launch file lauches Rviz2 instance as well for vizualization purposes except the Gibson one, as this file is used mainly for training purposes and does not need GUI. If you need to run Rviz2 in this case you can start it using this command, while being in `ros_ws` directory:
+```bash
+rviz2 -d src/robot_sim/rviz/gazebo_rviz.rviz --ros-args -r /goal_pose:=/kris_robot1/goal_pose
+```
+It also remaps `goal_pose` topic in order to be able to manually send a target position to first robot, it also can be changed to control second robot (`kris_robot2`) instead.
+
+
+### Launch robot control 
+
 ## Robot node package
 
 ## Robot sim package
@@ -33,3 +52,8 @@ apptainer build train_env.sif train_env.def
 apptainer run train_env.sif
 ```
 After starting the container the script `run_model_training.py` handles the simulation according to the created launch files and after defined time the simulation is stopped and necessary data are saved to the drive. In this file you can also configure the number of simulations or their type (random or predefined Gibson models).
+
+## Repository structure
+
+## Acknowledgements
+For more information about Gibson environement visit its [website](https://gibsonenv.github.io/) or check out the source code on [GitHub](https://github.com/StanfordVL/iGibson) to learn about usage and implementations.

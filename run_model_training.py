@@ -26,15 +26,15 @@ from launch.actions import SetLaunchConfiguration
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
-SIM_PERIOD: int = 2400  # duration of each simulation run in seconds
+NUM_SIMULATIONS: int = 4
+SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
 # -------------------------
 
 
 def prepare_launch(
     launch_serv: LaunchService,
     random_env: bool = False,
-    sdf_file: str = "gibson.sdf",
+    sdf_file: str = "gibson_lindenwood.sdf",
 ):
     if os.getenv("MESH_PATH") is None and random_env is False:
         print(
@@ -127,9 +127,9 @@ if __name__ == "__main__":
         )  # backup export
 
         gibson_files: list[str] = [
-            "gibson.sdf",
             "gibson_corozal.sdf",
             "gibson_ihlen.sdf",
+            "gibson_lindenwood.sdf",
             "gibson_marstons.sdf",
             "gibson_shelbyville.sdf",
             "gibson_uvalda.sdf",

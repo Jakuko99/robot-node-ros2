@@ -26,8 +26,8 @@ from launch.actions import SetLaunchConfiguration
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
-SIM_PERIOD: int = 1200  # duration of each simulation run in seconds
+NUM_SIMULATIONS: int = 4
+SIM_PERIOD: int = 2400  # duration of each simulation run in seconds
 # -------------------------
 
 

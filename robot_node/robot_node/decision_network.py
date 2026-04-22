@@ -25,7 +25,7 @@ ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 4
 MIN_GOAL_DISTANCE_M: float = 2.0
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
-REWARD_NORMALIZATION_BETA: float = 0.15
+REWARD_NORMALIZATION_BETA: float = 0.2
 REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
@@ -586,7 +586,7 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 0.2  # Penalize overlap to encourage spreading out
+        total_reward -= overlap_cells * 0.25  # Penalize overlap to encourage spreading out
 
         # Criterion 5: Penalty for staying still
         if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):

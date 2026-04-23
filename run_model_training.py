@@ -128,10 +128,14 @@ if __name__ == "__main__":
 
         gibson_files: list[str] = [
             "gibson_corozal.sdf",
+            "gibson_hanson.sdf",
             "gibson_ihlen.sdf",
             "gibson_lindenwood.sdf",
             "gibson_marstons.sdf",
+            "gibson_muleshoe.sdf",
             "gibson_shelbyville.sdf",
+            "gibson_stockman.sdf",
+            "gibson_tolstoy.sdf",
             "gibson_uvalda.sdf",
             "gibson_wiconisco.sdf",
             "gibson_woodbine.sdf",

@@ -154,40 +154,41 @@ class TrajectoryRecorder:
         cv2.imwrite(filename, map_image)
 
     def plot_movement(self, filename: str):
-        x_values: list[float] = []
-        y_values: list[float] = []
-        for path in self.trajectory:
-            for pose in path.poses:
-                x_values.append(pose.pose.position.x)
-                y_values.append(pose.pose.position.y)
+        # x_values: list[float] = []
+        # y_values: list[float] = []
+        # for path in self.trajectory:
+        #     for pose in path.poses:
+        #         x_values.append(pose.pose.position.x)
+        #         y_values.append(pose.pose.position.y)
 
-        start_points_x: list[float] = []
-        start_points_y: list[float] = []
         end_points_x: list[float] = []
         end_points_y: list[float] = []
-        for path in self.trajectory:
-            start_points_x.append(path.poses[0].pose.position.x)
-            start_points_y.append(path.poses[0].pose.position.y)
+        for path in self.trajectory:  # visualize goals
             end_points_x.append(path.poses[-1].pose.position.x)
             end_points_y.append(path.poses[-1].pose.position.y)
 
+        traveled_distance: float = 0.0
         odom_x_values: list[float] = []
         odom_y_values: list[float] = []
         for odom in self.odometry_history:
+            if len(odom_x_values) > 1:
+                traveled_distance += math.sqrt(
+                    (odom.pose.pose.position.x - odom_x_values[-1]) ** 2
+                    + (odom.pose.pose.position.y - odom_y_values[-1]) ** 2
+                )
+
             odom_x_values.append(odom.pose.pose.position.x + self.static_transform_x)
             odom_y_values.append(odom.pose.pose.position.y + self.static_transform_y)
 
-        plt.scatter(x_values, y_values, marker=".", label="Trajectory")
         plt.scatter(odom_x_values, odom_y_values, c="red", marker="x", label="Odometry")
         plt.scatter(odom_x_values[0], odom_y_values[0], c="lime", marker="o", label="Start")
         plt.scatter(odom_x_values[-1], odom_y_values[-1], c="purple", marker="o", label="End")
-        plt.scatter(start_points_x, start_points_y, c="cyan", marker="o", label="Path Start")
-        plt.scatter(end_points_x, end_points_y, c="orange", marker="o", label="Path End")
+        plt.scatter(end_points_x, end_points_y, c="orange", marker="o", label="Goals")
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
         plt.legend(
-            ["Trajectory", "Odometry", "Odometry start", "Odometry end", "Path start", "Path end"]
+            [f"Odometry ({traveled_distance:.2f} m)", "Odometry start", "Odometry end", "Goals"]
         )
         plt.tight_layout()
         plt.savefig(filename)
@@ -219,6 +220,6 @@ class TrajectoryRecorder:
 
 if __name__ == "__main__":
     recorder = TrajectoryRecorder()
-    recorder.load_trajectory("export/kris_robot2_trajectory_1.json")
-    recorder.load_odometry("export/kris_robot2_odometry_1.txt")
-    recorder.plot_movement("export/kris_robot2_trajectory_1_plot.png")
+    recorder.load_trajectory("export/kris_robot1_trajectory_2.json")
+    recorder.load_odometry("export/kris_robot1_odometry_2.txt")
+    recorder.plot_movement("export/kris_robot1_trajectory_2_plot.png")

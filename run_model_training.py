@@ -19,7 +19,7 @@ from rclpy import Future
 
 from robot_sim.generate_environment import EnvironmentGenerator
 from robot_node.data_logger import DataLogger, Batch
-from sim_srvs.srv import SimulationOutput
+from sim_srvs.srv import SimulationOutput, ExplorationStatus
 from launch.actions import SetLaunchConfiguration
 
 # ----- CONFIGURATION -----
@@ -27,7 +27,9 @@ ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
 NUM_SIMULATIONS: int = 4
-SIM_PERIOD: int = 2400  # duration of each simulation run in seconds
+SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
+CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
+OVERLAP_THRESHOLD: float = 0.4  # threshold for ratio of overlapped vs total cells
 # -------------------------
 
 
@@ -75,6 +77,42 @@ async def run_sim(launch_serv: LaunchService):
     await launch_serv.run_async()
 
 
+def call_service(
+    client: Client,
+    node: Node,
+    sim_nr: int = 0,
+    retry_limit: int = 10,
+    request_type=SimulationOutput.Request,
+) -> Future:
+    retry_count: int = 0
+    future: Future = Future()
+
+    while not client.wait_for_service(timeout_sec=1.0):
+        print(f"Waiting for service {client.srv_name} to become available...")
+        retry_count += 1
+
+        if retry_count >= retry_limit:
+            print(
+                f"Service {client.srv_name} did not become available after {retry_limit} attempts. Skipping."
+            )
+            break
+
+    try:
+        req = request_type(id=sim_nr)
+        future: Future = client.call_async(req)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
+        if future.result() is not None:
+            print(f"Service call to {client.srv_name} succeeded: {future.result().message}")
+
+        else:
+            print(f"Service call to {client.srv_name} failed")
+
+    except Exception as e:
+        print(f"Error calling service {client.srv_name}: {e}")
+
+    return future
+
+
 def sim_shutdown(
     ls: LaunchService,
     node: Node,
@@ -82,33 +120,32 @@ def sim_shutdown(
     sim_nr: int,
     wait_period: int = 5,
     save_model: bool = True,
+    exploration_client: Client = None,
 ):
-    sleep(wait_period)
-    if save_model:
-        for client in clients:
-            retry_count: int = 0
-            while not client.wait_for_service(timeout_sec=1.0):
-                print(f"Waiting for service {client.srv_name} to become available...")
-                retry_count += 1
+    if exploration_client:
+        for i in range(wait_period // CHECK_INTERVAL):
+            sleep(CHECK_INTERVAL)
+            print(f"UPDATE: Simulation run {sim_nr}: {(i+1) * CHECK_INTERVAL} seconds elapsed...")
 
-                if retry_count >= 10:
+            # check the ratio of overlapped vs free cells to determine if there is still meaningful exploration happening
+            call_result: Future = call_service(
+                exploration_client, node, request_type=ExplorationStatus.Request
+            )
+            if call_result.result() is not None:
+                ratio: float = call_result.result().overlap_ratio
+
+                if ratio >= OVERLAP_THRESHOLD and call_result.result().success:
                     print(
-                        f"Service {client.srv_name} did not become available after 10 attempts. Skipping."
+                        f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )
                     break
 
-            try:
-                req: SimulationOutput.Request = SimulationOutput.Request(id=sim_nr)
-                future: Future = client.call_async(req)
-                rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
-                if future.result() is not None:
-                    print(f"Service call to {client.srv_name} succeeded: {future.result().message}")
+    else:
+        sleep(wait_period)
 
-                else:
-                    print(f"Service call to {client.srv_name} failed")
-
-            except Exception as e:
-                print(f"Error calling service {client.srv_name}: {e}")
+    if save_model:
+        for client in clients:
+            call_service(client, node, sim_nr=sim_nr)
 
     sleep(5)  # give some time for services to complete before shutting down
     ls.shutdown()
@@ -122,9 +159,10 @@ if __name__ == "__main__":
         cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
         cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
         cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
-        cli4: Client = node.create_client(
-            SimulationOutput, "/kris_robot2/export_map"
-        )  # backup export
+        cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
+        exploration_client: Client = node.create_client(
+            ExplorationStatus, "/kris_robot1/exploration_progress"
+        )
 
         gibson_files: list[str] = [
             "gibson_corozal.sdf",
@@ -170,6 +208,7 @@ if __name__ == "__main__":
                         clients=[cli1, cli2, cli3, cli4],
                         wait_period=SIM_PERIOD,
                         sim_nr=i + 1,
+                        exploration_client=exploration_client,
                     )
                 )
                 print(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")

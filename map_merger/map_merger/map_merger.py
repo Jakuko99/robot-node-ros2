@@ -15,7 +15,7 @@ import cv2
 import time
 
 from map_merger.aco_creator import ACOCreator
-from sim_srvs.srv import SimulationOutput
+from sim_srvs.srv import SimulationOutput, ExplorationStatus
 
 map_qos: QoSProfile = QoSProfile(
     reliability=QoSReliabilityPolicy.RELIABLE,
@@ -102,7 +102,14 @@ class MapMerger(Node):
         )
 
         self.create_service(
-            SimulationOutput, f"/{self.robot_name}/export_map", self.save_map_callback
+            SimulationOutput,
+            f"/{self.robot_name}/export_map",
+            self.save_map_callback,
+        )
+        self.create_service(
+            ExplorationStatus,
+            f"/{self.robot_name}/exploration_progress",
+            self.exploration_status_callback,
         )
 
         self.static_transforms: dict[str, TFMessage] = dict()
@@ -148,6 +155,31 @@ class MapMerger(Node):
         else:
             response.success = False
             response.message = "No map data available to save."
+
+        return response
+
+    def exploration_status_callback(
+        self, request: ExplorationStatus.Request, response: ExplorationStatus.Response
+    ) -> ExplorationStatus.Response:
+        if self.aco_creator.global_map:
+            explored_cells: int = sum(
+                1 for cell in self.aco_creator.global_map.data if ((cell == 0) or (cell == 100))
+            )
+            overplapped_cells: int = sum(
+                1 for cell in self.aco_creator.global_map.data if cell >= 10 and cell < 100
+            )
+            total_cells: int = len(self.aco_creator.global_map.data)
+
+            response.success = True
+            response.explore_ratio = (explored_cells / total_cells) if total_cells > 0 else 0
+            response.map_height = self.aco_creator.global_map.info.height
+            response.map_width = self.aco_creator.global_map.info.width
+            response.overlap_ratio = (overplapped_cells / total_cells) if total_cells > 0 else 0
+            response.message = f"Exploration ratio: {response.explore_ratio:.2f}, Overlap ratio: {response.overlap_ratio:.2f}"
+
+        else:
+            response.success = False
+            self.get_logger().warn("Cannot determine exploration status: No map data available.")
 
         return response
 

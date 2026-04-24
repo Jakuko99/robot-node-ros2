@@ -163,7 +163,7 @@ class MapMerger(Node):
     ) -> ExplorationStatus.Response:
         if self.aco_creator.global_map:
             explored_cells: int = sum(
-                1 for cell in self.aco_creator.global_map.data if ((cell == 0) or (cell == 100))
+                1 for cell in self.aco_creator.global_map.data if (cell >= 0 and cell <= 100)
             )
             overplapped_cells: int = sum(
                 1 for cell in self.aco_creator.global_map.data if cell >= 10 and cell < 100
@@ -174,7 +174,9 @@ class MapMerger(Node):
             response.explore_ratio = (explored_cells / total_cells) if total_cells > 0 else 0
             response.map_height = self.aco_creator.global_map.info.height
             response.map_width = self.aco_creator.global_map.info.width
-            response.overlap_ratio = (overplapped_cells / total_cells) if total_cells > 0 else 0
+            response.overlap_ratio = (
+                (overplapped_cells / explored_cells) if explored_cells > 0 else 0
+            )
             response.message = f"Exploration ratio: {response.explore_ratio:.2f}, Overlap ratio: {response.overlap_ratio:.2f}"
 
         else:

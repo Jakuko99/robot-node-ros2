@@ -29,7 +29,7 @@ PLOT_RESULTS: bool = True
 NUM_SIMULATIONS: int = 1
 SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
-OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
+OVERLAP_THRESHOLD: float = 0.4  # threshold for ratio of overlapped vs total cells
 EXPLORATION_THRESHOLD: float = 0.6  # threshold for ratio of explored vs total cells
 # -------------------------
 
@@ -141,7 +141,10 @@ def sim_shutdown(
                     )
                     break
 
-                elif call_result.result().explore_ratio >= EXPLORATION_THRESHOLD:
+                elif (
+                    call_result.result().explore_ratio >= EXPLORATION_THRESHOLD
+                    and call_result.result().success
+                ):
                     print(
                         f"UPDATE: Exploration ratio {ratio:.2f} is above exploration threshold of {EXPLORATION_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )

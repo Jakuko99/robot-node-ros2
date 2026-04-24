@@ -30,7 +30,7 @@ REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
-MIN_TRAINING_BATCH_SIZE: int = 4
+MIN_TRAINING_BATCH_SIZE: int = 8
 MIN_REWARD_DISTANCE_M: float = 1.0
 REWARD_CLIP_ABS: float = 5.0
 TARGET_ENTROPY: float = TARGET_ENTROPY_RATIO * math.log(ACTION_COUNT)
@@ -61,11 +61,11 @@ class DecisionNetwork(nn.Module):
 
         # PPO actor-critic architecture with separate networks for policy and value estimation.
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(OBS_DIM, 64)),
+            layer_init(nn.Linear(OBS_DIM, 96)),
             nn.SiLU(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(96, 96)),
             nn.SiLU(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(96, 64)),
             nn.SiLU(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
@@ -565,7 +565,7 @@ class FeedbackLayer:
         distance_traveled: float = np.linalg.norm(new_position - old_position)
         information_gain: float = new_ratio - old_ratio
 
-        total_reward += information_gain / max(
+        total_reward += information_gain * max(
             distance_traveled,
             MIN_REWARD_DISTANCE_M,
         )  # Penalize excessive movement
@@ -586,7 +586,7 @@ class FeedbackLayer:
             current_loc.info.height, current_loc.info.width
         )
         overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 0.25  # Penalize overlap to encourage spreading out
+        total_reward -= overlap_cells * 0.3  # Penalize overlap to encourage spreading out
 
         # Criterion 5: Penalty for staying still
         if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):

@@ -154,29 +154,15 @@ class TrajectoryRecorder:
         cv2.imwrite(filename, map_image)
 
     def plot_movement(self, filename: str):
-        # x_values: list[float] = []
-        # y_values: list[float] = []
-        # for path in self.trajectory:
-        #     for pose in path.poses:
-        #         x_values.append(pose.pose.position.x)
-        #         y_values.append(pose.pose.position.y)
-
         end_points_x: list[float] = []
         end_points_y: list[float] = []
         for path in self.trajectory:  # visualize goals
             end_points_x.append(path.poses[-1].pose.position.x)
             end_points_y.append(path.poses[-1].pose.position.y)
 
-        traveled_distance: float = 0.0
         odom_x_values: list[float] = []
         odom_y_values: list[float] = []
         for odom in self.odometry_history:
-            if len(odom_x_values) > 1:
-                traveled_distance += math.sqrt(
-                    (odom.pose.pose.position.x - odom_x_values[-1]) ** 2
-                    + (odom.pose.pose.position.y - odom_y_values[-1]) ** 2
-                )
-
             odom_x_values.append(odom.pose.pose.position.x + self.static_transform_x)
             odom_y_values.append(odom.pose.pose.position.y + self.static_transform_y)
 
@@ -187,9 +173,7 @@ class TrajectoryRecorder:
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
-        plt.legend(
-            [f"Odometry ({traveled_distance:.2f} m)", "Odometry start", "Odometry end", "Goals"]
-        )
+        plt.legend([f"Odometry", "Odometry start", "Odometry end", "Goals"])
         plt.tight_layout()
         plt.savefig(filename)
 

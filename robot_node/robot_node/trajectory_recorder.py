@@ -173,7 +173,7 @@ class TrajectoryRecorder:
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
-        plt.legend([f"Odometry", "Odometry start", "Odometry end", "Goals"])
+        plt.legend(["Odometry", "Odometry start", "Odometry end", "Goals"])
         plt.tight_layout()
         plt.savefig(filename)
 

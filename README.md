@@ -1,6 +1,15 @@
 # Optimization of Mapping Tasks in a Robotic Swarm
 This repository contains source code for the implementation of a reinforcement learning-based approach to optimize mapping tasks in a robotic swarm. The code is organized into two main ROS packages: `robot_node` and `robot_sim`. Map merging is provided by the `map_merger` package, which is a custom implementation of a map merging algorithm, that uses ACO to highlight overlapping regions of a map. Package `sim_srvs` contains definitions of custom ROS services used in the simulation, mainly for storing data, so it can be paired to particular simulation runs. We used ROS2 Humble in this project.
 
+## Repository branches
+This repository contains multiple branches, most of them are either past implementations of the optimization or are used for testing, below is short description for each branch:
+- **master** - stable implementation of optimization algorithm using RL networks
+- **demo_sim** - contains simple simulation used as a showcase of exploration, algorithms is based on frontier detection
+- **new_gen_swarm** - branch that contains most of the commits for the RL based optimization of the mapping
+- **quad_robots** - testing branch with 4 robots, other implementations use only two for faster testing
+- **robot_node** - contains source code in C++ for a node that can be used on real robot and retains all interfaces that simulation provides to be interchangeable
+- **single_robot** - testing branch with single robot
+
 ## How to run the code
 Create directory (or use existing one) for ROS2 workspace, then clone this repository into its `src` folder, if necessary use `git checkout <branch>` to switch to given branch of this repository:
 ```bash
@@ -36,6 +45,8 @@ This node uses simple frontier detection algorithm to explore the environment ar
 ```bash
 ros2 run robot_control robot_control
 ```
+
+This is a simple node, that takes the local occupancy map of the robot as input and publishes a goal pose to the robot's navigation stack based on frontier locations to explore environment around it.
 
 ## ROS2 package overview
 This repository contains all of the necessary packages to run the simulation and train a reinforcement learning model. Below is a short descriptions of each package and its main features.

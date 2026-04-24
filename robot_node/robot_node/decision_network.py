@@ -540,56 +540,54 @@ class FeedbackLayer:
         if not self.has_state() or new_map is None or new_odom is None:
             return 0.0
 
+        if local_map is None:
+            local_map = self.network.get_local_patch(new_map, new_odom, PATCH_RADIUS)
+
         total_reward: float = 0.0
 
         # Criterion 1: Ratio of explored to unexplored cells
-        old_map_data: np.ndarray = np.array(self.current_state.data).reshape(
+        old_map_data: np.ndarray = np.array(self.current_state.data, dtype=np.int16).reshape(
             self.current_state.info.height, self.current_state.info.width
         )
-        old_ratio: float = np.sum((old_map_data >= 0) & (old_map_data < 100)) / old_map_data.size
-
-        new_map_data: np.ndarray = np.array(new_map.data).reshape(
+        new_map_data: np.ndarray = np.array(new_map.data, dtype=np.int16).reshape(
             new_map.info.height, new_map.info.width
         )
-        new_ratio: float = np.sum((new_map_data >= 0) & (new_map_data < 100)) / new_map_data.size
 
-        # total_reward += (new_ratio - old_ratio) * 1.0  # Scale reward
+        old_known: int = np.sum((old_map_data >= 0) & (old_map_data <= 100))
+        new_known: int = np.sum((new_map_data >= 0) & (new_map_data <= 100))
+        map_cells: float = float(max(new_map_data.size, 1))
+        information_gain: float = (new_known - old_known) / map_cells  # normalized, more stable
 
         # Criterion 2: Traveled distance to information gain from exploration
         old_position: np.array = np.array(
-            [self.current_odom.pose.pose.position.x, self.current_odom.pose.pose.position.y]
+            [self.current_odom.pose.pose.position.x, self.current_odom.pose.pose.position.y],
+            dtype=np.float32,
         )
         new_position: np.array = np.array(
-            [new_odom.pose.pose.position.x, new_odom.pose.pose.position.y]
+            [new_odom.pose.pose.position.x, new_odom.pose.pose.position.y],
+            dtype=np.float32,
         )
-        distance_traveled: float = np.linalg.norm(new_position - old_position)
-        information_gain: float = new_ratio - old_ratio
+        distance_traveled: float = float(np.linalg.norm(new_position - old_position))
 
-        total_reward += information_gain * max(
-            distance_traveled,
-            MIN_REWARD_DISTANCE_M,
-        )  # Penalize excessive movement
+        # Reward efficient exploration (gain per meter) instead of rewarding longer travel.
+        travel_norm: float = max(distance_traveled, MIN_REWARD_DISTANCE_M)
+        exploration_efficiency: float = information_gain / travel_norm
+        total_reward += 3.0 * information_gain + 1.5 * exploration_efficiency
 
-        # Criterion 3: Contribution to total coverage of the map per robot
-        # if local_map:
-        # local_map_data: np.ndarray = np.array(local_map.data).reshape(
-        #     local_map.info.height, local_map.info.width
-        # )
-        # local_explored: int = np.sum((local_map_data >= 0) & (local_map_data < 100))
-        # total_explored: int = np.sum((new_map_data >= 0) & (new_map_data < 100))
-
-        # total_reward += (local_explored / total_explored) * 20.0  # Scale reward
-
-        # Criterion 4: Penalize travel through overlap areas to encourage efficient coverage
-        current_loc: OccupancyGrid = self.network.get_local_patch(new_map, new_odom, PATCH_RADIUS)
-        current_loc_data: np.ndarray = np.array(current_loc.data).reshape(
-            current_loc.info.height, current_loc.info.width
+        # Criterion 3: Penalize travel through overlap areas to encourage efficient coverage
+        local_map_data: np.ndarray = np.array(local_map.data, dtype=np.int16).reshape(
+            local_map.info.height, local_map.info.width
         )
-        overlap_cells: int = np.sum((current_loc_data >= 10) & (current_loc_data < 100))
-        total_reward -= overlap_cells * 0.3  # Penalize overlap to encourage spreading out
+        local_cells: float = float(max(local_map_data.size, 1))
+        overlap_ratio: float = np.sum((local_map_data >= 10) & (local_map_data < 100)) / local_cells
+        others_ratio: float = np.sum(local_map_data == 110) / local_cells
 
-        # Criterion 5: Penalty for staying still
+        # Stronger discouragement of already-explored-by-others areas.
+        total_reward -= 2.0 * overlap_ratio
+        total_reward -= 1.0 * others_ratio
+
+        # Criterion 4: Penalty for staying still
         if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):
-            total_reward -= 0.5  # Penalize lack of movement
+            total_reward -= 0.5
 
         return float(np.clip(total_reward, -REWARD_CLIP_ABS, REWARD_CLIP_ABS))

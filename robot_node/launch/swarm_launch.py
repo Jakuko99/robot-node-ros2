@@ -15,7 +15,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "robot_name": "kris_robot1",
-                        "goal_process_interval": 5.0,
+                        "goal_process_interval": 10.0,
                         "goal_timeout": 60.0,
                         "goal_reach_threshold": 0.75,
                         "pheromone_map_topic": "pheromones",
@@ -37,7 +37,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "robot_name": "kris_robot2",
-                        "goal_process_interval": 5.0,
+                        "goal_process_interval": 10.0,
                         "goal_timeout": 60.0,
                         "goal_reach_threshold": 0.75,
                         "pheromone_map_topic": "pheromones",

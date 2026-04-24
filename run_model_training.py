@@ -135,7 +135,7 @@ def sim_shutdown(
             if call_result.result() is not None:
                 ratio: float = call_result.result().overlap_ratio
 
-                if ratio >= OVERLAP_THRESHOLD and call_result.result().success:
+                if ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 0:
                     print(
                         f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )

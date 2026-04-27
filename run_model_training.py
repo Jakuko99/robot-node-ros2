@@ -25,8 +25,8 @@ from launch.actions import SetLaunchConfiguration
 # ----- CONFIGURATION -----
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
-PLOT_RESULTS: bool = False
-NUM_SIMULATIONS: int = 2
+PLOT_RESULTS: bool = True
+NUM_SIMULATIONS: int = 8
 SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
 OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
@@ -264,11 +264,11 @@ if __name__ == "__main__":
             dataset_dir="export/datasets",
             output_model="export/trained_model.pt",
             epochs=160,
-            batch_size=64,
+            batch_size=32,
             gamma=0.99,
-            learning_rate=3e-4,
-            value_coef=0.3,
-            entropy_coef=0.02,
+            learning_rate=3e-6,
+            value_coef=0.5,
+            entropy_coef=0.05,
             checkpoint_dir="export/checkpoints",
             checkpoint_every=10,
         )

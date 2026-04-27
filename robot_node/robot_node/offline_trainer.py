@@ -21,6 +21,7 @@ from robot_node.decision_network import (
     VALUE_COEF,
     DecisionNetwork,
 )
+from robot_node.data_logger import DataLogger
 
 
 @dataclass
@@ -304,6 +305,7 @@ def train_offline(
     checkpoint_dir: Path,
     checkpoint_every: int,
 ) -> tuple[EpochMetrics, Path]:
+    data_logger = DataLogger()
     sample_count = int(dataset.observations.shape[0])
     if sample_count == 0:
         raise ValueError("No samples available for training")
@@ -374,6 +376,16 @@ def train_offline(
             avg_reward=avg_reward,
         )
 
+        data_logger.log_batch(
+            {
+                "loss": avg_loss,
+                "policy_loss": avg_policy,
+                "value_loss": avg_value,
+                "entropy": avg_entropy,
+                "avg_reward": avg_reward,
+            }
+        )
+
         if best_metrics is None or metrics.loss < best_metrics.loss:
             best_metrics = metrics
             _save_checkpoint(
@@ -404,6 +416,14 @@ def train_offline(
     if best_metrics is None:
         raise RuntimeError("Training completed without producing metrics")
 
+    data_logger.export_to_csv(checkpoint_dir / "training_log.csv")
+    data = DataLogger.load_from_csv(checkpoint_dir / "training_log.csv")
+    DataLogger.subplot_data(
+        data,
+        ["loss", "policy_loss", "avg_reward", "entropy"],
+        "export/subplot.png",
+        data_label="Epoch",
+    )
     return (best_metrics, best_checkpoint_path)
 
 

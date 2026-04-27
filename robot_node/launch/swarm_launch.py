@@ -16,7 +16,7 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot1",
                         "goal_process_interval": 10.0,
-                        "goal_timeout": 60.0,
+                        "goal_timeout": 45.0,
                         "goal_reach_threshold": 0.75,
                         "pheromone_map_topic": "pheromones",
                         "map_frame_id": "global_map",
@@ -25,8 +25,8 @@ def generate_launch_description():
                         "static_transform_y": 0.0,
                         "model_path": os.path.join(resource_dir, "kris_robot1_model.pt"),
                         "training_interval": 10.0,
-                        "train_network": False,
-                        "collect_offline_data": False
+                        "train_network": True,
+                        "collect_offline_data": True,
                     }
                 ],
             ),
@@ -39,7 +39,7 @@ def generate_launch_description():
                     {
                         "robot_name": "kris_robot2",
                         "goal_process_interval": 10.0,
-                        "goal_timeout": 60.0,
+                        "goal_timeout": 45.0,
                         "goal_reach_threshold": 0.75,
                         "pheromone_map_topic": "pheromones",
                         "map_frame_id": "kris_robot2_pheromone_map",
@@ -48,8 +48,8 @@ def generate_launch_description():
                         "static_transform_y": 0.0,
                         "model_path": os.path.join(resource_dir, "kris_robot2_model.pt"),
                         "training_interval": 10.0,
-                        "train_network": False,
-                        "collect_offline_data": False
+                        "train_network": True,
+                        "collect_offline_data": True,
                     }
                 ],
             ),

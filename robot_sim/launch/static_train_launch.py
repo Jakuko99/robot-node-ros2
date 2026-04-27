@@ -26,25 +26,25 @@ def generate_launch_description():
             cmd=[
                 "ign",
                 "gazebo",
-                # "-s",
+                "-s",
                 "-r",
                 PathJoinSubstitution(["src", "robot_sim", "gazebo", sdf_file]),
-                # "--headless-rendering",
+                "--headless-rendering",
             ],
         )
     )
 
-    # launch_description.add_action(
-    #     Node(
-    #         package="rviz2",
-    #         executable="rviz2",
-    #         name="rviz2",
-    #         output="screen",
-    #         arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
-    #         parameters=[{"use_sim_time": True}],
-    #         remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
-    #     )
-    # )
+    launch_description.add_action(
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2",
+            output="screen",
+            arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
+            parameters=[{"use_sim_time": True}],
+            remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
+        )
+    )
 
     launch_description.add_action(
         ExecuteProcess(  # ros gz topic bridge

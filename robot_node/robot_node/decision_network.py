@@ -13,16 +13,16 @@ import copy
 from robot_node.data_logger import DataLogger
 
 
-EXPLOITATION_RATIO: float = 0.35  # Probability of choosing the best action vs exploring
-LEARNING_RATE: float = 3e-3
+EXPLOITATION_RATIO: float = 0.60  # More use of learned policy, less random overlap revisits
+LEARNING_RATE: float = 1e-3  # Slightly stabler updates
 REWARD_EPSILON: float = 1e-6
-GAMMA: float = 0.99
-ENTROPY_COEF: float = 0.05
-ENTROPY_COEF_MIN: float = 0.02
-TARGET_ENTROPY_RATIO: float = 0.75
+GAMMA: float = 0.995  # More long-term planning
+ENTROPY_COEF: float = 0.02  # Less random exploration
+ENTROPY_COEF_MIN: float = 0.005
+TARGET_ENTROPY_RATIO: float = 0.55
 VALUE_COEF: float = 0.3
 ACTION_COUNT: int = 8
-PATCH_RADIUS: int = 4
+PATCH_RADIUS: int = 6  # Larger local patch for overlap context
 MIN_GOAL_DISTANCE_M: float = 2.0
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
 REWARD_NORMALIZATION_BETA: float = 0.2
@@ -32,7 +32,7 @@ CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
 MIN_TRAINING_BATCH_SIZE: int = 4
 MIN_REWARD_DISTANCE_M: float = 1.0
-REWARD_CLIP_ABS: float = 5.0
+REWARD_CLIP_ABS: float = 8.0
 TARGET_ENTROPY: float = TARGET_ENTROPY_RATIO * math.log(ACTION_COUNT)
 
 
@@ -580,11 +580,9 @@ class FeedbackLayer:
         )
         local_cells: float = float(max(local_map_data.size, 1))
         overlap_ratio: float = np.sum((local_map_data >= 10) & (local_map_data < 100)) / local_cells
-        others_ratio: float = np.sum(local_map_data == 110) / local_cells
 
         # Stronger discouragement of already-explored-by-others areas.
         total_reward -= 2.0 * overlap_ratio
-        total_reward -= 1.0 * others_ratio
 
         # Criterion 4: Penalty for staying still
         if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):

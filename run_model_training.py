@@ -25,13 +25,23 @@ from launch.actions import SetLaunchConfiguration
 # ----- CONFIGURATION -----
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
-PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 8
+PLOT_RESULTS: bool = False
+NUM_SIMULATIONS: int = 2
 SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
 OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
 EXPLORATION_THRESHOLD: float = 0.6  # threshold for ratio of explored vs total cells
+LOG_FILE: str = "export/training_log.log"
 # -------------------------
+
+
+def log_message(message: str):
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"{message}\n")
+    except Exception as e:
+        print(f"ERROR: Error writing to log file: {e}")
+    print(message)  # also print to console for real-time feedback
 
 
 def prepare_launch(
@@ -40,7 +50,7 @@ def prepare_launch(
     sdf_file: str = "gibson_lindenwood.sdf",
 ):
     if os.getenv("MESH_PATH") is None and random_env is False:
-        print(
+        log_message(
             "ERROR: MESH_PATH environment variable not set. Forcing random environment generation for all simulation runs."
         )
         global RANDOM_ENV
@@ -57,12 +67,12 @@ def prepare_launch(
     )
 
     if not os.path.exists(sim_launch_file_path) or not os.path.exists(optimizer_file_path):
-        print(f"Error: One or more launch files not found at the specified paths")
+        log_message(f"Error: One or more launch files not found at the specified paths")
         sys.exit(1)
 
     launch_description: LaunchDescription = load_launch_description(sim_launch_file_path)
     if not random_env:
-        print(f"Using SDF file for simulation: {sdf_file}")
+        log_message(f"Using SDF file for simulation: {sdf_file}")
         launch_description.entities.insert(
             0,
             SetLaunchConfiguration("sdf_file", sdf_file),
@@ -89,11 +99,11 @@ def call_service(
     future: Future = Future()
 
     while not client.wait_for_service(timeout_sec=1.0):
-        print(f"Waiting for service {client.srv_name} to become available...")
+        log_message(f"Waiting for service {client.srv_name} to become available...")
         retry_count += 1
 
         if retry_count >= retry_limit:
-            print(
+            log_message(
                 f"Service {client.srv_name} did not become available after {retry_limit} attempts. Skipping."
             )
             break
@@ -103,13 +113,13 @@ def call_service(
         future: Future = client.call_async(req)
         rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
         if future.result() is not None:
-            print(f"Service call to {client.srv_name} succeeded: {future.result().message}")
+            log_message(f"Service call to {client.srv_name} succeeded: {future.result().message}")
 
         else:
-            print(f"Service call to {client.srv_name} failed")
+            log_message(f"Service call to {client.srv_name} failed")
 
     except Exception as e:
-        print(f"Error calling service {client.srv_name}: {e}")
+        log_message(f"Error calling service {client.srv_name}: {e}")
 
     return future
 
@@ -126,7 +136,9 @@ def sim_shutdown(
     if exploration_client:
         for i in range(wait_period // CHECK_INTERVAL):
             sleep(CHECK_INTERVAL)
-            print(f"UPDATE: Simulation run {sim_nr}: {(i+1) * CHECK_INTERVAL} seconds elapsed...")
+            log_message(
+                f"UPDATE: Simulation run {sim_nr}: {(i+1) * CHECK_INTERVAL} seconds elapsed..."
+            )
 
             # check the ratio of overlapped vs free cells to determine if there is still meaningful exploration happening
             call_result: Future = call_service(
@@ -136,7 +148,7 @@ def sim_shutdown(
                 ratio: float = call_result.result().overlap_ratio
 
                 if ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 0:
-                    print(
+                    log_message(
                         f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )
                     break
@@ -145,7 +157,7 @@ def sim_shutdown(
                     call_result.result().explore_ratio >= EXPLORATION_THRESHOLD
                     and call_result.result().success
                 ):
-                    print(
+                    log_message(
                         f"UPDATE: Exploration ratio {ratio:.2f} is above exploration threshold of {EXPLORATION_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )
                     break
@@ -199,7 +211,7 @@ if __name__ == "__main__":
                 )
 
                 if RANDOM_ENV:  # generate new random environment for each simulation run
-                    print(
+                    log_message(
                         f"Generating random environment for simulation run {i + 1}/{NUM_SIMULATIONS} ..."
                     )
                     generator = EnvironmentGenerator(width=20, height=20, num_rooms=20)
@@ -209,7 +221,7 @@ if __name__ == "__main__":
                         include_robots=True,
                     )
                     generator.export_ground_truth(f"export/ground_truth-{i + 1}.png")
-                    print("Done generating environment.")
+                    log_message("Done generating environment.")
 
                 sim_thread = threading.Thread(
                     target=lambda: sim_shutdown(
@@ -221,7 +233,7 @@ if __name__ == "__main__":
                         exploration_client=exploration_client,
                     )
                 )
-                print(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")
+                log_message(f"Starting simulation run {i + 1}/{NUM_SIMULATIONS} ...")
                 sim_thread.start()  # start shutdown thread
                 asyncio.run(run_sim(launch_service))  # run simulation
 
@@ -231,15 +243,15 @@ if __name__ == "__main__":
                 del sim_thread
 
                 if i < NUM_SIMULATIONS - 1:
-                    print(
+                    log_message(
                         f"Simulation run {i + 1}/{NUM_SIMULATIONS} completed. Restarting in 5 seconds..."
                     )
                     sleep(5)
 
         except Exception as e:
-            print(f"\nAn error occurred: {e}")
+            log_message(f"\nAn error occurred: {e}")
 
-        print("\nAll simulation runs completed. Shutting down ROS 2 environment.")
+        log_message("\nAll simulation runs completed. Shutting down ROS 2 environment.")
         rclpy.shutdown()
 
         if PLOT_RESULTS:
@@ -252,10 +264,10 @@ if __name__ == "__main__":
                         f"{os.path.splitext(file)[0]}.png",
                     )
 
-                print("Plots generated and saved in export directory.")
+                log_message("Plots generated and saved in export directory.")
 
             except Exception as e:
-                print(f"Error generating plots: {e}")
+                log_message(f"Error generating plots: {e}")
 
     else:
         from robot_node.offline_trainer import train_model

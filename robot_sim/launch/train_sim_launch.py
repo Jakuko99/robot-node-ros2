@@ -13,30 +13,15 @@ def generate_launch_description():
     launch_dir = os.path.join("src/robot_sim", "launch")
     return LaunchDescription(
         [
-            ExecuteProcess(
-                cmd=[
-                    "python3",
-                    os.path.join(
-                        "src", "robot_sim", "robot_sim", "generate_environment.py"
-                    ),
-                ]
-            ),
             ExecuteProcess(  # gazebo simulation
                 cmd=[
                     "ign",
                     "gazebo",
+                    "-s",
                     "-r",
                     "src/robot_sim/gazebo/random_environment.sdf",
+                    "--headless-rendering",
                 ],
-            ),
-            Node(
-                package="rviz2",
-                executable="rviz2",
-                name="rviz2",
-                output="screen",
-                arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
-                parameters=[{"use_sim_time": True}],
-                remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
             ),
             ExecuteProcess(  # ros gz topic bridge
                 cmd=[
@@ -112,6 +97,12 @@ def generate_launch_description():
                     "global_map",
                     "kris_robot4_map",
                 ]
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, "mapping_launch.py")),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, "nav_launch.py")),
             ),
         ]
     )

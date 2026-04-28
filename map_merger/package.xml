@@ -19,6 +19,6 @@
     <exec_depend>geometry_msgs</exec_depend>
     <exec_depend>sensor_msgs</exec_depend>
     <exec_depend>map_msgs</exec_depend>
-    
+    <exec_depend>sim_srvs</exec_depend>
   </export>
 </package>

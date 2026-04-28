@@ -11,9 +11,11 @@ from rclpy.qos import (
     QoSHistoryPolicy,
     QoSDurabilityPolicy,
 )
-from transforms3d._gohlketransforms import compose_matrix, euler_from_quaternion
+import cv2
+import time
 
 from map_merger.aco_creator import ACOCreator
+from sim_srvs.srv import SimulationOutput, ExplorationStatus
 
 map_qos: QoSProfile = QoSProfile(
     reliability=QoSReliabilityPolicy.RELIABLE,
@@ -24,9 +26,7 @@ map_qos: QoSProfile = QoSProfile(
 
 
 class MapSubscription:
-    def __init__(
-        self, robot_name: str, node: "MapMerger", topic_name: str, primary: bool = False
-    ):
+    def __init__(self, robot_name: str, node: "MapMerger", topic_name: str, primary: bool = False):
         self.robot_name: str = robot_name
         self.node: "MapMerger" = node
         self.topic_name: str = topic_name
@@ -35,13 +35,11 @@ class MapSubscription:
         self.subscription: Subscription[OccupancyGrid] = node.create_subscription(
             OccupancyGrid, topic_name, self.map_callback, map_qos
         )
-        self.update_subscription: Subscription[OccupancyGridUpdate] = (
-            node.create_subscription(
-                OccupancyGridUpdate,
-                topic_name + "_updates",
-                self.update_map_callback,
-                map_qos,
-            )
+        self.update_subscription: Subscription[OccupancyGridUpdate] = node.create_subscription(
+            OccupancyGridUpdate,
+            topic_name + "_updates",
+            self.update_map_callback,
+            map_qos,
         )
         self.odom_sub: Subscription[Odometry] = node.create_subscription(
             Odometry, topic_name.replace("/map", "/odom"), self.odom_callback, 10
@@ -86,9 +84,7 @@ class MapMerger(Node):
     def __init__(self):
         super().__init__("map_merger_node")
         self.declare_parameter("robot_name", "robot")
-        self.robot_name: str = (
-            self.get_parameter("robot_name").get_parameter_value().string_value
-        )
+        self.robot_name: str = self.get_parameter("robot_name").get_parameter_value().string_value
         self.declare_parameter("merge_topic_name", "global_map")
         self.merge_topic_name: str = (
             f"/{self.robot_name}/{self.get_parameter('merge_topic_name').get_parameter_value().string_value}"
@@ -105,6 +101,17 @@ class MapMerger(Node):
             TFMessage, "/tf_static", self.tf_callback, 10
         )
 
+        self.create_service(
+            SimulationOutput,
+            f"/{self.robot_name}/export_map",
+            self.save_map_callback,
+        )
+        self.create_service(
+            ExplorationStatus,
+            f"/{self.robot_name}/exploration_progress",
+            self.exploration_status_callback,
+        )
+
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
         self.aco_creator: ACOCreator = ACOCreator(self.robot_name, self)
@@ -113,6 +120,70 @@ class MapMerger(Node):
         )
 
         self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps_v1)
+
+    def save_map_callback(
+        self, request: SimulationOutput.Request, response: SimulationOutput.Response
+    ) -> SimulationOutput.Response:
+        if self.aco_creator.global_map:
+            try:
+                width = self.aco_creator.global_map.info.width
+                height = self.aco_creator.global_map.info.height
+
+                map_array = np.array(self.aco_creator.global_map.data, dtype=np.int8).reshape(
+                    (height, width)
+                )
+                map_image = np.zeros((height, width, 3), dtype=np.uint8)
+                map_image[map_array == 0] = [255, 255, 255]
+                map_image[map_array == 100] = [0, 0, 0]
+                map_image[map_array == -1] = [127, 127, 127]
+                map_image[(map_array >= 10) & (map_array < 100)] = [255, 0, 0]
+                map_image[map_array == -10] = [0, 0, 255]
+                map_image[map_array == 110] = [0, 255, 0]
+                cv2.imwrite(
+                    f"export/{self.robot_name}_map-{request.id if request.id else int(time.time())}.png",
+                    map_image,
+                )
+                response.success = True
+                response.message = f"Map saved successfully as {self.robot_name}_map.png"
+                self.get_logger().info(response.message)
+
+            except Exception as e:
+                response.success = False
+                response.message = f"Failed to save map: {e}"
+                self.get_logger().error(f"Error saving map: {e}")
+
+        else:
+            response.success = False
+            response.message = "No map data available to save."
+
+        return response
+
+    def exploration_status_callback(
+        self, request: ExplorationStatus.Request, response: ExplorationStatus.Response
+    ) -> ExplorationStatus.Response:
+        if self.aco_creator.global_map:
+            explored_cells: int = sum(
+                1 for cell in self.aco_creator.global_map.data if (cell >= 0 and cell <= 100)
+            )
+            overplapped_cells: int = sum(
+                1 for cell in self.aco_creator.global_map.data if cell >= 10 and cell < 100
+            )
+            total_cells: int = len(self.aco_creator.global_map.data)
+
+            response.success = True
+            response.explore_ratio = (explored_cells / total_cells) if total_cells > 0 else 0
+            response.map_height = self.aco_creator.global_map.info.height
+            response.map_width = self.aco_creator.global_map.info.width
+            response.overlap_ratio = (
+                (overplapped_cells / explored_cells) if explored_cells > 0 else 0
+            )
+            response.message = f"Exploration ratio: {response.explore_ratio:.2f}, Overlap ratio: {response.overlap_ratio:.2f}"
+
+        else:
+            response.success = False
+            self.get_logger().warn("Cannot determine exploration status: No map data available.")
+
+        return response
 
     def tf_callback(self, msg: TFMessage):
         transform: TransformStamped  # type hint for transform in msg.transforms
@@ -138,10 +209,7 @@ class MapMerger(Node):
             ):
                 robot_name: str = topic.split("/")[1]
 
-                if (
-                    robot_name not in self.map_subscriptions
-                    and not robot_name == self.robot_name
-                ):
+                if robot_name not in self.map_subscriptions and not robot_name == self.robot_name:
                     topic_name: str = f"/{robot_name}/map"
                     self.map_subscriptions[robot_name] = MapSubscription(
                         robot_name, self, topic_name
@@ -178,26 +246,18 @@ class MapMerger(Node):
             merged_map.header.stamp = self.get_clock().now().to_msg()
             merged_map.info.origin.position.x = min_x
             merged_map.info.origin.position.y = min_y
-            merged_map.info.resolution = min(
-                [m.info.resolution for m in local_maps.values()]
-            )
-            merged_map.info.width = int(
-                np.ceil((max_x - min_x) / merged_map.info.resolution)
-            )
-            merged_map.info.height = int(
-                np.ceil((max_y - min_y) / merged_map.info.resolution)
-            )
+            merged_map.info.resolution = min([m.info.resolution for m in local_maps.values()])
+            merged_map.info.width = int(np.ceil((max_x - min_x) / merged_map.info.resolution)) + 10
+            merged_map.info.height = int(np.ceil((max_y - min_y) / merged_map.info.resolution)) + 10
 
             merged_map.data = [-1] * (merged_map.info.width * merged_map.info.height)
 
             for map in local_maps.values():
-                static_tf: TransformStamped = self.get_static_transform(
-                    map.header.frame_id
-                )
+                static_tf: TransformStamped = self.get_static_transform(map.header.frame_id)
                 for y in range(map.info.height):
                     for x in range(map.info.width):
-                        index = x + y * map.info.width
-                        merged_x = int(
+                        index: int = x + y * map.info.width
+                        merged_x: int = int(
                             np.floor(
                                 (
                                     map.info.origin.position.x
@@ -208,7 +268,7 @@ class MapMerger(Node):
                                 / merged_map.info.resolution
                             )
                         )
-                        merged_y = int(
+                        merged_y: int = int(
                             np.floor(
                                 (
                                     map.info.origin.position.y
@@ -219,22 +279,32 @@ class MapMerger(Node):
                                 / merged_map.info.resolution
                             )
                         )
-                        merged_i = merged_x + merged_y * merged_map.info.width
-                        if (
-                            map.data[index] == 0
-                            and merged_map.data[merged_i] >= 0
-                            and merged_map.data[merged_i] < 100
-                        ):
-                            merged_map.data[merged_i] += 5
+                        try:
+                            merged_i: int = merged_x + merged_y * merged_map.info.width
+                            if (
+                                map.data[index] == 0
+                                and merged_map.data[merged_i] >= 0
+                                and merged_map.data[merged_i] < 89  # cap value to 90
+                            ):
+                                merged_map.data[merged_i] += 10
 
-                        elif map.data[index] == 0:
-                            merged_map.data[merged_i] = 0
+                            elif map.data[index] == 0:
+                                merged_map.data[merged_i] = 0
 
-                        elif map.data[index] != -1:
-                            merged_map.data[merged_i] = map.data[index]
+                            elif map.data[index] != -1:
+                                merged_map.data[merged_i] = map.data[index]
 
-            self.aco_creator.update_global_map(merged_map)
-            self.publisher.publish(merged_map)
+                        except IndexError:
+                            self.get_logger().warn(
+                                f"Index error for merged map at ({merged_x}, {merged_y}) with map {map.header.frame_id} at ({x}, {y})"
+                            )
+                            continue
+
+            updated_map: OccupancyGrid = self.aco_creator.update_global_map(merged_map)
+            self.publisher.publish(updated_map)
+            self.get_logger().info(
+                f"Published merged map with frame_id {updated_map.header.frame_id}"
+            )
 
         self.discover_robots()
 

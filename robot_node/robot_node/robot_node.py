@@ -1,15 +1,10 @@
 import rclpy
 from std_srvs.srv import Trigger
 from rclpy.node import Node
-from rclpy.task import Future
 from rclpy.timer import Timer
-from rclpy.action import ActionClient
-from nav2_msgs.action import NavigateToPose
 from rclpy.node import Node, Publisher, Subscription
-from nav_msgs.msg import OccupancyGrid, Odometry
-from action_msgs.msg import GoalStatus
-from rclpy.action.client import ClientGoalHandle
-from geometry_msgs.msg import Twist, PoseStamped
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from geometry_msgs.msg import PoseStamped
 from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
@@ -18,16 +13,13 @@ from rclpy.qos import (
 )
 from time import time
 import math
-import numpy as np
+import torch
+import os
 
-from robot_node.exploration_actor import (
-    ActionOutput,
-    MapMeta,
-    OccupancyGridData,
-    RobotKinematics,
-    SwarmExplorer,
-    SwarmObservation,
-)
+from robot_node.data_collector import DataCollector
+from robot_node.decision_network import DecisionNetwork
+from robot_node.trajectory_recorder import TrajectoryRecorder
+from sim_srvs.srv import SimulationOutput
 
 
 class RobotNode(Node):
@@ -36,100 +28,123 @@ class RobotNode(Node):
 
         # ----- Parameters ------
         self.declare_parameter("robot_name", "kris_robot1")
+        self.declare_parameter("pheromone_map_topic", "pheromone_map")
+        self.declare_parameter("map_frame_id", "map")
         self.declare_parameter("goal_process_interval", 5.0)
-        self.declare_parameter("robot_discovery_interval", 10.0)
-        self.declare_parameter("position_update_interval", 1.0)
-        self.declare_parameter("goal_timeout", 60.0)
-        self.declare_parameter("marl_training", True)
-        self.declare_parameter("marl_update_every", 32)
-        self.declare_parameter("marl_update_epochs", 4)
-        self.declare_parameter("model_checkpoint_path", "/tmp/marl_checkpoint.pt")
+        self.declare_parameter("goal_reach_threshold", 0.5)
+        self.declare_parameter("goal_topic", "goal_pose")
+        self.declare_parameter("static_transform_x", 0.0)
+        self.declare_parameter("static_transform_y", 0.0)
+        self.declare_parameter("goal_timeout", 30.0)
+        self.declare_parameter("training_interval", 20.0)
+        self.declare_parameter("model_path", "model.pt")
+        self.declare_parameter("train_network", True)
+        self.declare_parameter("collect_offline_data", True)
+        self.declare_parameter("offline_dataset_name", "offline_dataset")
 
-        self.namespace: str = (
-            self.get_parameter("robot_name").get_parameter_value().string_value
+        self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
+        self.map_frame_id: str = (
+            self.get_parameter("map_frame_id").get_parameter_value().string_value
+        )
+        self.pheromone_map_topic: str = (
+            self.get_parameter("pheromone_map_topic").get_parameter_value().string_value
         )
         self.goal_process_interval: float = (
-            self.get_parameter("goal_process_interval")
-            .get_parameter_value()
-            .double_value
+            self.get_parameter("goal_process_interval").get_parameter_value().double_value
         )
-        self.robot_discovery_interval: float = (
-            self.get_parameter("robot_discovery_interval")
-            .get_parameter_value()
-            .double_value
+        self.goal_reach_threshold: float = (
+            self.get_parameter("goal_reach_threshold").get_parameter_value().double_value
         )
-        self.position_update_interval: float = (
-            self.get_parameter("position_update_interval")
-            .get_parameter_value()
-            .double_value
+        self.goal_topic: str = self.get_parameter("goal_topic").get_parameter_value().string_value
+        self.static_transform_x: float = (
+            self.get_parameter("static_transform_x").get_parameter_value().double_value
+        )
+        self.static_transform_y: float = (
+            self.get_parameter("static_transform_y").get_parameter_value().double_value
         )
         self.goal_timeout: float = (
             self.get_parameter("goal_timeout").get_parameter_value().double_value
         )
-        self.marl_training: bool = (
-            self.get_parameter("marl_training").get_parameter_value().bool_value
+        self.training_interval: float = (
+            self.get_parameter("training_interval").get_parameter_value().double_value
         )
-        self.marl_update_every: int = (
-            self.get_parameter("marl_update_every").get_parameter_value().integer_value
+        self.model_path: str = self.get_parameter("model_path").get_parameter_value().string_value
+        self.train: bool = self.get_parameter("train_network").get_parameter_value().bool_value
+        self.collect_offline_data: bool = (
+            self.get_parameter("collect_offline_data").get_parameter_value().bool_value
         )
-        self.marl_update_epochs: int = (
-            self.get_parameter("marl_update_epochs").get_parameter_value().integer_value
-        )
-        self.model_checkpoint_path: str = (
-            self.get_parameter("model_checkpoint_path")
-            .get_parameter_value()
-            .string_value
+        self.offline_dataset_name: str = (
+            self.get_parameter("offline_dataset_name").get_parameter_value().string_value
         )
 
         # ----- Variables -----
-        self.goal_future: Future = None
-        self.goal_handle: ClientGoalHandle = None
         self.last_odom: Odometry = None
-        self.last_cmd_vel: Twist = None
         self.last_goal: PoseStamped = None
         self.current_map: OccupancyGrid = None
+        self.current_local_map: OccupancyGrid = None
         self.x: float = 0.0
         self.y: float = 0.0
         self.theta: float = 0.0
         self.moving: bool = False
-        self.action_server_connected: bool = False
-        self.other_nodes: list[str] = []  # keep track of other robot nodes
-        self.last_position_update_time: float = time()
         self.goal_publish_time: float = time()
-        self.node_positions: dict[str, tuple[float, float]] = (
-            {}
-        )  # store positions of nodes
-        self.swarm_explorer: SwarmExplorer = None
-        self.previous_observation: SwarmObservation = None
-        self.previous_action_output: ActionOutput = None
         map_qos: QoSProfile = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
         )  # correct map QoS profile
+        self.other_goals: dict[str, PoseStamped] = dict()  # track other robots' goals by namespace
+        self.trajectory_recorder: TrajectoryRecorder = TrajectoryRecorder(
+            self.static_transform_x, self.static_transform_y
+        )
+        self.data_collector: DataCollector = DataCollector(
+            robot_name=self.namespace,
+            output_dir="export",
+            dataset_name=self.offline_dataset_name,
+        )
+        self.data_collector.start_episode()
+
+        # ----- Optimization NN -----
+        self.decision_network: DecisionNetwork = DecisionNetwork(
+            self.namespace, pheromone_decay=0.1, train=self.train, parent=self
+        )
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.decision_network.to(device)
+
+        if os.path.exists(self.model_path):  # auto load model if it exists
+            try:
+                self.decision_network.load_state_dict(
+                    torch.load(self.model_path, map_location=device)
+                )
+                self.get_logger().info(f"Loaded model from {self.model_path}")
+            except RuntimeError as e:
+                self.get_logger().error(f"Error loading model from {self.model_path}: {e}")
 
         # ----- Timers -----
-        self.process_goal_timer: Timer = self.create_timer(
-            self.goal_process_interval,
-            callback=self.process_goal_callback,
+        self.goal_timer: Timer = self.create_timer(
+            self.goal_process_interval, callback=self.goal_timer_callback
         )
 
-        self.robot_discovery_timer: Timer = self.create_timer(
-            self.robot_discovery_interval,
-            callback=self.robot_discovery_callback,
+        if self.train:
+            self.training_timer = self.create_timer(
+                self.training_interval, callback=self.training_timer_callback
+            )
+
+        self.discovery_timer: Timer = self.create_timer(
+            10.0, callback=self.robot_discovery_callback
         )
 
-        # ----- Clients -----
-        self.nav_client: ActionClient = ActionClient(
-            self, NavigateToPose, f"{self.namespace}/navigate_to_pose"
+        # ----- Services -----
+        self.create_service(
+            SimulationOutput,
+            f"{self.namespace}/save_model",
+            self.save_model,
         )
-
-        # ----- Sevices -----
-        self.save_service: Trigger = self.create_service(
-            Trigger, f"{self.get_name()}/save_checkpoint", self.save_checkpoint_callback
+        self.create_service(
+            Trigger,
+            f"{self.namespace}/load_model",
+            lambda req, res: self.decision_network.load_model(req, res, self.model_path),
         )
-        # ros2 service call /<node_name>/save_checkpoint std_srvs/srv/Trigger
 
         # ----- Subscribers -----
         self.odom_sub: Subscription[Odometry] = self.create_subscription(
@@ -139,31 +154,91 @@ class RobotNode(Node):
             10,
         )
 
-        self.odom_subs: list[Subscription[Odometry]] = (
-            []
-        )  # subscribe to other robots' odom topics for position tracking
-
         self.map_sub: Subscription[OccupancyGrid] = self.create_subscription(
             OccupancyGrid,
-            f"{self.namespace}/map",
+            f"{self.namespace}/{self.pheromone_map_topic}",
             self.map_callback,
             map_qos,
         )
 
+        self.local_map_sub: Subscription[OccupancyGrid] = self.create_subscription(
+            OccupancyGrid,
+            f"{self.namespace}/map",
+            self.local_map_callback,
+            map_qos,
+        )
+
+        self.plan_sub: Subscription[Path] = self.create_subscription(
+            Path,
+            f"{self.namespace}/plan",
+            self.trajectory_recorder.track_route,
+            10,
+        )
+
+        self.goal_sub: list[Subscription[PoseStamped]] = list()
+
         # ----- Publishers -----
         self.goal_pub: Publisher[PoseStamped] = self.create_publisher(
-            PoseStamped, f"{self.namespace}/goal_pose", 10
+            PoseStamped, f"{self.namespace}/{self.goal_topic}", 10
         )
 
         # ----- Initialization -----
-        self.get_logger().info("Attempting to connect to action server")
-        result: bool = self.nav_client.wait_for_server(timeout_sec=10.0)
+        self.get_logger().info(f"Robot node '{self.namespace}' initialized")
 
-        if result:
-            self.get_logger().info("Successfully connected to action server")
-            self.action_server_connected = True
-        else:
-            self.get_logger().error("Failed to connect to action server within timeout")
+    def save_model(
+        self, request: SimulationOutput.Request, response: SimulationOutput.Response
+    ) -> SimulationOutput.Response:
+        try:
+            if self.train:
+                res: bool = self.decision_network.save_model(self.model_path)
+                self.decision_network.data_logger.export_to_csv(
+                    f"export/{self.namespace}_training_{request.id}.csv"
+                )
+            else:
+                res = True  # if not training, just export data without saving model
+
+            self.trajectory_recorder.export_trajectory(
+                f"export/{self.namespace}_trajectory_{request.id}.json",
+                create_plot=False,
+            )
+            self.trajectory_recorder.export_odometry(
+                f"export/{self.namespace}_odometry_{request.id}.txt",
+                create_plot=False,
+            )
+            self.trajectory_recorder.create_map_overlay(
+                self.current_map,
+                f"export/{self.namespace}_map_overlay_{request.id}.png",
+                source="odometry",
+                include_goals=True,
+            )
+            self.trajectory_recorder.plot_movement(
+                f"export/{self.namespace}_movement_{request.id}.png"
+            )
+
+            if self.collect_offline_data:
+                dataset_path = self.data_collector.export_jsonl(
+                    f"export/{self.offline_dataset_name}_{self.namespace}_{request.id}.jsonl"
+                )
+                self.get_logger().info(
+                    f"Offline dataset exported to {dataset_path} ({len(self.data_collector.transitions)} transitions)"
+                )
+
+            if res:
+                response.success = True
+                response.message = f"Model saved to {self.model_path}"
+                self.get_logger().info(response.message)
+
+            else:
+                response.success = False
+                response.message = f"Failed to save model to {self.model_path}"
+                self.get_logger().error(response.message)
+
+        except Exception as e:
+            response.success = False
+            response.message = f"Error saving model: {e}"
+            self.get_logger().error(response.message)
+
+        return response
 
     def odom_callback(self, msg: Odometry):
         self.last_odom = msg
@@ -172,41 +247,60 @@ class RobotNode(Node):
         qz = msg.pose.pose.orientation.z
         qw = msg.pose.pose.orientation.w
         self.theta = 2.0 * math.atan2(qz, qw)
-
-    def other_node_odom_callback(self, msg: Odometry):
-        # Update position of other robot nodes
-        if time() - self.last_position_update_time < self.position_update_interval:
-            return
-
-        node_name = msg.header.frame_id.replace(
-            "_odom", "_node"
-        )  # extract node name from frame_id
-        self.node_positions[node_name] = (
-            msg.pose.pose.position.x,
-            msg.pose.pose.position.y,
-        )
-        self.get_logger().debug(
-            f"Updated position for {node_name}: {self.node_positions[node_name]}"
-        )
-        self.last_position_update_time = time()
+        self.trajectory_recorder.store_odometry(msg, update_distance=0.2)
 
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg
+        self.decision_network.update_state(self.current_map, self.last_odom)
 
-    def save_checkpoint_callback(
-        self, request: Trigger.Request, response: Trigger.Response
-    ):
-        if self.swarm_explorer is not None:
-            self.swarm_explorer.save_checkpoint(self.model_checkpoint_path)
-            response.success = True
-            response.message = f"Checkpoint saved to {self.model_checkpoint_path}"
-            self.get_logger().info(response.message)
-        else:
-            response.success = False
-            response.message = "SwarmExplorer not initialized, cannot save checkpoint"
-            self.get_logger().warn(response.message)
+    def local_map_callback(self, msg: OccupancyGrid):
+        self.current_local_map = msg
 
-        return response
+    def goal_timer_callback(self):
+        if self.current_local_map is None or self.last_odom is None or self.current_map is None:
+            return
+
+        if self.moving:
+            if self.last_goal and self.goal_reached(
+                self.last_goal,
+                self.last_odom,
+                threshold=self.goal_reach_threshold,
+            ):
+                self._finalize_collected_transition(done=True, success=True, reason="goal_reached")
+                self.get_logger().info("Goal reached")
+                self.moving = False
+                return
+
+            if time() - self.goal_publish_time > self.goal_timeout:
+                self._finalize_collected_transition(done=True, success=False, reason="timeout")
+                self.get_logger().warn("Goal timeout exceeded, canceling goal")
+                self.moving = False
+            return
+
+        if not self.moving:
+            new_goal: tuple[float, float] = self.decision_network.generate_goal()
+            if new_goal and not self.goal_collision(new_goal):
+                self._begin_collected_transition(new_goal)
+                self.publish_goal(
+                    new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
+                )
+            else:
+                self.get_logger().warn("No valid goal generated or goal collision detected")
+
+    def training_timer_callback(self):
+        metrics = self.decision_network.train_epoch()
+        if metrics is None:
+            return
+
+        self.get_logger().info(
+            "train_epoch: "
+            f"loss={metrics['loss']:.4f}, "
+            f"policy={metrics['policy_loss']:.4f}, "
+            f"value={metrics['value_loss']:.4f}, "
+            f"entropy={metrics['entropy']:.4f}, "
+            f"avg_reward={metrics['avg_reward']:.4f}, "
+            f"batch={metrics['batch_size']}"
+        )
 
     def publish_goal(self, x: float, y: float, theta: float = 0.0):
         goal_pose = PoseStamped()
@@ -229,221 +323,107 @@ class RobotNode(Node):
 
         self.last_goal = goal_pose
 
-        if not self.action_server_connected:
-            self.get_logger().warn(
-                "Published goal, but action server is not connected, cannot receive completion from nav stack!"
-            )
-            self.goal_pub.publish(goal_pose)
+        self.goal_pub.publish(goal_pose)
+        self.goal_publish_time = time()
+        self.moving = True
 
-        else:
-            self.goal_future = self.nav_client.send_goal_async(
-                NavigateToPose.Goal(pose=goal_pose)
-            )
-            self.goal_future.add_done_callback(self.goal_response_callback)
-            self.get_logger().info(f"Published new goal [{x}, {y}, {theta}]")
-            self.goal_publish_time = time()
-            self.moving = True
+    def _begin_collected_transition(self, goal: tuple[float, float]):
+        if not self.collect_offline_data:
+            return
 
-    def goal_response_callback(self, future: Future):
-        self.goal_handle: ClientGoalHandle = future.result()  # goal result
-        result_future: Future = self.goal_handle.get_result_async()
-        result_future.add_done_callback(self.goal_done_callback)
-
-    def goal_done_callback(self, future: Future):
-        result: ClientGoalHandle = future.result()
-        if result.status == GoalStatus.STATUS_SUCCEEDED:  # SUCCEEDED
-            self.get_logger().info(f"Goal completed successfully")
-        elif result.status in [
-            GoalStatus.STATUS_ABORTED,
-            GoalStatus.STATUS_CANCELED,
-        ]:  # ABORTED or CANCELED
-            self.get_logger().warn(f"Goal was abandoned")
-        else:
-            self.get_logger().error(f"Goal failed with status {result.status}")
-
-        self.moving = False  # goal is done, so we are no longer moving
-
-    def process_goal_callback(self):
         if self.current_map is None or self.last_odom is None:
-            return  # no data yet to make decisions with
-
-        if (
-            self.is_moving
-            and self.action_server_connected
-            and time() - self.goal_publish_time > self.goal_timeout
-        ):
-            self.get_logger().warn(f"Goal timeout exceeded, canceling goal")
-            self.nav_client._cancel_goal_async(self.goal_handle)
-            self.moving = False
-            return  # robot is taking too long to reach goal
-
-        if self.is_moving:
-            return  # robot is moving towards goal
-
-        robot_names = self._get_swarm_robot_names()
-        if len(robot_names) == 0:
-            return  # no other robots found
-
-        if self.swarm_explorer is None and len(self.other_nodes) >= 1:
-            self.swarm_explorer = SwarmExplorer(
-                robot_names=robot_names,
-                checkpoint_path=self.model_checkpoint_path,
-            )
-            self.previous_observation = None
-            self.previous_action_output = None
-            self.get_logger().info(
-                f"Initialized SwarmExplorer for robots: {robot_names}"
-            )
-
-        if self.swarm_explorer is None:
             return
 
-        current_observation = self._build_swarm_observation(robot_names)
-        if current_observation is None:
-            return
-
-        if (
-            self.marl_training
-            and self.previous_observation is not None
-            and self.previous_action_output is not None
-        ):
-            metrics = self.swarm_explorer.training_loop_step(
-                prev_observation=self.previous_observation,
-                next_observation=current_observation,
-                action_output=self.previous_action_output,
-                done=False,
-                update_every=self.marl_update_every,
-                epochs=self.marl_update_epochs,
-            )
-            if metrics["actor_loss"] != 0.0 or metrics["critic_loss"] != 0.0:
-                self.get_logger().info(
-                    "MARL update "
-                    f"reward={metrics['reward']:.3f}, "
-                    f"actor_loss={metrics['actor_loss']:.4f}, "
-                    f"critic_loss={metrics['critic_loss']:.4f}, "
-                    f"entropy={metrics['entropy']:.4f}"
-                )
-                self.swarm_explorer.save_checkpoint(self.model_checkpoint_path)
-
-        action_output = self.swarm_explorer.select_frontier_actions(current_observation)
-        self.previous_observation = current_observation
-        self.previous_action_output = action_output
-
-        if self.namespace not in action_output.target_points:
-            return
-
-        target_x, target_y = action_output.target_points[self.namespace]
-        action_index = action_output.action_indices.get(self.namespace, -1)
-
-        if action_index < 0:
-            self.get_logger().debug("No valid frontier cluster available for this step")
-            return
-
-        self.publish_goal(float(target_x), float(target_y))
-
-    def _get_swarm_robot_names(self) -> list[str]:
-        discovered = []
-        for node_name in sorted(self.node_positions.keys()):
-            if node_name.endswith("_node"):
-                discovered.append(node_name.replace("_node", ""))
-        return [self.namespace] + [
-            name for name in discovered if name != self.namespace
-        ]
-
-    def _build_swarm_observation(
-        self, robot_names: list[str]
-    ) -> SwarmObservation | None:
-        if self.current_map is None or self.last_odom is None:
-            return None
-
-        width = int(self.current_map.info.width)
-        height = int(self.current_map.info.height)
-        if width <= 0 or height <= 0:
-            return None
-
-        try:
-            grid = np.array(self.current_map.data, dtype=np.int16).reshape(
-                height, width
-            )
-        except ValueError:
+        if self.data_collector.has_pending_transition:
             self.get_logger().warn(
-                "Failed to reshape occupancy grid for SwarmObservation"
+                "Pending offline transition detected; finalizing as interrupted before recording new transition"
             )
-            return None
+            self._finalize_collected_transition(done=True, success=False, reason="interrupted")
 
-        meta = MapMeta(
-            resolution=float(self.current_map.info.resolution),
-            origin_x=float(self.current_map.info.origin.position.x),
-            origin_y=float(self.current_map.info.origin.position.y),
-        )
-        map_data = OccupancyGridData(grid=grid, meta=meta)
-
-        robot_states: dict[str, RobotKinematics] = {}
-        robot_states[self.namespace] = RobotKinematics(
-            x=float(self.x),
-            y=float(self.y),
-            yaw=float(self.theta),
-            vx=float(self.last_odom.twist.twist.linear.x),
-            vy=float(self.last_odom.twist.twist.linear.y),
+        self.data_collector.begin_transition(
+            current_map=self.current_map,
+            current_odom=self.last_odom,
+            action=self.decision_network.pending_action,
+            goal=goal,
+            metadata={
+                "moving": self.moving,
+                "goal_timeout": self.goal_timeout,
+                "other_goal_count": len(self.other_goals),
+            },
         )
 
-        for robot_name in robot_names:
-            if robot_name == self.namespace:
-                continue
+    def _finalize_collected_transition(self, done: bool, success: bool, reason: str):
+        if not self.collect_offline_data or not self.data_collector.has_pending_transition:
+            return
 
-            node_key = f"{robot_name}_node"
-            if node_key not in self.node_positions:
-                continue
+        if self.current_map is None or self.last_odom is None:
+            return
 
-            other_x, other_y = self.node_positions[node_key]
-            robot_states[robot_name] = RobotKinematics(
-                x=float(other_x),
-                y=float(other_y),
-                yaw=0.0,
-                vx=0.0,
-                vy=0.0,
-            )
+        local_map = self.decision_network.get_local_patch(self.current_map, self.last_odom)
+        reward = self.decision_network.feedback_layer.calculate_reward(
+            self.current_map,
+            self.last_odom,
+            local_map,
+        )
 
-        missing = [name for name in robot_names if name not in robot_states]
-        if missing:
-            self.get_logger().debug(f"Missing states for robots: {missing}")
-            return None
+        self.data_collector.finalize_transition(
+            next_map=self.current_map,
+            next_odom=self.last_odom,
+            reward=reward,
+            done=done,
+            success=success,
+            metadata={
+                "reason": reason,
+                "moving": self.moving,
+            },
+        )
 
-        return SwarmObservation(map_data=map_data, robot_states=robot_states)
+    def other_goal_callback(self, msg: PoseStamped, namespace: str):
+        self.other_goals[namespace] = msg
+
+    def goal_collision(self, goal: tuple[float, float]) -> bool:
+        for other_goal in self.other_goals.values():
+            other_x, other_y = other_goal.pose.position.x, other_goal.pose.position.y
+            distance = math.sqrt((goal[0] - other_x) ** 2 + (goal[1] - other_y) ** 2)
+            if distance < self.goal_reach_threshold * 2:  # simple collision threshold
+                return True
+
+        return False
 
     def robot_discovery_callback(self):
-        nodes: list[str] = self.get_node_names()
+        # nodes: list[str] = self.get_node_names()
         topics: list[str] = [topic[0] for topic in self.get_topic_names_and_types()]
 
-        for node in nodes:
-            if (
-                node.endswith("_node")
-                and node != self.get_name()
-                and node not in self.other_nodes
-                and f"/{node.replace('_node', '')}/odom"
-                in topics  # prevent subscribing to non-robot nodes that happen to end with _node
-            ):
-                if node not in [sub.topic_name for sub in self.odom_subs]:
-                    odom_topic = f"/{node.replace('_node', '')}/odom"
-                    self.get_logger().info(
-                        f"{self.namespace} discovered new robot node: {node}, subscribing to {odom_topic}"
+        for topic in topics:
+            if topic.endswith("/navigate_to_pose") and topic.split("/")[1] != self.namespace:
+                other_robot_namespace: str = topic.split("/")[1]
+                if other_robot_namespace in [sub.topic.split("/")[1] for sub in self.goal_sub]:
+                    continue  # already subscribed to this robot's goal topic
+
+                self.get_logger().info(f"Discovered new robot: {other_robot_namespace}")
+                self.goal_sub.append(
+                    self.create_subscription(
+                        PoseStamped,
+                        f"/{other_robot_namespace}/{self.goal_topic}",
+                        lambda msg, ns=other_robot_namespace: self.other_goal_callback(msg, ns),
+                        10,
                     )
-                    new_sub = self.create_subscription(
-                        Odometry, odom_topic, self.other_node_odom_callback, 10
-                    )  # subscribe to other robots odom topic
-                    self.odom_subs.append(new_sub)
-                    self.other_nodes.append(node)
+                )
 
     @property
     def is_moving(self) -> bool:
         return self.moving
 
-    def get_local_map(self) -> OccupancyGrid:
-        if self.current_map:
-            return self.current_map
-
-        self.get_logger().warn(f"No map received yet, returning empty map")
-        return OccupancyGrid()
+    @staticmethod
+    def goal_reached(
+        goal_pose: PoseStamped,
+        current_odom: Odometry,
+        threshold: float = 0.5,
+    ) -> bool:
+        dx: float = goal_pose.pose.position.x - current_odom.pose.pose.position.x
+        dy: float = goal_pose.pose.position.y - current_odom.pose.pose.position.y
+        distance: float = math.sqrt(dx**2 + dy**2)
+        return distance < threshold
 
 
 def main():
@@ -453,11 +433,6 @@ def main():
         while rclpy.ok():
             rclpy.spin_once(robot_node)
     except KeyboardInterrupt:
-        if robot_node.swarm_explorer is not None:
-            robot_node.swarm_explorer.save_checkpoint(robot_node.model_checkpoint_path)
-            robot_node.get_logger().info(
-                f"Saved MARL checkpoint to {robot_node.model_checkpoint_path}"
-            )
         robot_node.destroy_node()
         rclpy.shutdown()
 

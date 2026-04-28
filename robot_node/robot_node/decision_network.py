@@ -13,11 +13,11 @@ import copy
 from robot_node.data_logger import DataLogger
 
 
-EXPLOITATION_RATIO: float = 0.60  # More use of learned policy, less random overlap revisits
+EXPLOITATION_RATIO: float = 0.65  # More use of learned policy, less random overlap revisits
 LEARNING_RATE: float = 1e-3  # Slightly stabler updates
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.995  # More long-term planning
-ENTROPY_COEF: float = 0.02  # Less random exploration
+ENTROPY_COEF: float = 0.015  # Less random exploration
 ENTROPY_COEF_MIN: float = 0.005
 TARGET_ENTROPY_RATIO: float = 0.55
 VALUE_COEF: float = 0.3
@@ -572,7 +572,7 @@ class FeedbackLayer:
         # Reward efficient exploration (gain per meter) instead of rewarding longer travel.
         travel_norm: float = max(distance_traveled, MIN_REWARD_DISTANCE_M)
         exploration_efficiency: float = information_gain / travel_norm
-        total_reward += 3.0 * information_gain + 1.5 * exploration_efficiency
+        total_reward += 2.5 * information_gain + 1.5 * exploration_efficiency
 
         # Criterion 3: Penalize travel through overlap areas to encourage efficient coverage
         local_map_data: np.ndarray = np.array(local_map.data, dtype=np.int16).reshape(
@@ -582,7 +582,7 @@ class FeedbackLayer:
         overlap_ratio: float = np.sum((local_map_data >= 10) & (local_map_data < 100)) / local_cells
 
         # Stronger discouragement of already-explored-by-others areas.
-        total_reward -= 2.0 * overlap_ratio
+        total_reward -= 2.5 * overlap_ratio
 
         # Criterion 4: Penalty for staying still
         if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):

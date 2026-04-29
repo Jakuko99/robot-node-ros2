@@ -88,7 +88,9 @@ class DataLogger:
             )
 
     @staticmethod
-    def subplot_data(data: dict[int, Batch], plot_labels: list[str], save_path: str):
+    def subplot_data(
+        data: dict[int, Batch], plot_labels: list[str], save_path: str, data_label: str = "Batch"
+    ):
         batch_nrs = [batch.batch_nr for batch in data.values()]
         num_plots = len(plot_labels)
         plt.figure(figsize=(15, 5 * int(ceil(num_plots / 2))))
@@ -98,9 +100,9 @@ class DataLogger:
                 values = [getattr(batch, plot_label) for batch in data.values()]
                 plt.subplot(int(ceil(num_plots / 2)), 2, i + 1)
                 plt.plot(batch_nrs, values, label=plot_label)
-                plt.xlabel("Batch Number")
+                plt.xlabel(data_label)
                 plt.ylabel(plot_label.replace("_", " ").title())
-                plt.title(f"{plot_label.replace('_', ' ').title()} over Batches")
+                plt.title(f"{plot_label.replace('_', ' ').title()} over {data_label}s")
                 # plt.legend()
                 plt.grid()
             else:
@@ -117,5 +119,5 @@ if __name__ == "__main__":
         "export/kris_robot1_training_6a8fec3e-4b6d-4384-8288-87c666d0ecff.csv"
     )
     DataLogger.subplot_data(
-        data, ["loss", "policy_loss", "avg_reward", "entropy"], "export/subplot.png"
+        data, ["loss", "policy_loss", "avg_reward", "entropy"], "export/subplot.png", "Batch"
     )

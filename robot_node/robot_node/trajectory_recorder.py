@@ -12,6 +12,7 @@ class TrajectoryRecorder:
         self.trajectory: list[Path] = []
         self.odometry_history: list[Odometry] = []
         self.nav_goals: list[PoseStamped] = []
+        self.timeouted_goals: list[PoseStamped] = []
         self.static_transform_x: float = static_transform_x
         self.static_transform_y: float = static_transform_y
 
@@ -19,6 +20,12 @@ class TrajectoryRecorder:
         self.trajectory.append(msg)
 
         self.nav_goals.append(msg.poses[-1])  # track the final pose of each path as a goal
+
+    def goal_timeout(self):
+        try:
+            self.timeouted_goals.append(self.nav_goals[-1])  # track the last goal as timeouted
+        except IndexError:
+            pass  # no goals to timeout
 
     def store_odometry(self, msg: Odometry, update_distance: float = 0.5):
         if not self.odometry_history:
@@ -99,8 +106,14 @@ class TrajectoryRecorder:
         include_goals: bool = True,
     ):
         map_origin_x, map_origin_y = map.info.origin.position.x, map.info.origin.position.y
-        map_resolution = map.info.resolution
+        map_resolution: float = map.info.resolution
         map_width, map_height = map.info.width, map.info.height
+
+        def world_to_map(x: float, y: float) -> tuple[int, int]:
+            return (
+                int((x - map_origin_x + self.static_transform_x) / map_resolution),
+                int((y - map_origin_y + self.static_transform_y) / map_resolution),
+            )
 
         map_array = np.array(map.data, dtype=np.int8).reshape((map_height, map_width))
         map_image = np.zeros((map_height, map_width, 3), dtype=np.uint8)
@@ -113,43 +126,33 @@ class TrajectoryRecorder:
 
         if source == "odometry":
             for odom in self.odometry_history:
-                map_x = int((odom.pose.pose.position.x - map_origin_x) / map_resolution) + int(
-                    self.static_transform_x
+                map_x, map_y = world_to_map(
+                    odom.pose.pose.position.x,
+                    odom.pose.pose.position.y,
                 )
-                map_y = (
-                    map_height
-                    - int((odom.pose.pose.position.y - map_origin_y) / map_resolution)
-                    + int(self.static_transform_y)
-                )  # INFO: flip y-axis and apply static transform
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
-                    map_image[map_height - 1 - map_y, map_x] = [255, 255, 0]
+                    map_image[map_y, map_x] = [255, 255, 0]
 
         elif source == "trajectory":
             for path in self.trajectory:
                 for pose in path.poses:
-                    map_x = int((pose.pose.position.x - map_origin_x) / map_resolution) + int(
-                        self.static_transform_x
-                    )
-                    map_y = (
-                        map_height
-                        - int((pose.pose.position.y - map_origin_y) / map_resolution)
-                        + int(self.static_transform_y)
+                    map_x, map_y = world_to_map(
+                        pose.pose.position.x,
+                        pose.pose.position.y,
                     )
                     if 0 <= map_x < map_width and 0 <= map_y < map_height:
-                        map_image[map_height - 1 - map_y, map_x] = [255, 255, 0]
+                        map_image[map_y, map_x] = [255, 255, 0]
 
         if include_goals:
             for goal in self.nav_goals:
-                map_x = int((goal.pose.position.x - map_origin_x) / map_resolution) + int(
-                    self.static_transform_x
-                )
-                map_y = (
-                    map_height
-                    - int((goal.pose.position.y - map_origin_y) / map_resolution)
-                    + int(self.static_transform_y)
-                )
+                map_x, map_y = world_to_map(goal.pose.position.x, goal.pose.position.y)
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
-                    map_image[map_height - 1 - map_y, map_x] = [255, 0, 255]
+                    map_image[map_y, map_x] = [255, 0, 255]
+
+            for goal in self.timeouted_goals:
+                map_x, map_y = world_to_map(goal.pose.position.x, goal.pose.position.y)
+                if 0 <= map_x < map_width and 0 <= map_y < map_height:
+                    map_image[map_y, map_x] = [0, 172, 255]
 
         cv2.imwrite(filename, map_image)
 
@@ -157,8 +160,8 @@ class TrajectoryRecorder:
         end_points_x: list[float] = []
         end_points_y: list[float] = []
         for path in self.trajectory:  # visualize goals
-            end_points_x.append(path.poses[-1].pose.position.x)
-            end_points_y.append(path.poses[-1].pose.position.y)
+            end_points_x.append(path.poses[-1].pose.position.x + self.static_transform_x)
+            end_points_y.append(path.poses[-1].pose.position.y + self.static_transform_y)
 
         odom_x_values: list[float] = []
         odom_y_values: list[float] = []
@@ -170,10 +173,17 @@ class TrajectoryRecorder:
         plt.scatter(odom_x_values[0], odom_y_values[0], c="lime", marker="o", label="Start")
         plt.scatter(odom_x_values[-1], odom_y_values[-1], c="purple", marker="o", label="End")
         plt.scatter(end_points_x, end_points_y, c="orange", marker="o", label="Goals")
+        plt.scatter(
+            [goal.pose.position.x + self.static_transform_x for goal in self.timeouted_goals],
+            [goal.pose.position.y + self.static_transform_y for goal in self.timeouted_goals],
+            c="black",
+            marker="x",
+            label="Timeouted Goals",
+        )
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
-        plt.legend(["Odometry", "Odometry start", "Odometry end", "Goals"])
+        plt.legend(["Odometry", "Odometry start", "Odometry end", "Goals", "Timeouted Goals"])
         plt.tight_layout()
         plt.savefig(filename)
 

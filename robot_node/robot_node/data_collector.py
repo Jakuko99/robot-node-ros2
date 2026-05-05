@@ -394,43 +394,47 @@ class DataCollector:
 
     @staticmethod
     def get_local_patch(
-        map_msg: OccupancyGrid,
+        map: OccupancyGrid,
         odom: Odometry,
         patch_size: int = PATCH_RADIUS,
+        static_transform_x: float = 0.0,
+        static_transform_y: float = 0.0,
     ) -> OccupancyGrid:
         local_map = OccupancyGrid()
 
-        if map_msg is None or odom is None:
-            return local_map
-
-        local_map.info.resolution = map_msg.info.resolution
-        local_map.header.frame_id = map_msg.header.frame_id
-        local_map.header.stamp = map_msg.header.stamp
-        local_map.info.origin.position.x = (
-            odom.pose.pose.position.x - patch_size * map_msg.info.resolution
-        )
-        local_map.info.origin.position.y = (
-            odom.pose.pose.position.y - patch_size * map_msg.info.resolution
-        )
-        local_map.info.width = patch_size * 2 + 1
-        local_map.info.height = patch_size * 2 + 1
-        local_map.data = [-1] * (local_map.info.width * local_map.info.height)
-
-        try:
-            center_index = DataCollector.pos_to_map_index(
-                map_msg, [odom.pose.pose.position.x, odom.pose.pose.position.y]
+        if map and odom:
+            local_map.info.resolution = map.info.resolution
+            local_map.header.frame_id = map.header.frame_id
+            local_map.header.stamp = map.header.stamp
+            local_map.info.origin.position.x = (
+                odom.pose.pose.position.x - patch_size * map.info.resolution
             )
-        except ValueError:
-            return local_map
+            local_map.info.origin.position.y = (
+                odom.pose.pose.position.y - patch_size * map.info.resolution
+            )
+            local_map.info.width = patch_size * 2 + 1
+            local_map.info.height = patch_size * 2 + 1
+            local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
-        for i in range(-patch_size, patch_size + 1):
-            for j in range(-patch_size, patch_size + 1):
-                global_i = center_index[0] + i
-                global_j = center_index[1] + j
+            try:
+                center_index = DataCollector.pos_to_map_index(
+                    map,
+                    [odom.pose.pose.position.x, odom.pose.pose.position.y],
+                )
+            except ValueError:
+                return local_map
 
-                if 0 <= global_i < map_msg.info.height and 0 <= global_j < map_msg.info.width:
-                    local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
-                    global_index = global_i * map_msg.info.width + global_j
-                    local_map.data[local_index] = map_msg.data[global_index]
+            if center_index is None:
+                return local_map
+
+            for i in range(-patch_size, patch_size + 1):
+                for j in range(-patch_size, patch_size + 1):
+                    global_i = center_index[0] + i
+                    global_j = center_index[1] + j
+
+                    if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
+                        local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
+                        global_index = global_i * map.info.width + global_j
+                        local_map.data[local_index] = map.data[global_index]
 
         return local_map

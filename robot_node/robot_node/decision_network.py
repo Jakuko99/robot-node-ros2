@@ -42,12 +42,22 @@ def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
 
 
 class DecisionNetwork(nn.Module):
-    def __init__(self, robot_name: str, pheromone_decay: float, train: bool = True, parent=None):
+    def __init__(
+        self,
+        robot_name: str,
+        pheromone_decay: float,
+        static_transform_x: float = 0.0,
+        static_transform_y: float = 0.0,
+        train: bool = True,
+        parent=None,
+    ):
         super().__init__()
         self.robot_name = robot_name
         self.pheromone_decay = pheromone_decay
+        self.static_transform_x = static_transform_x
+        self.static_transform_y = static_transform_y
         self.train_enabled = train
-        self.feedback_layer = FeedbackLayer(self)
+        self.feedback_layer = FeedbackLayer(self, static_transform_x, static_transform_y)
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.data_logger = DataLogger()
 
@@ -233,7 +243,13 @@ class DecisionNetwork(nn.Module):
         odom: Odometry,
         patch_radius: int = PATCH_RADIUS,
     ) -> np.ndarray:
-        local_patch = self.get_local_patch(map, odom, patch_size=patch_radius)
+        local_patch = self.get_local_patch(
+            map,
+            odom,
+            patch_size=patch_radius,
+            static_transform_x=self.static_transform_x,
+            static_transform_y=self.static_transform_y,
+        )
         transformed = self.transform_map(local_patch).astype(np.float32)
 
         # Convert 5-channel occupancy encoding into a single scalar utility map.
@@ -310,7 +326,13 @@ class DecisionNetwork(nn.Module):
         ):
             return
 
-        local_map = self.get_local_patch(self.current_map, self.current_odom, PATCH_RADIUS)
+        local_map = self.get_local_patch(
+            self.current_map,
+            self.current_odom,
+            PATCH_RADIUS,
+            self.static_transform_x,
+            self.static_transform_y,
+        )
         reward = self.feedback_layer.calculate_reward(
             self.current_map,
             self.current_odom,
@@ -388,39 +410,54 @@ class DecisionNetwork(nn.Module):
     @staticmethod
     def pos_to_map_index(
         map: OccupancyGrid,
-        pos: tuple[float, float],
+        pos: list[float, float],
+        static_transform_x: float = 0.0,
+        static_transform_y: float = 0.0,
     ) -> tuple[int, int]:
         """
-        Return index of cells, that correspond to current odometry position
+        Convert world coordinates to occupancy grid indices.
+        Returns:
+            (i, j) grid indices or None if out of bounds
         """
-        if pos[0] < map.info.origin.position.x or pos[1] < map.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
+        # Apply static offset
+        pos[0] += static_transform_x
+        pos[1] += static_transform_y
 
-        m_res: float = map.info.resolution
-        row = math.floor((pos[1] - map.info.origin.position.y) / m_res)
-        col = math.floor((pos[0] - map.info.origin.position.x) / m_res)
-        if row < 0 or row >= map.info.height or col < 0 or col >= map.info.width:
-            raise ValueError("Position is out of map bounds")
+        # Map origin
+        origin_x = map.info.origin.position.x
+        origin_y = map.info.origin.position.y
 
-        return (row, col)
+        # Extract yaw from quaternion
+        q = map.info.origin.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        theta = math.atan2(siny_cosp, cosy_cosp)
 
-    @staticmethod
-    def map_index_to_pos(
-        map: OccupancyGrid,
-        index: tuple[int, int],
-    ) -> tuple[float, float]:
-        """
-        Return position of cell with given index
-        """
-        row, col = index
-        if row < 0 or row >= map.info.height or col < 0 or col >= map.info.width:
-            raise ValueError("Map index is out of map bounds")
+        # Translate point into map frame
+        dx = pos[0] - origin_x
+        dy = pos[1] - origin_y
 
-        m_res: float = map.info.resolution
-        return (
-            map.info.origin.position.x + ((col + 0.5) * m_res),
-            map.info.origin.position.y + ((row + 0.5) * m_res),
-        )
+        # Rotate if needed
+        if abs(theta) > 1e-6:
+            cos_t = math.cos(-theta)
+            sin_t = math.sin(-theta)
+            mx = cos_t * dx - sin_t * dy
+            my = sin_t * dx + cos_t * dy
+        else:
+            # No rotation → faster path
+            mx = dx
+            my = dy
+
+        # Convert to grid indices
+        resolution = map.info.resolution
+        i = int(math.floor(mx / resolution))
+        j = int(math.floor(my / resolution))
+
+        # Bounds check
+        if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
+            return None  # outside map
+
+        return i, j
 
     @staticmethod
     def transform_map(map: OccupancyGrid) -> np.ndarray:
@@ -441,7 +478,13 @@ class DecisionNetwork(nn.Module):
         return out
 
     @staticmethod
-    def get_local_patch(map: OccupancyGrid, odom: Odometry, patch_size: int = 5) -> OccupancyGrid:
+    def get_local_patch(
+        map: OccupancyGrid,
+        odom: Odometry,
+        patch_size: int = 5,
+        static_transform_x: float = 0.0,
+        static_transform_y: float = 0.0,
+    ) -> OccupancyGrid:
         local_map = OccupancyGrid()
 
         if map and odom:
@@ -460,7 +503,10 @@ class DecisionNetwork(nn.Module):
 
             try:
                 center_index = DecisionNetwork.pos_to_map_index(
-                    map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
+                    map,
+                    [odom.pose.pose.position.x, odom.pose.pose.position.y],
+                    static_transform_x,
+                    static_transform_y,
                 )
             except ValueError:
                 return local_map
@@ -517,8 +563,15 @@ class DecisionNetwork(nn.Module):
 
 
 class FeedbackLayer:
-    def __init__(self, network: DecisionNetwork):
+    def __init__(
+        self,
+        network: DecisionNetwork,
+        static_transform_x: float = 0.0,
+        static_transform_y: float = 0.0,
+    ):
         self.network: DecisionNetwork = network
+        self.static_transform_x = static_transform_x
+        self.static_transform_y = static_transform_y
         self.current_state: OccupancyGrid = None
         self.current_odom: Odometry = None
 
@@ -540,7 +593,13 @@ class FeedbackLayer:
             return 0.0
 
         if local_map is None:
-            local_map = self.network.get_local_patch(new_map, new_odom, PATCH_RADIUS)
+            local_map = self.network.get_local_patch(
+                new_map,
+                new_odom,
+                PATCH_RADIUS,
+                self.static_transform_x,
+                self.static_transform_y,
+            )
 
         total_reward: float = 0.0
 

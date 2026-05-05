@@ -13,7 +13,6 @@ import numpy as np
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 
-
 PATCH_RADIUS: int = 4
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
 
@@ -324,20 +323,59 @@ class DataCollector:
 
     @staticmethod
     def pos_to_map_index(
-        map_msg: OccupancyGrid,
-        pos: tuple[float, float],
+        map: OccupancyGrid,
+        pos: list[float, float],
+        transform: PoseStamped = None,
     ) -> tuple[int, int]:
-        if pos[0] < map_msg.info.origin.position.x or pos[1] < map_msg.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
+        """
+        Convert world coordinates to occupancy grid indices.
+        Returns:
+            (i, j) grid indices or None if out of bounds
+        """
+        if transform is None:
+            offset = (0.0, 0.0)
+        else:
+            offset = (transform.transform.translation.x, transform.transform.translation.y)
 
-        resolution: float = map_msg.info.resolution
-        row = math.floor((pos[1] - map_msg.info.origin.position.y) / resolution)
-        col = math.floor((pos[0] - map_msg.info.origin.position.x) / resolution)
+        # Apply static offset
+        pos[0] += offset[0]
+        pos[1] += offset[1]
 
-        if row < 0 or row >= map_msg.info.height or col < 0 or col >= map_msg.info.width:
-            raise ValueError("Position is out of map bounds")
+        # Map origin
+        origin_x = map.info.origin.position.x
+        origin_y = map.info.origin.position.y
 
-        return (row, col)
+        # Extract yaw from quaternion
+        q = map.info.origin.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        theta = math.atan2(siny_cosp, cosy_cosp)
+
+        # Translate point into map frame
+        dx = pos[0] - origin_x
+        dy = pos[1] - origin_y
+
+        # Rotate if needed
+        if abs(theta) > 1e-6:
+            cos_t = math.cos(-theta)
+            sin_t = math.sin(-theta)
+            mx = cos_t * dx - sin_t * dy
+            my = sin_t * dx + cos_t * dy
+        else:
+            # No rotation → faster path
+            mx = dx
+            my = dy
+
+        # Convert to grid indices
+        resolution = map.info.resolution
+        i = int(math.floor(mx / resolution))
+        j = int(math.floor(my / resolution))
+
+        # Bounds check
+        if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
+            return None  # outside map
+
+        return i, j
 
     @staticmethod
     def transform_map(map_msg: OccupancyGrid) -> np.ndarray:
@@ -380,7 +418,7 @@ class DataCollector:
 
         try:
             center_index = DataCollector.pos_to_map_index(
-                map_msg, (odom.pose.pose.position.x, odom.pose.pose.position.y)
+                map_msg, [odom.pose.pose.position.x, odom.pose.pose.position.y]
             )
         except ValueError:
             return local_map

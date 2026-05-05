@@ -35,10 +35,10 @@ class ACOCreator:
             try:
                 position: tuple[float, float] = self.pos_to_map_index(
                     self.global_map,
-                    (
+                    [
                         self.current_odom.pose.pose.position.x,
                         self.current_odom.pose.pose.position.y,
-                    ),
+                    ],
                 )
                 map_data = self._set_region(map_data, *position[::-1], width=1, value=-10)
 
@@ -69,10 +69,10 @@ class ACOCreator:
 
                         position: tuple[float, float] = self.pos_to_map_index(
                             self.global_map,
-                            (
+                            [
                                 self.parent.map_subscriptions[robot_name].robot_position_x,
                                 self.parent.map_subscriptions[robot_name].robot_position_y,
-                            ),
+                            ],
                             transform=static_tf,
                         )
                         map_data = self._set_region(map_data, *position[::-1], width=1, value=110)
@@ -114,33 +114,58 @@ class ACOCreator:
     def pos_to_map_index(
         self,
         map: OccupancyGrid,
-        pos: tuple[float, float],
+        pos: list[float, float],
         transform: TransformStamped = None,
     ) -> tuple[int, int]:
         """
-        Return index of cells, that correspond to current odometry position
+        Convert world coordinates to occupancy grid indices.
+        Returns:
+            (i, j) grid indices or None if out of bounds
         """
         if transform is None:
-            transform = self.static_transform
+            offset = (0.0, 0.0)
+        else:
+            offset = (transform.transform.translation.x, transform.transform.translation.y)
 
-        if pos[0] < map.info.origin.position.x or pos[1] < map.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
+        # Apply static offset
+        pos[0] += offset[0]
+        pos[1] += offset[1]
 
-        m_res: float = map.info.resolution
-        return (
-            math.floor(
-                abs(
-                    (pos[0] + transform.transform.translation.x - map.info.origin.position.x)
-                    / m_res
-                )
-            ),
-            math.floor(
-                abs(
-                    (pos[1] + transform.transform.translation.y - map.info.origin.position.y)
-                    / m_res
-                )
-            ),
-        )
+        # Map origin
+        origin_x = map.info.origin.position.x
+        origin_y = map.info.origin.position.y
+
+        # Extract yaw from quaternion
+        q = map.info.origin.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        theta = math.atan2(siny_cosp, cosy_cosp)
+
+        # Translate point into map frame
+        dx = pos[0] - origin_x
+        dy = pos[1] - origin_y
+
+        # Rotate if needed
+        if abs(theta) > 1e-6:
+            cos_t = math.cos(-theta)
+            sin_t = math.sin(-theta)
+            mx = cos_t * dx - sin_t * dy
+            my = sin_t * dx + cos_t * dy
+        else:
+            # No rotation → faster path
+            mx = dx
+            my = dy
+
+        # Convert to grid indices
+        resolution = map.info.resolution
+        i = int(math.floor(mx / resolution))
+        j = int(math.floor(my / resolution))
+
+        # Bounds check
+        if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
+            return None  # outside map
+
+        return i, j
 
     @staticmethod
     def merge_maps(map1: OccupancyGrid, map2: OccupancyGrid) -> OccupancyGrid:

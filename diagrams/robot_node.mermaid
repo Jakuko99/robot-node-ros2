@@ -59,7 +59,7 @@ flowchart TD
     finalize_call[/Finalize_transition/] --> Extract_observation
     Extract_observation --> Generate_local_patch
     binarize_map_data -.-> Generate_local_patch
-    update_odometry_data -.-> Generate_local_patch:::problem
+    update_odometry_data -.-> Generate_local_patch
     Generate_local_patch --> Convert_to_tensor
     Convert_to_tensor --> Obtain_policy
     Obtain_policy --> Policy_to_action
@@ -85,7 +85,7 @@ flowchart TD
     export_func --> Generate_map_overlay
     Generate_map_overlay --> Transform_values_into_RGB
     Transform_values_into_RGB --> Find_image_index_from_coordinates
-    Find_image_index_from_coordinates:::problem --> Add_goals_to_image
+    Find_image_index_from_coordinates --> Add_goals_to_image
     Add_goals_to_image --> Save_image_to_disk
     export_func --> Plot_movement
     Plot_movement --> Transform_values_to_list

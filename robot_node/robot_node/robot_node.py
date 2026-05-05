@@ -271,10 +271,10 @@ class RobotNode(Node):
                 self.moving = False
                 return
 
-            if time() - self.goal_publish_time > self.goal_timeout:
+            if (time() - self.goal_publish_time) > self.goal_timeout:
                 self._finalize_collected_transition(done=True, success=False, reason="timeout")
                 self.get_logger().warn("Goal timeout exceeded, canceling goal")
-                self.trajectory_recorder.goal_timeout()  # track timeouted goal
+                self.trajectory_recorder.goal_timeout(self.last_goal)  # track timeouted goal
                 self.moving = False
             return
 

@@ -375,14 +375,17 @@ class DecisionNetwork(nn.Module):
             if idx is None:
                 # Out of bounds but in valid direction
                 return True
-
-            cell_value = map_data[idx[1], idx[0]]
-            # Prefer unexplored (-1) and free (0) over occupied (100)
-            if cell_value == -1 or cell_value == 0:
+            try:
+                cell_value = map_data[idx[1], idx[0]]
+                # Prefer unexplored (-1) and free (0) over occupied (100)
+                if cell_value == -1 or cell_value == 0:
+                    return True
+                # Penalize occupied cells; continue searching
+                if cell_value >= 50:  # Likely occupied
+                    continue
+            except IndexError:
+                # Out of bounds
                 return True
-            # Penalize occupied cells; continue searching
-            if cell_value >= 50:  # Likely occupied
-                continue
 
         return False
 

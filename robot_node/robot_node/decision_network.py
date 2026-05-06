@@ -85,7 +85,11 @@ class DecisionNetwork(nn.Module):
             nn.SiLU(),
             layer_init(nn.Linear(64, 64)),
             nn.SiLU(),
-            layer_init(nn.Linear(64, ACTION_COUNT), std=0.01) if ACTION_COUNT == 1 else layer_init(nn.Linear(64, ACTION_COUNT), std=np.sqrt(0.1)),
+            (
+                layer_init(nn.Linear(64, ACTION_COUNT), std=0.01)
+                if ACTION_COUNT == 1
+                else layer_init(nn.Linear(64, ACTION_COUNT), std=np.sqrt(0.1))
+            ),
         )
         self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)
         self.reward_mean: float = 0.0
@@ -215,7 +219,7 @@ class DecisionNetwork(nn.Module):
 
         if advantages.numel() > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
-        
+
         # Clip advantages to prevent extreme policy updates
         clipped_advantages = torch.clamp(advantages, -5.0, 5.0)
 
@@ -231,14 +235,18 @@ class DecisionNetwork(nn.Module):
         entropy_coef = max(ENTROPY_COEF_MIN, ENTROPY_COEF * entropy_scale)
 
         # Normalize value loss to prevent it from dominating policy loss
-        normalized_value_loss = value_loss / (returns.std() + 1e-8) if returns.std() > 1e-6 else value_loss
-        loss: torch.Tensor = policy_loss + VALUE_COEF * normalized_value_loss - entropy_coef * entropy_bonus
+        normalized_value_loss = (
+            value_loss / (returns.std() + 1e-8) if returns.std() > 1e-6 else value_loss
+        )
+        loss: torch.Tensor = (
+            policy_loss + VALUE_COEF * normalized_value_loss - entropy_coef * entropy_bonus
+        )
 
         self.optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
-        
+
         # Increment training step counter for exploration decay
         self.training_steps += 1
 
@@ -278,11 +286,11 @@ class DecisionNetwork(nn.Module):
         overlap = transformed[:, :, 2]
         others = transformed[:, :, 4]
         utility = unexplored + 0.3 * overlap - occupied - 0.2 * others
-        
+
         # Normalize utility to prevent extreme values and improve neural network training
         utility_max = np.abs(utility).max() + 1e-6
         utility = utility / utility_max
-        
+
         obs_vec = utility.reshape(-1)
 
         # Keep NN input size stable even if patch radius/config drifts at runtime.
@@ -310,7 +318,7 @@ class DecisionNetwork(nn.Module):
         angle = (2.0 * math.pi * action) / ACTION_COUNT
         cos_angle = math.cos(angle)
         sin_angle = math.sin(angle)
-        
+
         step = max(step_cells, 1) * map.info.resolution
         step = max(step, MIN_GOAL_DISTANCE_M)
 
@@ -356,18 +364,18 @@ class DecisionNetwork(nn.Module):
         map_data: np.ndarray = np.array(map.data, dtype=np.int8).reshape(
             (map.info.height, map.info.width)
         )
-        
+
         samples = 3
         for i in range(1, samples + 1):
             sample_dist = sample_distance * i
             sample_x = robot_x + cos_angle * sample_dist
             sample_y = robot_y + sin_angle * sample_dist
-            
+
             idx = DecisionNetwork.pos_to_map_index(map, [sample_x, sample_y])
             if idx is None:
                 # Out of bounds but in valid direction
                 return True
-            
+
             cell_value = map_data[idx[1], idx[0]]
             # Prefer unexplored (-1) and free (0) over occupied (100)
             if cell_value == -1 or cell_value == 0:
@@ -375,7 +383,7 @@ class DecisionNetwork(nn.Module):
             # Penalize occupied cells; continue searching
             if cell_value >= 50:  # Likely occupied
                 continue
-        
+
         return False
 
     def _obs_to_tensor(self, obs) -> torch.Tensor:
@@ -523,7 +531,11 @@ class DecisionNetwork(nn.Module):
 
         # Bounds check
         if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
-            return None  # outside map
+            m_res: float = map.info.resolution
+            return (
+                math.floor(abs((pos[0] - map.info.origin.position.x) / m_res)),
+                math.floor(abs((pos[1] - map.info.origin.position.y) / m_res)),
+            )  # alternate calculation
 
         return i, j
 
@@ -578,7 +590,7 @@ class DecisionNetwork(nn.Module):
                 )
             except ValueError:
                 return local_map
-            
+
             if center_index is None:
                 return local_map
 

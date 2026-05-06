@@ -149,7 +149,11 @@ class TrajectoryRecorder:
 
         # Bounds check
         if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
-            return None  # outside map
+            m_res: float = map.info.resolution
+            return (
+                math.floor(abs((pos[0] - map.info.origin.position.x) / m_res)),
+                math.floor(abs((pos[1] - map.info.origin.position.y) / m_res)),
+            )  # alternate calculation
 
         return i, j
 

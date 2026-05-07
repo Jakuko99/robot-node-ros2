@@ -323,63 +323,20 @@ class DataCollector:
 
     @staticmethod
     def pos_to_map_index(
-        map: OccupancyGrid,
-        pos: list[float, float],
-        transform: PoseStamped = None,
+        map_msg: OccupancyGrid,
+        pos: tuple[float, float],
     ) -> tuple[int, int]:
-        """
-        Convert world coordinates to occupancy grid indices.
-        Returns:
-            (i, j) grid indices or None if out of bounds
-        """
-        if transform is None:
-            offset = (0.0, 0.0)
-        else:
-            offset = (transform.transform.translation.x, transform.transform.translation.y)
+        if pos[0] < map_msg.info.origin.position.x or pos[1] < map_msg.info.origin.position.y:
+            raise ValueError("Position is out of map bounds")
 
-        # Apply static offset
-        pos[0] += offset[0]
-        pos[1] += offset[1]
+        resolution: float = map_msg.info.resolution
+        row = math.floor((pos[1] - map_msg.info.origin.position.y) / resolution)
+        col = math.floor((pos[0] - map_msg.info.origin.position.x) / resolution)
 
-        # Map origin
-        origin_x = map.info.origin.position.x
-        origin_y = map.info.origin.position.y
+        if row < 0 or row >= map_msg.info.height or col < 0 or col >= map_msg.info.width:
+            raise ValueError("Position is out of map bounds")
 
-        # Extract yaw from quaternion
-        q = map.info.origin.orientation
-        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        theta = math.atan2(siny_cosp, cosy_cosp)
-
-        # Translate point into map frame
-        dx = pos[0] - origin_x
-        dy = pos[1] - origin_y
-
-        # Rotate if needed
-        if abs(theta) > 1e-6:
-            cos_t = math.cos(-theta)
-            sin_t = math.sin(-theta)
-            mx = cos_t * dx - sin_t * dy
-            my = sin_t * dx + cos_t * dy
-        else:
-            # No rotation → faster path
-            mx = dx
-            my = dy
-
-        # Convert to grid indices
-        resolution = map.info.resolution
-        i = int(math.floor(mx / resolution))
-        j = int(math.floor(my / resolution))
-
-        # Bounds check
-        if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
-            m_res: float = map.info.resolution
-            return (
-                math.floor(abs((pos[0] - map.info.origin.position.x) / m_res)),
-                math.floor(abs((pos[1] - map.info.origin.position.y) / m_res)),
-            )  # alternate calculation
-
-        return i, j
+        return (row, col)
 
     @staticmethod
     def transform_map(map_msg: OccupancyGrid) -> np.ndarray:
@@ -420,25 +377,21 @@ class DataCollector:
             local_map.info.height = patch_size * 2 + 1
             local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
-            try:
-                center_index = DataCollector.pos_to_map_index(
-                    map,
-                    [odom.pose.pose.position.x, odom.pose.pose.position.y],
-                )
-            except ValueError:
-                return local_map
+        try:
+            center_index = DataCollector.pos_to_map_index(
+                map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
+            )
+        except ValueError:
+            return local_map
 
-            if center_index is None:
-                return local_map
+        for i in range(-patch_size, patch_size + 1):
+            for j in range(-patch_size, patch_size + 1):
+                global_i = center_index[0] + i
+                global_j = center_index[1] + j
 
-            for i in range(-patch_size, patch_size + 1):
-                for j in range(-patch_size, patch_size + 1):
-                    global_i = center_index[0] + i
-                    global_j = center_index[1] + j
-
-                    if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
-                        local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
-                        global_index = global_i * map.info.width + global_j
-                        local_map.data[local_index] = map.data[global_index]
+                if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
+                    local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
+                    global_index = global_i * map.info.width + global_j
+                    local_map.data[local_index] = map.data[global_index]
 
         return local_map

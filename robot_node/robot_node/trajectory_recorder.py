@@ -101,62 +101,6 @@ class TrajectoryRecorder:
             plt.title("Robot Trajectory")
             plt.savefig(filename.replace(".txt", ".png"))
 
-    @staticmethod
-    def pos_to_map_index(
-        map: OccupancyGrid,
-        pos: list[float, float],
-        static_transform_x: float = 0.0,
-        static_transform_y: float = 0.0,
-    ) -> tuple[int, int]:
-        """
-        Convert world coordinates to occupancy grid indices.
-        Returns:
-            (i, j) grid indices or None if out of bounds
-        """
-        # Apply static offset
-        pos[0] += static_transform_x
-        pos[1] += static_transform_y
-
-        # Map origin
-        origin_x = map.info.origin.position.x
-        origin_y = map.info.origin.position.y
-
-        # Extract yaw from quaternion
-        q = map.info.origin.orientation
-        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        theta = math.atan2(siny_cosp, cosy_cosp)
-
-        # Translate point into map frame
-        dx = pos[0] - origin_x
-        dy = pos[1] - origin_y
-
-        # Rotate if needed
-        if abs(theta) > 1e-6:
-            cos_t = math.cos(-theta)
-            sin_t = math.sin(-theta)
-            mx = cos_t * dx - sin_t * dy
-            my = sin_t * dx + cos_t * dy
-        else:
-            # No rotation → faster path
-            mx = dx
-            my = dy
-
-        # Convert to grid indices
-        resolution = map.info.resolution
-        i = int(math.floor(mx / resolution))
-        j = int(math.floor(my / resolution))
-
-        # Bounds check
-        if i < 0 or j < 0 or i >= map.info.width or j >= map.info.height:
-            m_res: float = map.info.resolution
-            return (
-                math.floor(abs((pos[0] - map.info.origin.position.x) / m_res)),
-                math.floor(abs((pos[1] - map.info.origin.position.y) / m_res)),
-            )  # alternate calculation
-
-        return i, j
-
     def create_map_overlay(
         self,
         map: OccupancyGrid,
@@ -164,7 +108,15 @@ class TrajectoryRecorder:
         source: str = "trajectory",
         include_goals: bool = True,
     ):
+        map_origin_x, map_origin_y = map.info.origin.position.x, map.info.origin.position.y
+        map_resolution: float = map.info.resolution
         map_width, map_height = map.info.width, map.info.height
+
+        def world_to_map(x: float, y: float) -> tuple[int, int]:
+            return (
+                int((x - map_origin_x + self.static_transform_x) / map_resolution),
+                int((y - map_origin_y + self.static_transform_y) / map_resolution),
+            )
 
         map_array = np.array(map.data, dtype=np.int8).reshape((map_height, map_width))
         map_image = np.zeros((map_height, map_width, 3), dtype=np.uint8)
@@ -177,11 +129,9 @@ class TrajectoryRecorder:
 
         if source == "odometry":
             for odom in self.odometry_history:
-                map_x, map_y = self.pos_to_map_index(
-                    map,
-                    [odom.pose.pose.position.x, odom.pose.pose.position.y],
-                    static_transform_x=self.static_transform_x,
-                    static_transform_y=self.static_transform_y,
+                map_x, map_y = world_to_map(
+                    odom.pose.pose.position.x,
+                    odom.pose.pose.position.y,
                 )
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
                     map_image[map_y, map_x] = [255, 255, 0]
@@ -189,33 +139,21 @@ class TrajectoryRecorder:
         elif source == "trajectory":
             for path in self.trajectory:
                 for pose in path.poses:
-                    map_x, map_y = self.pos_to_map_index(
-                        map,
-                        [pose.pose.position.x, pose.pose.position.y],
-                        static_transform_x=self.static_transform_x,
-                        static_transform_y=self.static_transform_y,
+                    map_x, map_y = world_to_map(
+                        pose.pose.position.x,
+                        pose.pose.position.y,
                     )
                     if 0 <= map_x < map_width and 0 <= map_y < map_height:
                         map_image[map_y, map_x] = [255, 255, 0]
 
         if include_goals:
             for goal in self.nav_goals:
-                map_x, map_y = self.pos_to_map_index(
-                    map,
-                    [goal.pose.position.x, goal.pose.position.y],
-                    static_transform_x=self.static_transform_x,
-                    static_transform_y=self.static_transform_y,
-                )
+                map_x, map_y = world_to_map(goal.pose.position.x, goal.pose.position.y)
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
                     map_image[map_y, map_x] = [255, 0, 255]
 
             for goal in self.timeouted_goals:
-                map_x, map_y = self.pos_to_map_index(
-                    map,
-                    [goal.pose.position.x, goal.pose.position.y],
-                    static_transform_x=self.static_transform_x,
-                    static_transform_y=self.static_transform_y,
-                )
+                map_x, map_y = world_to_map(goal.pose.position.x, goal.pose.position.y)
                 if 0 <= map_x < map_width and 0 <= map_y < map_height:
                     map_image[map_y, map_x] = [0, 172, 255]
 

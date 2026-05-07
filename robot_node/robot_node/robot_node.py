@@ -276,6 +276,7 @@ class RobotNode(Node):
                 self.get_logger().warn("Goal timeout exceeded, canceling goal")
                 self.trajectory_recorder.goal_timeout(self.last_goal)  # track timeouted goal
                 self.moving = False
+
             return
 
         if not self.moving:

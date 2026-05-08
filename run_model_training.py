@@ -187,7 +187,9 @@ if __name__ == "__main__":
         )
 
         gibson_files: list[str] = [
+            "gibson_beechwood.sdf",
             "gibson_corozal.sdf",
+            "gibson_cosmos.sdf",
             "gibson_hanson.sdf",
             "gibson_ihlen.sdf",
             "gibson_lindenwood.sdf",

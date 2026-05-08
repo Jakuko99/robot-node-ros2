@@ -328,7 +328,12 @@ class DecisionNetwork(nn.Module):
 
         # Frontier detection: verify path has unexplored or free space ahead
         if not DecisionNetwork._has_frontier_in_direction(
-            map, odom.pose.pose.position.x, odom.pose.pose.position.y, cos_angle, sin_angle
+            map,
+            odom.pose.pose.position.x,
+            odom.pose.pose.position.y,
+            cos_angle,
+            sin_angle,
+            sample_distance=3.0,
         ):
             return None
 

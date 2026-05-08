@@ -10,3 +10,4 @@ robot_network/resource/dataset_compressed/
 robot_network/robot_network/build/
 robot_sim/gazebo/random_environment.sdf
 robot_sim/gazebo/allensville/meshes/*.obj
+!robot_sim/gazebo/allensville/topdown/*.png

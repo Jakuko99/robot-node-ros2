@@ -11,6 +11,7 @@ import math
 import copy
 
 from robot_node.data_logger import DataLogger
+from robot_node.utils import pos_to_map_index
 
 EXPLOITATION_RATIO: float = 0.7  # More use of learned policy, less random overlap revisits
 LEARNING_RATE: float = 1e-3  # Slightly stabler updates
@@ -361,7 +362,7 @@ class DecisionNetwork(nn.Module):
             sample_y = robot_y + sin_angle * sample_dist
 
             try:
-                idx = DecisionNetwork.pos_to_map_index(map, [sample_x, sample_y])
+                idx = pos_to_map_index(map, [sample_x, sample_y])
                 if idx is None:
                     return True  # Out of bounds but in valid direction
 
@@ -470,43 +471,6 @@ class DecisionNetwork(nn.Module):
         )
 
     @staticmethod
-    def pos_to_map_index(
-        map: OccupancyGrid,
-        pos: tuple[float, float],
-    ) -> tuple[int, int]:
-        """
-        Return index of cells, that correspond to current odometry position
-        """
-        if pos[0] < map.info.origin.position.x or pos[1] < map.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
-
-        m_res: float = map.info.resolution
-        row = math.floor((pos[1] - map.info.origin.position.y) / m_res)
-        col = math.floor((pos[0] - map.info.origin.position.x) / m_res)
-        if row < 0 or row >= map.info.height or col < 0 or col >= map.info.width:
-            raise ValueError("Position is out of map bounds")
-
-        return (row, col)
-
-    @staticmethod
-    def map_index_to_pos(
-        map: OccupancyGrid,
-        index: tuple[int, int],
-    ) -> tuple[float, float]:
-        """
-        Return position of cell with given index
-        """
-        row, col = index
-        if row < 0 or row >= map.info.height or col < 0 or col >= map.info.width:
-            raise ValueError("Map index is out of map bounds")
-
-        m_res: float = map.info.resolution
-        return (
-            map.info.origin.position.x + ((col + 0.5) * m_res),
-            map.info.origin.position.y + ((row + 0.5) * m_res),
-        )
-
-    @staticmethod
     def transform_map(map: OccupancyGrid) -> np.ndarray:
         map_data: np.ndarray = np.array(map.data, dtype=np.int8).reshape(
             (map.info.height, map.info.width)
@@ -543,7 +507,7 @@ class DecisionNetwork(nn.Module):
             local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
             try:
-                center_index = DecisionNetwork.pos_to_map_index(
+                center_index = pos_to_map_index(
                     map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
                 )
             except ValueError:

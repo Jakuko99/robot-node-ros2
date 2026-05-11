@@ -13,6 +13,8 @@ import numpy as np
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 
+from robot_node.utils import pos_to_map_index
+
 PATCH_RADIUS: int = 4
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
 
@@ -322,23 +324,6 @@ class DataCollector:
         return obs_vec
 
     @staticmethod
-    def pos_to_map_index(
-        map_msg: OccupancyGrid,
-        pos: tuple[float, float],
-    ) -> tuple[int, int]:
-        if pos[0] < map_msg.info.origin.position.x or pos[1] < map_msg.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
-
-        resolution: float = map_msg.info.resolution
-        row = math.floor((pos[1] - map_msg.info.origin.position.y) / resolution)
-        col = math.floor((pos[0] - map_msg.info.origin.position.x) / resolution)
-
-        if row < 0 or row >= map_msg.info.height or col < 0 or col >= map_msg.info.width:
-            raise ValueError("Position is out of map bounds")
-
-        return (row, col)
-
-    @staticmethod
     def transform_map(map_msg: OccupancyGrid) -> np.ndarray:
         map_data: np.ndarray = np.array(map_msg.data, dtype=np.int8).reshape(
             (map_msg.info.height, map_msg.info.width)
@@ -378,7 +363,7 @@ class DataCollector:
             local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
         try:
-            center_index = DataCollector.pos_to_map_index(
+            center_index = pos_to_map_index(
                 map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
             )
         except ValueError:

@@ -39,6 +39,7 @@ class ACOCreator:
                         self.current_odom.pose.pose.position.x,
                         self.current_odom.pose.pose.position.y,
                     ),
+                    transform=self.static_transform,
                 )
                 map_data = self._set_region(map_data, *position[::-1], width=2, value=-10)
 
@@ -63,17 +64,13 @@ class ACOCreator:
             for robot_name in self.parent.map_subscriptions.keys():
                 if robot_name != self.robot_name:
                     try:
-                        static_tf: TransformStamped = self.parent.static_transforms.get(
-                            robot_name, TransformStamped()
-                        )
-
                         position: tuple[float, float] = self.pos_to_map_index(
                             self.global_map,
                             (
                                 self.parent.map_subscriptions[robot_name].robot_position_x,
                                 self.parent.map_subscriptions[robot_name].robot_position_y,
                             ),
-                            transform=static_tf,
+                            transform=self.static_transform,
                         )
                         if position is not None:
                             map_data = self._set_region(
@@ -114,8 +111,8 @@ class ACOCreator:
         """
         return arr[x : x + width, y : y + width]
 
+    @staticmethod
     def pos_to_map_index(
-        self,
         map: OccupancyGrid,
         pos: tuple[float, float],
         transform: TransformStamped = None,
@@ -124,7 +121,7 @@ class ACOCreator:
         Return index of cells, that correspond to current odometry position
         """
         if transform is None:
-            transform = self.static_transform
+            transform = TransformStamped()
 
         if pos[0] < map.info.origin.position.x or pos[1] < map.info.origin.position.y:
             raise ValueError("Position is out of map bounds")

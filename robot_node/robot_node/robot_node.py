@@ -368,17 +368,18 @@ class RobotNode(Node):
             local_map,
         )
 
-        self.data_collector.finalize_transition(
-            next_map=self.current_map,
-            next_odom=self.last_odom,
-            reward=reward,
-            done=done,
-            success=success,
-            metadata={
-                "reason": reason,
-                "moving": self.moving,
-            },
-        )
+        if self.collect_offline_data:
+            self.data_collector.finalize_transition(
+                next_map=self.current_map,
+                next_odom=self.last_odom,
+                reward=reward,
+                done=done,
+                success=success,
+                metadata={
+                    "reason": reason,
+                    "moving": self.moving,
+                },
+            )
 
     def other_goal_callback(self, msg: PoseStamped, namespace: str):
         self.other_goals[namespace] = msg

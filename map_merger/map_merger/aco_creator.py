@@ -40,9 +40,9 @@ class ACOCreator:
                         self.current_odom.pose.pose.position.y,
                     ),
                 )
-                map_data = self._set_region(map_data, *position[::-1], width=1, value=-10)
+                map_data = self._set_region(map_data, *position[::-1], width=2, value=-10)
 
-            except ValueError:
+            except (ValueError, TypeError):
                 self.logger.warn(
                     "Current position is out of global map bounds. Skipping position marking."
                 )
@@ -77,10 +77,10 @@ class ACOCreator:
                         )
                         if position is not None:
                             map_data = self._set_region(
-                                map_data, *position[::-1], width=1, value=110
+                                map_data, *position[::-1], width=2, value=110
                             )
 
-                    except ValueError:
+                    except (ValueError, TypeError):
                         self.logger.warn(
                             f"Current position of {robot_name} is out of global map bounds. Skipping position marking."
                         )

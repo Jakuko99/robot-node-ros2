@@ -552,15 +552,19 @@ class DecisionNetwork(nn.Module):
             if center_index is None:
                 return local_map
 
-            for i in range(-patch_size, patch_size + 1):
-                for j in range(-patch_size, patch_size + 1):
-                    global_i = center_index[0] + i
-                    global_j = center_index[1] + j
+            try:
+                for i in range(-patch_size, patch_size + 1):
+                    for j in range(-patch_size, patch_size + 1):
+                        global_i = center_index[0] + i
+                        global_j = center_index[1] + j
 
-                    if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
-                        local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
-                        global_index = global_i * map.info.width + global_j
-                        local_map.data[local_index] = map.data[global_index]
+                        if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
+                            local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
+                            global_index = global_i * map.info.width + global_j
+                            local_map.data[local_index] = map.data[global_index]
+
+            except (IndexError, TypeError):
+                return local_map
 
         return local_map
 

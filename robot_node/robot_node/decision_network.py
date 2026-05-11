@@ -360,11 +360,11 @@ class DecisionNetwork(nn.Module):
             sample_x = robot_x + cos_angle * sample_dist
             sample_y = robot_y + sin_angle * sample_dist
 
-            idx = DecisionNetwork.pos_to_map_index(map, [sample_x, sample_y])
-            if idx is None:
-                # Out of bounds but in valid direction
-                return True
             try:
+                idx = DecisionNetwork.pos_to_map_index(map, [sample_x, sample_y])
+                if idx is None:
+                    return True  # Out of bounds but in valid direction
+
                 cell_value = map_data[idx[1], idx[0]]
                 # Prefer unexplored (-1) and free (0) over occupied (100)
                 if cell_value == -1 or cell_value == 0:
@@ -372,7 +372,7 @@ class DecisionNetwork(nn.Module):
                 # Penalize occupied cells; continue searching
                 if cell_value >= 50:  # Likely occupied
                     continue
-            except IndexError:
+            except (IndexError, ValueError):
                 # Out of bounds
                 return True
 

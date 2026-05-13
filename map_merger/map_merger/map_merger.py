@@ -115,11 +115,14 @@ class MapMerger(Node):
         self.static_transforms: dict[str, TFMessage] = dict()
         self.map_subscriptions: dict[str, MapSubscription] = {}
         self.aco_creator: ACOCreator = ACOCreator(self.robot_name, self)
+        self.last_merge_confidence: float = 0.0
+        self.last_merge_conflicted_ratio: float = 0.0
+        self.last_merge_observed_ratio: float = 0.0
         self.map_subscriptions[self.robot_name] = MapSubscription(
             self.robot_name, self, f"/{self.robot_name}/map", primary=True
         )
 
-        self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps_v1)
+        self.merge_timer: Timer = self.create_timer(5.0, callback=self.merge_maps_v2)
 
     def save_map_callback(
         self, request: SimulationOutput.Request, response: SimulationOutput.Response
@@ -304,6 +307,144 @@ class MapMerger(Node):
             self.publisher.publish(updated_map)
             self.get_logger().info(
                 f"Published merged map with frame_id {updated_map.header.frame_id}"
+            )
+
+        self.discover_robots()
+
+    def merge_maps_v2(self):
+        local_maps: dict[str, OccupancyGrid] = {
+            sub.map_data.header.frame_id: sub.map_data
+            for sub in self.map_subscriptions.values()
+            if sub.map_data is not None
+        }
+
+        if len(local_maps) == len(self.map_subscriptions) and len(local_maps) > 1:
+            min_x: float = min([m.info.origin.position.x for m in local_maps.values()])
+            min_y: float = min([m.info.origin.position.y for m in local_maps.values()])
+            max_x: float = max(
+                [
+                    m.info.origin.position.x + m.info.width * m.info.resolution
+                    for m in local_maps.values()
+                ]
+            )
+            max_y: float = max(
+                [
+                    m.info.origin.position.y + m.info.height * m.info.resolution
+                    for m in local_maps.values()
+                ]
+            )
+
+            merged_map: OccupancyGrid = OccupancyGrid()
+            merged_map.header.frame_id = self.map_frame_id
+            merged_map.header.stamp = self.get_clock().now().to_msg()
+            merged_map.info.origin.position.x = min_x
+            merged_map.info.origin.position.y = min_y
+            merged_map.info.resolution = min([m.info.resolution for m in local_maps.values()])
+            merged_map.info.width = int(np.ceil((max_x - min_x) / merged_map.info.resolution)) + 10
+            merged_map.info.height = int(np.ceil((max_y - min_y) / merged_map.info.resolution)) + 10
+
+            map_size: int = merged_map.info.width * merged_map.info.height
+            merged_map.data = [-1] * map_size
+
+            free_votes = np.zeros(map_size, dtype=np.int16)
+            occupied_votes = np.zeros(map_size, dtype=np.int16)
+            occupied_sum = np.zeros(map_size, dtype=np.int32)
+
+            for map in local_maps.values():
+                static_tf: TransformStamped = self.get_static_transform(map.header.frame_id)
+                for y in range(map.info.height):
+                    for x in range(map.info.width):
+                        index: int = x + y * map.info.width
+                        merged_x: int = int(
+                            np.floor(
+                                (
+                                    map.info.origin.position.x
+                                    + static_tf.transform.translation.x
+                                    + x * map.info.resolution
+                                    - min_x
+                                )
+                                / merged_map.info.resolution
+                            )
+                        )
+                        merged_y: int = int(
+                            np.floor(
+                                (
+                                    map.info.origin.position.y
+                                    + static_tf.transform.translation.y
+                                    + y * map.info.resolution
+                                    - min_y
+                                )
+                                / merged_map.info.resolution
+                            )
+                        )
+                        try:
+                            merged_i: int = merged_x + merged_y * merged_map.info.width
+                            if map.data[index] == -1:
+                                continue
+
+                            if map.data[index] == 0:
+                                free_votes[merged_i] += 1
+                            else:
+                                occupied_votes[merged_i] += 1
+                                occupied_sum[merged_i] += int(map.data[index])
+
+                        except IndexError:
+                            self.get_logger().warn(
+                                f"Index error for merged map at ({merged_x}, {merged_y}) with map {map.header.frame_id} at ({x}, {y})"
+                            )
+                            continue
+
+            total_votes = free_votes + occupied_votes
+            observed_mask = total_votes > 0
+            observed_cells = int(np.count_nonzero(observed_mask))
+
+            if observed_cells > 0:
+                conflicted_mask = np.logical_and(free_votes > 0, occupied_votes > 0)
+                conflicted_cells = int(np.count_nonzero(conflicted_mask))
+
+                dominant_votes = np.maximum(free_votes, occupied_votes)
+                self.last_merge_confidence = float(
+                    np.sum(dominant_votes[observed_mask] / total_votes[observed_mask])
+                    / observed_cells
+                )
+                self.last_merge_conflicted_ratio = float(conflicted_cells / observed_cells)
+                self.last_merge_observed_ratio = float(observed_cells / map_size)
+
+                for i in np.where(observed_mask)[0]:
+                    free_count = int(free_votes[i])
+                    occupied_count = int(occupied_votes[i])
+
+                    if occupied_count == 0:
+                        # Keep legacy overlap visualization for free-space-only observations.
+                        merged_map.data[i] = min(89, max(0, (free_count - 1) * 10))
+                        continue
+
+                    if free_count == 0:
+                        merged_map.data[i] = int(round(occupied_sum[i] / occupied_count))
+                        continue
+
+                    total_count = free_count + occupied_count
+                    occ_probability = occupied_count / total_count
+                    confidence = max(free_count, occupied_count) / total_count
+                    uncertainty = 1.0 - confidence
+
+                    # Conservative safety bias: ambiguous cells are nudged toward occupied.
+                    uncertainty_bias = int(round(15.0 * uncertainty))
+                    probabilistic_value = int(round(occ_probability * 100.0)) + uncertainty_bias
+                    merged_map.data[i] = min(99, max(1, probabilistic_value))
+            else:
+                self.last_merge_confidence = 0.0
+                self.last_merge_conflicted_ratio = 0.0
+                self.last_merge_observed_ratio = 0.0
+
+            updated_map: OccupancyGrid = self.aco_creator.update_global_map(merged_map)
+            self.publisher.publish(updated_map)
+            self.get_logger().info(
+                "Published merged map with frame_id "
+                f"{updated_map.header.frame_id}; "
+                f"merge_confidence={self.last_merge_confidence:.3f}, "
+                f"conflicted_ratio={self.last_merge_conflicted_ratio:.3f}, "
+                f"observed_ratio={self.last_merge_observed_ratio:.3f}"
             )
 
         self.discover_robots()

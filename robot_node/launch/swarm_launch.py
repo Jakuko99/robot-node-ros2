@@ -26,7 +26,7 @@ def generate_launch_description():
                         "model_path": os.path.join(resource_dir, "kris_robot1_model.pt"),
                         "training_interval": 10.0,
                         "train_network": True,
-                        "collect_offline_data": True,
+                        "collect_offline_data": False,
                     }
                 ],
             ),
@@ -49,7 +49,7 @@ def generate_launch_description():
                         "model_path": os.path.join(resource_dir, "kris_robot2_model.pt"),
                         "training_interval": 10.0,
                         "train_network": True,
-                        "collect_offline_data": True,
+                        "collect_offline_data": False,
                     }
                 ],
             ),
@@ -72,7 +72,7 @@ def generate_launch_description():
                         "model_path": os.path.join(resource_dir, "kris_robot3_model.pt"),
                         "training_interval": 10.0,
                         "train_network": True,
-                        "collect_offline_data": True,
+                        "collect_offline_data": False,
                     }
                 ],
             ),
@@ -95,7 +95,7 @@ def generate_launch_description():
                         "model_path": os.path.join(resource_dir, "kris_robot4_model.pt"),
                         "training_interval": 10.0,
                         "train_network": True,
-                        "collect_offline_data": True,
+                        "collect_offline_data": False,
                     }
                 ],
             ),

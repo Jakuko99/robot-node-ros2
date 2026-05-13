@@ -13,6 +13,7 @@ import numpy as np
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 
+from robot_node.utils import pos_to_map_index
 
 PATCH_RADIUS: int = 4
 OBS_DIM: int = (PATCH_RADIUS * 2 + 1) ** 2
@@ -323,23 +324,6 @@ class DataCollector:
         return obs_vec
 
     @staticmethod
-    def pos_to_map_index(
-        map_msg: OccupancyGrid,
-        pos: tuple[float, float],
-    ) -> tuple[int, int]:
-        if pos[0] < map_msg.info.origin.position.x or pos[1] < map_msg.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
-
-        resolution: float = map_msg.info.resolution
-        row = math.floor((pos[1] - map_msg.info.origin.position.y) / resolution)
-        col = math.floor((pos[0] - map_msg.info.origin.position.x) / resolution)
-
-        if row < 0 or row >= map_msg.info.height or col < 0 or col >= map_msg.info.width:
-            raise ValueError("Position is out of map bounds")
-
-        return (row, col)
-
-    @staticmethod
     def transform_map(map_msg: OccupancyGrid) -> np.ndarray:
         map_data: np.ndarray = np.array(map_msg.data, dtype=np.int8).reshape(
             (map_msg.info.height, map_msg.info.width)
@@ -356,31 +340,31 @@ class DataCollector:
 
     @staticmethod
     def get_local_patch(
-        map_msg: OccupancyGrid,
+        map: OccupancyGrid,
         odom: Odometry,
         patch_size: int = PATCH_RADIUS,
+        static_transform_x: float = 0.0,
+        static_transform_y: float = 0.0,
     ) -> OccupancyGrid:
         local_map = OccupancyGrid()
 
-        if map_msg is None or odom is None:
-            return local_map
-
-        local_map.info.resolution = map_msg.info.resolution
-        local_map.header.frame_id = map_msg.header.frame_id
-        local_map.header.stamp = map_msg.header.stamp
-        local_map.info.origin.position.x = (
-            odom.pose.pose.position.x - patch_size * map_msg.info.resolution
-        )
-        local_map.info.origin.position.y = (
-            odom.pose.pose.position.y - patch_size * map_msg.info.resolution
-        )
-        local_map.info.width = patch_size * 2 + 1
-        local_map.info.height = patch_size * 2 + 1
-        local_map.data = [-1] * (local_map.info.width * local_map.info.height)
+        if map and odom:
+            local_map.info.resolution = map.info.resolution
+            local_map.header.frame_id = map.header.frame_id
+            local_map.header.stamp = map.header.stamp
+            local_map.info.origin.position.x = (
+                odom.pose.pose.position.x - patch_size * map.info.resolution
+            )
+            local_map.info.origin.position.y = (
+                odom.pose.pose.position.y - patch_size * map.info.resolution
+            )
+            local_map.info.width = patch_size * 2 + 1
+            local_map.info.height = patch_size * 2 + 1
+            local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
         try:
-            center_index = DataCollector.pos_to_map_index(
-                map_msg, (odom.pose.pose.position.x, odom.pose.pose.position.y)
+            center_index = pos_to_map_index(
+                map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
             )
         except ValueError:
             return local_map
@@ -390,9 +374,9 @@ class DataCollector:
                 global_i = center_index[0] + i
                 global_j = center_index[1] + j
 
-                if 0 <= global_i < map_msg.info.height and 0 <= global_j < map_msg.info.width:
+                if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
                     local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
-                    global_index = global_i * map_msg.info.width + global_j
-                    local_map.data[local_index] = map_msg.data[global_index]
+                    global_index = global_i * map.info.width + global_j
+                    local_map.data[local_index] = map.data[global_index]
 
         return local_map

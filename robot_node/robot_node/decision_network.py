@@ -11,16 +11,16 @@ import math
 import copy
 
 from robot_node.data_logger import DataLogger
+from robot_node.utils import pos_to_map_index
 
-
-EXPLOITATION_RATIO: float = 0.65  # More use of learned policy, less random overlap revisits
+EXPLOITATION_RATIO: float = 0.7  # More use of learned policy, less random overlap revisits
 LEARNING_RATE: float = 1e-3  # Slightly stabler updates
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.995  # More long-term planning
-ENTROPY_COEF: float = 0.015  # Less random exploration
+ENTROPY_COEF: float = 0.01  # Less random exploration
 ENTROPY_COEF_MIN: float = 0.005
 TARGET_ENTROPY_RATIO: float = 0.55
-VALUE_COEF: float = 0.3
+VALUE_COEF: float = 0.35
 ACTION_COUNT: int = 8
 PATCH_RADIUS: int = 6  # Larger local patch for overlap context
 MIN_GOAL_DISTANCE_M: float = 2.0
@@ -76,7 +76,11 @@ class DecisionNetwork(nn.Module):
             nn.SiLU(),
             layer_init(nn.Linear(64, 64)),
             nn.SiLU(),
-            layer_init(nn.Linear(64, ACTION_COUNT), std=0.01),
+            (
+                layer_init(nn.Linear(64, ACTION_COUNT), std=0.01)
+                if ACTION_COUNT == 1
+                else layer_init(nn.Linear(64, ACTION_COUNT), std=np.sqrt(0.1))
+            ),
         )
         self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)
         self.reward_mean: float = 0.0
@@ -86,6 +90,7 @@ class DecisionNetwork(nn.Module):
         self.best_checkpoint_score: float = float("-inf")
         self.latest_training_score: float = float("-inf")
         self.checkpoint_scores: deque[float] = deque(maxlen=CHECKPOINT_ROLLING_WINDOW)
+        self.training_steps: int = 0  # For exploration decay
         self.to(self.device)
 
         # ----- Rollout storage -----
@@ -129,7 +134,15 @@ class DecisionNetwork(nn.Module):
         logits = self.actor(obs_tensor)
         policy = torch.softmax(logits, dim=-1)
 
-        if random() < EXPLOITATION_RATIO:
+        # Decay exploration over time: higher exploitation as training progresses
+        exploration_ratio = EXPLOITATION_RATIO
+        if self.train_enabled:
+            # Gradual increase in exploitation from 0.7 to 0.9 over 100k steps
+            max_steps = 100000.0
+            exploration_decay = min(0.2, (self.training_steps / max_steps) * 0.2)
+            exploration_ratio = min(0.9, EXPLOITATION_RATIO + exploration_decay)
+
+        if random() < exploration_ratio:
             # Try higher-probability actions first, then fall back to the rest.
             candidate_actions = torch.argsort(policy, descending=True).tolist()
         else:
@@ -146,6 +159,7 @@ class DecisionNetwork(nn.Module):
                 break
 
         if goal is None or action_int is None:
+            # No valid frontier found in any direction; stay in exploration mode
             return None
 
         action_tensor = torch.tensor(action_int, dtype=torch.int64, device=self.device)
@@ -197,22 +211,35 @@ class DecisionNetwork(nn.Module):
         if advantages.numel() > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
 
-        policy_loss: torch.Tensor = -(log_probs * advantages.detach()).mean()
+        # Clip advantages to prevent extreme policy updates
+        clipped_advantages = torch.clamp(advantages, -5.0, 5.0)
+
+        policy_loss: torch.Tensor = -(log_probs * clipped_advantages.detach()).mean()
         value_loss: torch.Tensor = torch.nn.functional.mse_loss(values, returns)
         entropy_bonus: torch.Tensor = entropies.mean()
 
+        # Adaptive entropy coefficient based on target entropy
         entropy_value = float(entropy_bonus.detach().item())
         entropy_scale = 1.0
-        if entropy_value > 1e-8:
-            entropy_scale = max(1.0, TARGET_ENTROPY / entropy_value)
+        if entropy_value > 1e-6:
+            entropy_scale = max(0.5, min(2.0, TARGET_ENTROPY / (entropy_value + 1e-8)))
         entropy_coef = max(ENTROPY_COEF_MIN, ENTROPY_COEF * entropy_scale)
 
-        loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - entropy_coef * entropy_bonus
+        # Normalize value loss to prevent it from dominating policy loss
+        normalized_value_loss = (
+            value_loss / (returns.std() + 1e-8) if returns.std() > 1e-6 else value_loss
+        )
+        loss: torch.Tensor = (
+            policy_loss + VALUE_COEF * normalized_value_loss - entropy_coef * entropy_bonus
+        )
 
         self.optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
+
+        # Increment training step counter for exploration decay
+        self.training_steps += 1
 
         metrics = {
             "loss": float(loss.item()),
@@ -222,6 +249,7 @@ class DecisionNetwork(nn.Module):
             "entropy_coef": float(entropy_coef),
             "avg_reward": float(raw_rewards.mean().item()),
             "batch_size": len(self.rollout_rewards),
+            "training_steps": self.training_steps,
         }
         self.data_logger.log_batch(metrics)
         self._checkpoint(metrics)
@@ -243,6 +271,11 @@ class DecisionNetwork(nn.Module):
         overlap = transformed[:, :, 2]
         others = transformed[:, :, 4]
         utility = unexplored + 0.3 * overlap - occupied - 0.2 * others
+
+        # Normalize utility to prevent extreme values and improve neural network training
+        utility_max = np.abs(utility).max() + 1e-6
+        utility = utility / utility_max
+
         obs_vec = utility.reshape(-1)
 
         # Keep NN input size stable even if patch radius/config drifts at runtime.
@@ -268,11 +301,14 @@ class DecisionNetwork(nn.Module):
             raise ValueError(f"Action must be in [0, {ACTION_COUNT - 1}], got {action}")
 
         angle = (2.0 * math.pi * action) / ACTION_COUNT
+        cos_angle = math.cos(angle)
+        sin_angle = math.sin(angle)
+
         step = max(step_cells, 1) * map.info.resolution
         step = max(step, MIN_GOAL_DISTANCE_M)
 
-        goal_x = odom.pose.pose.position.x + (math.cos(angle) * step)
-        goal_y = odom.pose.pose.position.y + (math.sin(angle) * step)
+        goal_x = odom.pose.pose.position.x + (cos_angle * step)
+        goal_y = odom.pose.pose.position.y + (sin_angle * step)
 
         min_x = map.info.origin.position.x
         min_y = map.info.origin.position.y
@@ -291,7 +327,57 @@ class DecisionNetwork(nn.Module):
         if goal_distance < (MIN_GOAL_DISTANCE_M * 0.5):
             return None
 
+        # Frontier detection: verify path has unexplored or free space ahead
+        if not DecisionNetwork._has_frontier_in_direction(
+            map,
+            odom.pose.pose.position.x,
+            odom.pose.pose.position.y,
+            cos_angle,
+            sin_angle,
+            sample_distance=3.0,
+        ):
+            return None
+
         return (clamped_goal_x, clamped_goal_y)
+
+    @staticmethod
+    def _has_frontier_in_direction(
+        map: OccupancyGrid,
+        robot_x: float,
+        robot_y: float,
+        cos_angle: float,
+        sin_angle: float,
+        sample_distance: float = 1.5,
+    ) -> bool:
+        """Check if there's unexplored or free space ahead in the given direction."""
+        # Sample points along the ray to detect frontiers (boundaries between explored/unexplored)
+        map_data: np.ndarray = np.array(map.data, dtype=np.int8).reshape(
+            (map.info.height, map.info.width)
+        )
+
+        samples = 3
+        for i in range(1, samples + 1):
+            sample_dist = sample_distance * i
+            sample_x = robot_x + cos_angle * sample_dist
+            sample_y = robot_y + sin_angle * sample_dist
+
+            try:
+                idx = pos_to_map_index(map, [sample_x, sample_y])
+                if idx is None:
+                    return True  # Out of bounds but in valid direction
+
+                cell_value = map_data[idx[1], idx[0]]
+                # Prefer unexplored (-1) and free (0) over occupied (100)
+                if cell_value == -1 or cell_value == 0:
+                    return True
+                # Penalize occupied cells; continue searching
+                if cell_value >= 50:  # Likely occupied
+                    continue
+            except (IndexError, ValueError):
+                # Out of bounds
+                return True
+
+        return False
 
     def _obs_to_tensor(self, obs) -> torch.Tensor:
         if isinstance(obs, torch.Tensor):
@@ -319,8 +405,6 @@ class DecisionNetwork(nn.Module):
         )
         if not np.isfinite(reward):
             reward = 0.0
-
-        reward = float(np.clip(reward, -REWARD_CLIP_ABS, REWARD_CLIP_ABS))
         normalized_reward = self._normalize_reward(reward)
 
         self.rollout_obs.append(self.pending_obs)
@@ -387,43 +471,6 @@ class DecisionNetwork(nn.Module):
         )
 
     @staticmethod
-    def pos_to_map_index(
-        map: OccupancyGrid,
-        pos: tuple[float, float],
-    ) -> tuple[int, int]:
-        """
-        Return index of cells, that correspond to current odometry position
-        """
-        if pos[0] < map.info.origin.position.x or pos[1] < map.info.origin.position.y:
-            raise ValueError("Position is out of map bounds")
-
-        m_res: float = map.info.resolution
-        row = math.floor((pos[1] - map.info.origin.position.y) / m_res)
-        col = math.floor((pos[0] - map.info.origin.position.x) / m_res)
-        if row < 0 or row >= map.info.height or col < 0 or col >= map.info.width:
-            raise ValueError("Position is out of map bounds")
-
-        return (row, col)
-
-    @staticmethod
-    def map_index_to_pos(
-        map: OccupancyGrid,
-        index: tuple[int, int],
-    ) -> tuple[float, float]:
-        """
-        Return position of cell with given index
-        """
-        row, col = index
-        if row < 0 or row >= map.info.height or col < 0 or col >= map.info.width:
-            raise ValueError("Map index is out of map bounds")
-
-        m_res: float = map.info.resolution
-        return (
-            map.info.origin.position.x + ((col + 0.5) * m_res),
-            map.info.origin.position.y + ((row + 0.5) * m_res),
-        )
-
-    @staticmethod
     def transform_map(map: OccupancyGrid) -> np.ndarray:
         map_data: np.ndarray = np.array(map.data, dtype=np.int8).reshape(
             (map.info.height, map.info.width)
@@ -460,21 +507,28 @@ class DecisionNetwork(nn.Module):
             local_map.data = [-1] * (local_map.info.width * local_map.info.height)
 
             try:
-                center_index = DecisionNetwork.pos_to_map_index(
+                center_index = pos_to_map_index(
                     map, (odom.pose.pose.position.x, odom.pose.pose.position.y)
                 )
             except ValueError:
                 return local_map
 
-            for i in range(-patch_size, patch_size + 1):
-                for j in range(-patch_size, patch_size + 1):
-                    global_i = center_index[0] + i
-                    global_j = center_index[1] + j
+            if center_index is None:
+                return local_map
 
-                    if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
-                        local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
-                        global_index = global_i * map.info.width + global_j
-                        local_map.data[local_index] = map.data[global_index]
+            try:
+                for i in range(-patch_size, patch_size + 1):
+                    for j in range(-patch_size, patch_size + 1):
+                        global_i = center_index[0] + i
+                        global_j = center_index[1] + j
+
+                        if 0 <= global_i < map.info.height and 0 <= global_j < map.info.width:
+                            local_index = (i + patch_size) * local_map.info.width + (j + patch_size)
+                            global_index = global_i * map.info.width + global_j
+                            local_map.data[local_index] = map.data[global_index]
+
+            except (IndexError, TypeError):
+                return local_map
 
         return local_map
 
@@ -556,7 +610,7 @@ class FeedbackLayer:
         old_known: int = np.sum((old_map_data >= 0) & (old_map_data <= 100))
         new_known: int = np.sum((new_map_data >= 0) & (new_map_data <= 100))
         map_cells: float = float(max(new_map_data.size, 1))
-        information_gain: float = (new_known - old_known) / map_cells  # normalized, more stable
+        information_gain: float = (new_known - old_known) / map_cells
 
         # Criterion 2: Traveled distance to information gain from exploration
         old_position: np.array = np.array(
@@ -572,7 +626,7 @@ class FeedbackLayer:
         # Reward efficient exploration (gain per meter) instead of rewarding longer travel.
         travel_norm: float = max(distance_traveled, MIN_REWARD_DISTANCE_M)
         exploration_efficiency: float = information_gain / travel_norm
-        total_reward += 2.5 * information_gain + 1.5 * exploration_efficiency
+        total_reward += 3.0 * information_gain + 1.5 * exploration_efficiency
 
         # Criterion 3: Penalize travel through overlap areas to encourage efficient coverage
         local_map_data: np.ndarray = np.array(local_map.data, dtype=np.int16).reshape(
@@ -588,4 +642,4 @@ class FeedbackLayer:
         if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):
             total_reward -= 0.5
 
-        return float(np.clip(total_reward, -REWARD_CLIP_ABS, REWARD_CLIP_ABS))
+        return float(total_reward)

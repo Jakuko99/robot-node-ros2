@@ -119,11 +119,11 @@
     <model name="allensville">
       <static>true</static>
       <link name="link">
-        <pose>-0 0 -0.75 1.57 0 0</pose>
+        <pose>5 0 -2.8 1.57 0 0</pose>
         <visual name="visual">
           <geometry>
             <mesh>
-              <uri>model://allensville/meshes/uvalda.obj</uri>
+              <uri>model://allensville/meshes/beechwood.obj</uri>
             </mesh>
           </geometry>
           <material>
@@ -145,7 +145,7 @@
         <collision name="collision">
           <geometry>
             <mesh>
-              <uri>model://allensville/meshes/uvalda.obj</uri>
+              <uri>model://allensville/meshes/beechwood.obj</uri>
             </mesh>
           </geometry>    
         </collision>
@@ -223,12 +223,12 @@
     <include>
       <uri>file://src/robot_sim/gazebo/kris_robot</uri>
       <name>kris_robot</name>
-      <pose>-4.5 1.25 0.75 0 -0 3.14</pose>
+      <pose>-0.0 0 0.75 0 -0 3.14</pose>
     </include>
     <include>
       <uri>file://src/robot_sim/gazebo/kris_robot1</uri>
       <name>kris_robot1</name>
-      <pose>-5.5 1.25 0.75 0 -0 3.14</pose>
+      <pose>-1.0 0 0.75 0 -0 3.14</pose>
     </include>
     <light name='sun' type='directional'>
       <pose>0 0 10 0 -0 0</pose>

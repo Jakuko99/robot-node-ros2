@@ -131,12 +131,11 @@
               <metal>
                 <albedo_map>model://allensville/materials/textures/WallMedieval003_COL_VAR1_3K.jpg</albedo_map>
                 <normal_map>model://allensville/materials/textures/WallMedieval003_NRM_3K.jpg</normal_map>
-                <ambient_occlusion_map>
-                  model://allensville/materials/textures/WallMedieval003_AO_3K.jpg</ambient_occlusion_map>
+                <ambient_occlusion_map>model://allensville/materials/textures/WallMedieval003_AO_3K.jpg</ambient_occlusion_map>
                 <roughness_map>model://allensville/materials/textures/WallMedieval003_GLOSS_3K.jpg</roughness_map>
               </metal>
             </pbr>
-            <script>
+              <script>
                 <uri>model://allensville/materials/scripts</uri>
                 <uri>model://allensville/materials/textures</uri>
                 <name>GroundRock/Diffuse</name>
@@ -148,7 +147,7 @@
             <mesh>
               <uri>model://allensville/meshes/ihlen.obj</uri>
             </mesh>
-          </geometry>
+          </geometry>    
         </collision>
       </link>
     </model>
@@ -169,13 +168,13 @@
                 <mu2>50</mu2>
               </ode>
               <torsional>
-                <ode />
+                <ode/>
               </torsional>
             </friction>
             <contact>
-              <ode />
+              <ode/>
             </contact>
-            <bounce />
+            <bounce/>
           </surface>
           <max_contacts>10</max_contacts>
         </collision>

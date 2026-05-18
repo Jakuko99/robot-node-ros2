@@ -32,7 +32,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5.0,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot1_map",
                         "x": 0.0,
@@ -48,7 +48,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "publish_rate": 10.0,
+                        "publish_rate": 5.0,
                         "frame_id": "global_map",
                         "child_frame_id": "kris_robot2_map",
                         "x": 1.0,
@@ -58,9 +58,30 @@ def generate_launch_description():
                 ],
             ),
             Node(
+                name="kris_robot1_merger",
                 package="map_merger",
                 executable="map_merger",
-                output="screen"
+                output="screen",
+                parameters=[
+                    {
+                        "robot_name": "kris_robot1",
+                        "merge_topic_name": "pheromones",
+                        "map_frame_id": "global_map",  # visualization frame
+                    }
+                ],
+            ),
+            Node(
+                name="kris_robot2_merger",
+                package="map_merger",
+                executable="map_merger",
+                output="screen",
+                parameters=[
+                    {
+                        "robot_name": "kris_robot2",
+                        "merge_topic_name": "pheromones",
+                        "map_frame_id": "kris_robot2_pheromone_map",
+                    }
+                ],
             ),
         ]
     )

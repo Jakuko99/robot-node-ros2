@@ -1,0 +1,45 @@
+---
+title: "Map merger"
+---
+
+flowchart TD    
+    Discover_map_topics --> Create_subsciptions
+    Create_subsciptions --> Obtain_static_tf
+    Create_subsciptions --> Obtain_local_maps
+    Create_subsciptions --> Obtain_odometry
+
+    Update_robot_position --> update_f
+    Obtain_local_maps -.-> merge_routine
+    Obtain_odometry --> Update_robot_position
+
+    Obtain_static_tf -.-> merge_routine    
+    update_f --> Publish_into_topic
+
+    merge_timer([Merge_timer]) ==> merge_routine
+    merge_routine[/Merge_global_map/]
+    merge_func[[Merge_global_map]] --> Find_min_max_origin
+    Find_min_max_origin --> Compute_map_size    
+    Compute_map_size --> Copy_data_from_local_into_global
+    Copy_data_from_local_into_global --> Mark_overlapped_areas
+    Mark_overlapped_areas --> Return_global_map
+    merge_routine --> update_f[/Update_ACO_map/]
+
+    update_aco[[Update_ACO_map]] --> save_new_global_map
+    save_new_global_map --> Mark_robot_positions
+    Mark_robot_positions --> Return_updated_map
+
+    save_service>Export_map_service]
+    save_service --> Convert_values_into_RGB
+    Convert_values_into_RGB --> Transform_data_into_image
+    Transform_data_into_image --> Save_image_to_file
+    
+    progress_service>Exploration_progress_service]
+    progress_service --> Count_total_cells
+    progress_service --> Count_explored_cells
+    progress_service --> Count_overlapped_cells
+    Count_explored_cells --> Exploration_ratio
+    Count_total_cells --> Exploration_ratio
+    Count_overlapped_cells --> Overlap_ratio
+    Count_explored_cells --> Overlap_ratio
+    Exploration_ratio --> Exploration_status_response
+    Overlap_ratio --> Exploration_status_response

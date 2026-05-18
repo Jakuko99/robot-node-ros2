@@ -58,4 +58,5 @@ apt install -y \
   ros-humble-nav2-bringup \
   ros-humble-turtlebot3*
 
+mkdir ../export
 echo "==> Done"

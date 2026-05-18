@@ -1,0 +1,8 @@
+int64 id
+---
+float32 overlap_ratio
+float32 explore_ratio
+int64 map_width
+int64 map_height
+bool success
+string message

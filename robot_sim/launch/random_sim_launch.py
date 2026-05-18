@@ -16,17 +16,17 @@ def generate_launch_description():
             ExecuteProcess(
                 cmd=[
                     "python3",
-                    os.path.join(
-                        "src", "robot_sim", "robot_sim", "generate_environment.py"
-                    ),
+                    os.path.join("src", "robot_sim", "robot_sim", "generate_environment.py"),
                 ]
             ),
             ExecuteProcess(  # gazebo simulation
                 cmd=[
                     "ign",
                     "gazebo",
+                    "-s",
                     "-r",
                     "src/robot_sim/gazebo/random_environment.sdf",
+                    "--headless-rendering",
                 ],
             ),
             Node(
@@ -82,14 +82,10 @@ def generate_launch_description():
                 ]
             ),
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "mapping_launch.py")
-                ),
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, "mapping_launch.py")),
             ),
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "nav_launch.py")
-                ),
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, "nav_launch.py")),
             ),
         ]
     )

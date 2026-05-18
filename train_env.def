@@ -1,0 +1,72 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%environment
+    ROS_DISTRO=humble
+    DEBIAN_FRONTEND=noninteractive
+    TZ="Europe/Helsinki"
+    RCUTILS_COLORIZED_OUTPUT=1
+    GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:/tmp/ros_ws/src/robot_sim/gazebo
+
+%post
+    apt update && apt install -y tzdata
+    ln -fs /usr/share/zoneinfo/Europe/Helsinki /etc/localtime
+    dpkg-reconfigure --frontend noninteractive tzdata
+
+    apt update && apt install -y software-properties-common lsb-release curl git wget gnupg --no-install-recommends
+    add-apt-repository universe -y
+    ROS_APT_SOURCE_VERSION=$(
+    curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest \
+    | grep -F '"tag_name"' | awk -F\" '{print $4}')
+    OS_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+    curl -L -o /tmp/ros2-apt-source.deb \
+    "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.${OS_CODENAME}_all.deb"
+
+    apt install -y /tmp/ros2-apt-source.deb
+    apt update && apt upgrade -y
+    apt install -y ros-humble-ros-base ros-dev-tools --no-install-recommends
+    mkdir -p /etc/apt/keyrings
+
+    curl -fsSL https://packages.osrfoundation.org/gazebo.key \
+    | gpg --dearmor -o /etc/apt/keyrings/gazebo.gpg
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/gazebo.gpg] \
+    http://packages.osrfoundation.org/gazebo/ubuntu-stable ${OS_CODENAME} main" \
+    > /etc/apt/sources.list.d/gazebo-stable.list
+    apt update && apt install -y \
+    gazebo \
+    libgazebo-dev \
+    libignition-gazebo6 \
+    libignition-gazebo6-dev \
+    libignition-gazebo6-plugins \
+    libgz-plugin2-dev \
+    ros-humble-ros-gz-bridge \
+    ros-humble-slam-toolbox \
+    ros-humble-navigation2 \
+    ros-humble-nav2-bringup --no-install-recommends
+    apt autoremove -y && apt autoclean -y
+
+    apt install python3 python3-pip -y
+    pip3 install torch opencv-python matplotlib
+    git clone --single-branch --branch new_gen_swarm https://github.com/Jakuko99/robot-node-ros2.git /src
+
+%runscript
+    export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:$SIM_FOLDER/ros_ws/src/robot_sim/gazebo
+    mkdir -p $SIM_FOLDER/ros_ws/export && cd $SIM_FOLDER/ros_ws && cp -r /src .
+    cd src && git pull
+    cd .. && . /opt/ros/humble/setup.sh && colcon build --symlink-install
+    . install/setup.sh
+    if [ -n "$MODEL_PATH" ]; then
+        cp $MODEL_PATH/*.pt $SIM_FOLDER/ros_ws/src/robot_node/resource
+    fi
+
+    if [ -n "$MESH_PATH" ]; then
+        cp $MESH_PATH/*.obj $SIM_FOLDER/ros_ws/src/robot_sim/gazebo/allensville/meshes
+    fi
+
+    python3 src/run_model_training.py
+    mv $SIM_FOLDER/ros_ws/src/robot_node/resource/*.pt $SIM_FOLDER/ros_ws/export
+
+%labels
+    Author jakub.krsko@feit.uniza.sk
+    Version 1.5.1
+    Description ROS 2 environment for training swarm optimization models in simulation

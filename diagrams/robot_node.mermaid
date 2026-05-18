@@ -1,0 +1,102 @@
+---
+title: "Robot node"
+---
+
+flowchart TD
+    classDef problem stroke:#f00,stroke-width:4px
+    classDef _class stroke-width:4px
+
+    subgraph Legend 
+    direction LR
+    Class:::_class ~~~
+    Problem:::problem ~~~
+    Timer([Timer]) ~~~
+    ros_srv>ROS_service]
+    end
+
+    Robot_node:::_class --> Obtain_odometry
+    Robot_node --> Obtain_pheromone_map
+    Robot_node --> Obtain_goal_positions
+    Robot_node --> Initialize_RL_network
+
+    Initialize_RL_network --> Create_network_architecture
+    Create_network_architecture --> load_model_if_exists
+
+    Obtain_odometry --> odometry_call[/Log_odometry/]
+
+    Obtain_goal_positions --> goal_call[/Log_goals/]
+
+    Obtain_pheromone_map --> update_call[/Update_RL_state/]
+    save_model_srv>Save_model_service] --> export_routine[/Save_trajectory/]
+    load_model_srv>Load_model_service] --> Load_state_dict
+    goal_timer([Goal_timer]) ==> robot_state{Moving}
+
+    robot_state --yes--> goal_reached{Goal_reached}
+    robot_state --no --> generate_call[/Generate_goal/]
+    generate_call --> goal_collision{Goal_collision}
+    goal_collision --yes--> Exit_function
+    goal_collision --no --> Publish_goal
+    goal_reached --yes--> Set_moving_to_false
+    goal_reached --no --> goal_timeout{Goal_timeouted}
+    goal_timeout --yes--> Set_moving_to_false
+    goal_timeout --no --> Exit_function
+
+    export_routine --> Save_trainsition_data 
+    Save_trainsition_data --> Save_network_model
+
+    train_timer([Training_timer]) ==> train_func[/Train_epoch/]
+    Decision_network:::_class --> train_func:::problem
+    Decision_network --> finalize_func[[Finalize_transition]]
+    Decision_network --> generate_func
+    train_func[[Train_epoch]] --> Convert_data_to_batches
+    Convert_data_to_batches --> Rewards_to_tensor
+    Rewards_to_tensor --> Apply_Categorical_distribution
+    Apply_Categorical_distribution --> Calculate_returns
+    Calculate_returns --> Calculate_losses_entropy
+    Calculate_losses_entropy --> Optimizer_grad
+    Optimizer_grad --> Log_training_metrics
+
+    finalize_call[/Finalize_transition/] --> Extract_observation
+    Extract_observation --> Generate_local_patch
+    binarize_map_data -.-> Generate_local_patch
+    update_odometry_data -.-> Generate_local_patch
+    Generate_local_patch --> Convert_to_tensor
+    Convert_to_tensor --> Obtain_policy
+    Obtain_policy --> Policy_to_action
+    Policy_to_action --> Action_to_goal
+    Action_to_goal --> Return_goal("Return [x,y]")
+
+    generate_func[[Generate_goal]] --> finalize_call
+    finalize_func --> Get_local_patch
+    Get_local_patch --> Calculate_reward
+    Get_local_patch --> Save_observations_actions_rewards
+
+    Calculate_reward --> information_gain("3.0 * (new_known - old_known) / map_cells")
+    information_gain --> exploration_efficiency("1.5 * (information_gain / travel_dist)")
+    exploration_efficiency --> overlap_ratio("-2.5 * (count 10 >= x < 100)")
+    overlap_ratio:::problem --> movement_penalty("dist < MIN_REWARD_DIST => -0.5")
+    movement_penalty --> Save_observations_actions_rewards
+
+    Decision_network --> update_func[[Update_RL_state]]
+    update_func --> binarize_map_data
+    update_func --> update_odometry_data
+
+    Trajectory_recorder:::_class --> export_func[[Save_trajectory]]
+    export_func --> Generate_map_overlay
+    Generate_map_overlay --> Transform_values_into_RGB
+    Transform_values_into_RGB --> Find_image_index_from_coordinates
+    Find_image_index_from_coordinates --> Add_goals_to_image
+    Add_goals_to_image --> Save_image_to_disk
+    export_func --> Plot_movement
+    Plot_movement --> Transform_values_to_list
+    Transform_values_to_list --> Create_scatter_plot
+    Create_scatter_plot --> Save_plot_to_disk
+    export_func --> Export_data
+    Export_data --> Save_odometry
+    Export_data --> Save_paths_as_JSON
+
+    Trajectory_recorder --> odometry_func[[Log_odometry]]
+    odometry_func --> Append_current_position_to_list
+    Trajectory_recorder --> goal_func[[Log_goals]]
+    goal_func --> Append_goal_to_list
+    goal_func --> Append_path_to_list    

@@ -55,10 +55,106 @@ This repository contains all of the necessary packages to run the simulation and
 This package is responsible for exploring the environment using a reinforcement learning network with PPO. Also the same node is used to train the model by changing the parameters in `swarm_launch.py`.
 
 ### Robot sim package
+Contains files for setting up simulation in static environment, random environment or using modified Gibson dataset files for exploration. can be combined with either robot_control or robot_node package for autonomous exploration. Also includes files for setting up RViZ2 visualisation, that enables to control one of the robots manually through properly remapping its goal_pose topic, as the robots run in a namespace.
 
 ### Map merger package
+Dynamicaly scans available topics for the ones containing local occupancy maps from the robots and merges them into one global map. Another feature of this node is the ability to highlight the overlapped regions of the local maps and also add current robot positions to the final map. In normal operation each robot in the swarm has its own map merger node to generate global map to base the decisions of the the RL network upon.
 
 ### Supporting packages
+Below is a overview of other packages contained in this repository:
+
+#### Dynamic TF Publisher package
+This package provides a service for dynamically publishing transforms in the ROS2 ecosystem. It allows robots to broadcast their position and orientation information in the global coordinate frame, which is essential for multi-robot coordination and map merging.
+
+#### Sim Services package
+Defines custom ROS services (`sim_srvs`) used for data management during simulations. These services enable:
+- Storing and retrieving simulation metadata
+- Associating training data with specific simulation runs
+- Exporting training results and metrics
+- Managing simulation-specific configurations
+
+These services are crucial for organizing and tracking reinforcement learning training data during distributed multi-robot simulations.
+
+## Installation and Dependencies
+
+Before running the code, ensure you have the following dependencies installed:
+- ROS2 Humble (`ros-humble-desktop` or `ros-humble-ros-base`)
+- Gazebo (simulator)
+- Nav2 (navigation framework)
+- SLAM Toolbox (for SLAM-based mapping)
+- Python 3.8+ with packages: `numpy`, `tensorflow`, `opencv`
+
+Run the setup script to install all dependencies:
+```bash
+cd /path/to/ros_ws/src
+bash setup.sh
+```
+
+## Configuration
+
+### Navigation and Mapping Configuration
+- Map merger configuration can be modified in `map_merger/config/`
+- Robot simulation parameters (e.g., sensor noise, dynamics) are configurable in launch files
+
+### Reinforcement Learning Configuration
+- Training parameters (learning rate, episode length, etc.) can be modified in `robot_node/launch/swarm_launch.py`
+- Reward function configurations are tunable in the training scripts
+
+## Training and Optimization
+
+### Training Pipeline
+1. **Data Generation**: Launch simulation using the `train_sim_launch.py` or `static_train_launch.py` files
+2. **Model Training**: Run the Python training script which uses Stable-Baselines3 PPO implementation
+3. **Evaluation**: Validate trained models on test environments (Gibson dataset or random environments)
+4. **Deployment**: Export trained models for use in real-world robot applications
+
+### Distributed Training
+For large-scale training on clusters, use the provided Apptainer container setup with the Slurm job scheduler. See `train_script.sh` for example cluster submission configurations.
+
+## Visualization and Debugging
+
+### RViZ2 Configuration
+- Main visualization config: `robot_sim/rviz/gazebo_rviz.rviz`
+- Displays include: robot positions, occupancy maps, local SLAM maps, global merged map, navigation goals, and sensor data
+- Manual robot control: Remap `/goal_pose` topic to specific robot namespace
+
+### Gazebo Environment Visualization
+- Gazebo is launched automatically with `sim_launch.py`, `random_sim_launch.py`, and `gibson_launch.py`
+- Sensor visualizations (laser scans) are available in real-time
+- Environment statistics (exploration coverage, time taken) can be logged
+
+## Output and Results
+
+### Training Outputs
+- Trained models are saved in `export/` directory after training completes
+- Training metrics (episode rewards, exploration coverage) are logged as CSV files
+- Model checkpoints are saved at regular intervals for recovery
+
+### Map Data
+- Global merged maps from simulations are exported in PNG format
+- Occupancy grids are stored for post-training analysis
+- Trajectory data for each robot is available in CSV and PNG format as plots
+
+## Performance Notes
+
+- **Training Speed**: Single simulation run typically takes 5-15 minutes depending on environment complexity
+- **Computational Requirements**: Minimum 4GB RAM, recommended 8GB+ for distributed training
+
+## Future Enhancements
+
+Potential areas for expansion:
+- Multi-agent communication and cooperation strategies
+- Transfer learning between different environments
+- Real-world robot deployment and fine-tuning
+- Integration with more advanced SLAM algorithms
+
+## Contributing
+
+To contribute to this project:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes with clear messages
+4. Push to your branch and open a pull request
 
 ## Scripts
 In the root directory of this repository are couple of scripts, that are either used for training or serve as a helpers for various usecases.

@@ -262,7 +262,14 @@ if __name__ == "__main__":
                     data: dict[int, Batch] = DataLogger.load_from_csv(file)
                     DataLogger.subplot_data(
                         data,
-                        ["loss", "policy_loss", "avg_reward", "entropy"],
+                        [
+                            "loss",
+                            "policy_loss",
+                            "avg_reward",
+                            "entropy",
+                            "entropy_coef",
+                            "replay_size",
+                        ],
                         f"{os.path.splitext(file)[0]}.png",
                         data_label="Epoch",
                     )

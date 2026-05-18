@@ -11,7 +11,11 @@ class Batch:
     policy_loss: float
     value_loss: float
     entropy: float
-    avg_reward: float
+    entropy_coef: float
+    replay_size: int = 0
+    training_steps: int = 0
+    off_policy_updates: int = 0
+    avg_reward: float = 0.0
 
 
 class DataLogger:
@@ -26,8 +30,12 @@ class DataLogger:
             policy_loss=data.get("policy_loss", 0.0),
             value_loss=data.get("value_loss", 0.0),
             entropy=data.get("entropy", 0.0),
+            entropy_coef=data.get("entropy_coef", 0.0),
             avg_reward=data.get("avg_reward", 0.0),
             batch_size=data.get("batch_size", 0),
+            replay_size=data.get("replay_size", 0),
+            training_steps=data.get("training_steps", 0),
+            off_policy_updates=data.get("off_policy_updates", 0),
         )
         self.batch_nr += 1
 
@@ -39,7 +47,11 @@ class DataLogger:
             "policy_loss",
             "value_loss",
             "entropy",
+            "entropy_coef",
             "avg_reward",
+            "replay_size",
+            "training_steps",
+            "off_policy_updates",
         ]
 
         with open(log_file, "w") as f:
@@ -62,7 +74,11 @@ class DataLogger:
                     policy_loss=float(values[3]),
                     value_loss=float(values[4]),
                     entropy=float(values[5]),
-                    avg_reward=float(values[6]),
+                    entropy_coef=float(values[6]),
+                    avg_reward=float(values[7]),
+                    replay_size=int(values[8]),
+                    training_steps=int(values[9]),
+                    off_policy_updates=int(values[10]),
                 )
                 data[batch.batch_nr] = batch
         return data
@@ -115,9 +131,7 @@ class DataLogger:
 
 
 if __name__ == "__main__":
-    data = DataLogger.load_from_csv(
-        "export/kris_robot1_training_6a8fec3e-4b6d-4384-8288-87c666d0ecff.csv"
-    )
+    data = DataLogger.load_from_csv("export/kris_robot1_training_1.csv")
     DataLogger.subplot_data(
         data, ["loss", "policy_loss", "avg_reward", "entropy"], "export/subplot.png", "Batch"
     )

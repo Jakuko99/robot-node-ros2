@@ -34,6 +34,11 @@ MIN_TRAINING_BATCH_SIZE: int = 4
 MIN_REWARD_DISTANCE_M: float = 1.0
 REWARD_CLIP_ABS: float = 8.0
 TARGET_ENTROPY: float = TARGET_ENTROPY_RATIO * math.log(ACTION_COUNT)
+REPLAY_BUFFER_SIZE: int = 128
+REPLAY_WARMUP_SIZE: int = 64
+OFF_POLICY_BATCH_SIZE: int = 32
+OFF_POLICY_UPDATES_PER_EPOCH: int = 4
+TARGET_CRITIC_TAU: float = 0.01
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -83,6 +88,9 @@ class DecisionNetwork(nn.Module):
             ),
         )
         self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)
+        self.target_critic = copy.deepcopy(self.critic)
+        self.target_critic.to(self.device)
+        self.target_critic.eval()
         self.reward_mean: float = 0.0
         self.reward_variance: float = 1.0
         self.reward_normalization_count: int = 0
@@ -98,6 +106,9 @@ class DecisionNetwork(nn.Module):
         self.rollout_actions: list[int] = []
         self.rollout_rewards: list[float] = []
         self.rollout_raw_rewards: list[float] = []
+        self.replay_buffer: deque[tuple[torch.Tensor, int, float, float, torch.Tensor, float]] = (
+            deque(maxlen=REPLAY_BUFFER_SIZE)
+        )
 
         # Pending transition for delayed reward assignment
         self.pending_obs: torch.Tensor = None
@@ -134,20 +145,26 @@ class DecisionNetwork(nn.Module):
         logits = self.actor(obs_tensor)
         policy = torch.softmax(logits, dim=-1)
 
-        # Decay exploration over time: higher exploitation as training progresses
-        exploration_ratio = EXPLOITATION_RATIO
-        if self.train_enabled:
-            # Gradual increase in exploitation from 0.7 to 0.9 over 100k steps
-            max_steps = 100000.0
-            exploration_decay = min(0.2, (self.training_steps / max_steps) * 0.2)
-            exploration_ratio = min(0.9, EXPLOITATION_RATIO + exploration_decay)
-
-        if random() < exploration_ratio:
-            # Try higher-probability actions first, then fall back to the rest.
-            candidate_actions = torch.argsort(policy, descending=True).tolist()
+        if self.train_enabled and len(self.replay_buffer) < REPLAY_WARMUP_SIZE:
+            # Warm up replay with purely random actions before relying on policy.
+            candidate_actions = np.random.permutation(ACTION_COUNT).tolist()
         else:
-            sampled_order = torch.multinomial(policy, num_samples=ACTION_COUNT, replacement=False)
-            candidate_actions = sampled_order.tolist()
+            # Decay exploration over time: higher exploitation as training progresses
+            exploration_ratio = EXPLOITATION_RATIO
+            if self.train_enabled:
+                # Gradual increase in exploitation from 0.7 to 0.9 over 100k steps
+                max_steps = 100000.0
+                exploration_decay = min(0.2, (self.training_steps / max_steps) * 0.2)
+                exploration_ratio = min(0.9, EXPLOITATION_RATIO + exploration_decay)
+
+            if random() < exploration_ratio:
+                # Try higher-probability actions first, then fall back to the rest.
+                candidate_actions = torch.argsort(policy, descending=True).tolist()
+            else:
+                sampled_order = torch.multinomial(
+                    policy, num_samples=ACTION_COUNT, replacement=False
+                )
+                candidate_actions = sampled_order.tolist()
 
         action_int = None
         goal = None
@@ -180,9 +197,51 @@ class DecisionNetwork(nn.Module):
         # Finalize potential pending transition before optimization.
         self._finalize_pending_transition()
 
-        if len(self.rollout_rewards) < MIN_TRAINING_BATCH_SIZE:
+        update_metrics: list[dict[str, float]] = []
+        current_batch_size = 0
+        avg_reward = 0.0
+
+        if len(self.rollout_rewards) >= MIN_TRAINING_BATCH_SIZE:
+            update_metrics.append(self._run_on_policy_update())
+            current_batch_size = len(self.rollout_rewards)
+            avg_reward = float(np.mean(self.rollout_raw_rewards))
+
+        off_policy_updates = 0
+        if len(self.replay_buffer) >= OFF_POLICY_BATCH_SIZE:
+            for _ in range(OFF_POLICY_UPDATES_PER_EPOCH):
+                update_metrics.append(self._run_off_policy_update())
+                off_policy_updates += 1
+
+        if not update_metrics:
             return None
 
+        loss_mean = float(np.mean([m["loss"] for m in update_metrics]))
+        policy_loss_mean = float(np.mean([m["policy_loss"] for m in update_metrics]))
+        value_loss_mean = float(np.mean([m["value_loss"] for m in update_metrics]))
+        entropy_mean = float(np.mean([m["entropy"] for m in update_metrics]))
+        entropy_coef_mean = float(np.mean([m["entropy_coef"] for m in update_metrics]))
+
+        # Increment training step counter for exploration decay
+        self.training_steps += 1
+
+        metrics = {
+            "loss": loss_mean,
+            "policy_loss": policy_loss_mean,
+            "value_loss": value_loss_mean,
+            "entropy": entropy_mean,
+            "entropy_coef": entropy_coef_mean,
+            "avg_reward": avg_reward,
+            "batch_size": current_batch_size,
+            "training_steps": self.training_steps,
+            "replay_size": int(len(self.replay_buffer)),
+            "off_policy_updates": int(off_policy_updates),
+        }
+        self.data_logger.log_batch(metrics)
+        self._checkpoint(metrics)
+        self._clear_rollout()
+        return metrics
+
+    def _run_on_policy_update(self) -> dict[str, float]:
         obs_batch = torch.stack(self.rollout_obs).to(self.device)
         action_batch = torch.as_tensor(
             self.rollout_actions,
@@ -190,9 +249,6 @@ class DecisionNetwork(nn.Module):
             device=self.device,
         )
         rewards = torch.tensor(self.rollout_rewards, dtype=torch.float32, device=self.device)
-        raw_rewards = torch.tensor(
-            self.rollout_raw_rewards, dtype=torch.float32, device=self.device
-        )
 
         logits = self.actor(obs_batch)
         dist = Categorical(logits=logits)
@@ -217,13 +273,7 @@ class DecisionNetwork(nn.Module):
         policy_loss: torch.Tensor = -(log_probs * clipped_advantages.detach()).mean()
         value_loss: torch.Tensor = torch.nn.functional.mse_loss(values, returns)
         entropy_bonus: torch.Tensor = entropies.mean()
-
-        # Adaptive entropy coefficient based on target entropy
-        entropy_value = float(entropy_bonus.detach().item())
-        entropy_scale = 1.0
-        if entropy_value > 1e-6:
-            entropy_scale = max(0.5, min(2.0, TARGET_ENTROPY / (entropy_value + 1e-8)))
-        entropy_coef = max(ENTROPY_COEF_MIN, ENTROPY_COEF * entropy_scale)
+        entropy_coef: float = self._compute_adaptive_entropy_coef(entropy_bonus)
 
         # Normalize value loss to prevent it from dominating policy loss
         normalized_value_loss = (
@@ -237,24 +287,83 @@ class DecisionNetwork(nn.Module):
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
+        self._soft_update(self.critic, self.target_critic, TARGET_CRITIC_TAU)
 
-        # Increment training step counter for exploration decay
-        self.training_steps += 1
-
-        metrics = {
+        return {
             "loss": float(loss.item()),
             "policy_loss": float(policy_loss.item()),
             "value_loss": float(value_loss.item()),
             "entropy": float(entropy_bonus.item()),
             "entropy_coef": float(entropy_coef),
-            "avg_reward": float(raw_rewards.mean().item()),
-            "batch_size": len(self.rollout_rewards),
-            "training_steps": self.training_steps,
         }
-        self.data_logger.log_batch(metrics)
-        self._checkpoint(metrics)
-        self._clear_rollout()
-        return metrics
+
+    def _run_off_policy_update(self) -> dict[str, float]:
+        batch_size = min(OFF_POLICY_BATCH_SIZE, len(self.replay_buffer))
+        sample_indices = np.random.choice(len(self.replay_buffer), size=batch_size, replace=False)
+        sampled_transitions = [self.replay_buffer[int(i)] for i in sample_indices]
+
+        obs_batch = torch.stack([transition[0] for transition in sampled_transitions]).to(
+            self.device
+        )
+        action_batch = torch.as_tensor(
+            [transition[1] for transition in sampled_transitions],
+            dtype=torch.int64,
+            device=self.device,
+        )
+        reward_batch = torch.as_tensor(
+            [transition[2] for transition in sampled_transitions],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        next_obs_batch = torch.stack([transition[4] for transition in sampled_transitions]).to(
+            self.device
+        )
+        done_batch = torch.as_tensor(
+            [transition[5] for transition in sampled_transitions],
+            dtype=torch.float32,
+            device=self.device,
+        )
+
+        with torch.no_grad():
+            next_values = self.target_critic(next_obs_batch).squeeze(-1)
+            td_targets = reward_batch + GAMMA * (1.0 - done_batch) * next_values
+
+        logits = self.actor(obs_batch)
+        dist = Categorical(logits=logits)
+        log_probs = dist.log_prob(action_batch)
+        entropy_bonus = dist.entropy().mean()
+
+        values = self.critic(obs_batch).squeeze(-1)
+        advantages = td_targets - values
+        if advantages.numel() > 1:
+            advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
+
+        policy_loss = -(log_probs * advantages.detach()).mean()
+        value_loss = torch.nn.functional.mse_loss(values, td_targets)
+        entropy_coef: float = self._compute_adaptive_entropy_coef(entropy_bonus)
+        loss = policy_loss + VALUE_COEF * value_loss - entropy_coef * entropy_bonus
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.parameters(), 1.0)
+        self.optimizer.step()
+        self._soft_update(self.critic, self.target_critic, TARGET_CRITIC_TAU)
+
+        return {
+            "loss": float(loss.item()),
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy_bonus.item()),
+            "entropy_coef": float(entropy_coef),
+        }
+
+    @staticmethod
+    def _compute_adaptive_entropy_coef(entropy_bonus: torch.Tensor) -> float:
+        entropy_value = float(entropy_bonus.detach().item())
+        entropy_scale = 1.0
+        if entropy_value > 1e-6:
+            entropy_scale = max(0.5, min(2.0, TARGET_ENTROPY / (entropy_value + 1e-8)))
+        return max(ENTROPY_COEF_MIN, ENTROPY_COEF * entropy_scale)
 
     def extract_observation(
         self,
@@ -398,6 +507,9 @@ class DecisionNetwork(nn.Module):
             return
 
         local_map = self.get_local_patch(self.current_map, self.current_odom, PATCH_RADIUS)
+        next_obs = self._obs_to_tensor(
+            self.extract_observation(self.current_map, self.current_odom)
+        )
         reward = self.feedback_layer.calculate_reward(
             self.current_map,
             self.current_odom,
@@ -411,6 +523,16 @@ class DecisionNetwork(nn.Module):
         self.rollout_actions.append(self.pending_action)
         self.rollout_rewards.append(float(normalized_reward))
         self.rollout_raw_rewards.append(float(reward))
+        self.replay_buffer.append(
+            (
+                self.pending_obs.clone().detach().cpu(),
+                int(self.pending_action),
+                float(normalized_reward),
+                float(reward),
+                next_obs.detach().cpu(),
+                0.0,
+            )
+        )
 
         self.pending_obs = None
         self.pending_action = None
@@ -541,6 +663,9 @@ class DecisionNetwork(nn.Module):
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
         try:
             self.load_state_dict(torch.load(path, map_location=self.device))
+            self.target_critic.load_state_dict(self.critic.state_dict())
+            self.target_critic.to(self.device)
+            self.target_critic.eval()
             self.to(self.device)
             response.success = True
             response.message = "Model loaded successfully."
@@ -557,7 +682,12 @@ class DecisionNetwork(nn.Module):
 
     def load_model_from_path(self, path: str) -> bool:
         try:
-            self.load_state_dict(torch.load(path, map_location=self.device))
+            self.load_state_dict(
+                torch.load(path, map_location=self.device),
+            )
+            self.target_critic.load_state_dict(self.critic.state_dict())
+            self.target_critic.to(self.device)
+            self.target_critic.eval()
             self.to(self.device)
             self.logger.info(f"Model loaded successfully from {path}")
             return True

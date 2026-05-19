@@ -26,10 +26,10 @@ def generate_launch_description():
             cmd=[
                 "ign",
                 "gazebo",
-                # "-s",
+                "-s",
                 "-r",
                 PathJoinSubstitution(["src", "robot_sim", "gazebo", sdf_file]),
-                # "--headless-rendering",
+                "--headless-rendering",
             ],
         )
     )

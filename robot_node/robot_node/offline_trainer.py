@@ -22,6 +22,7 @@ from robot_node.decision_network import (
     DecisionNetwork,
 )
 from robot_node.data_logger import DataLogger
+from robot_node.swarm_coordination import TEAM_CONTEXT_DIM, build_team_context_from_record
 
 
 @dataclass
@@ -32,6 +33,7 @@ class OfflineTransition:
     done: bool
     episode_id: int
     step_id: int
+    team_context: np.ndarray
 
 
 @dataclass
@@ -41,6 +43,7 @@ class OfflineDataset:
     returns: torch.Tensor
     normalized_rewards: torch.Tensor
     rewards: torch.Tensor
+    team_contexts: torch.Tensor
 
 
 @dataclass
@@ -225,6 +228,7 @@ def read_transitions(dataset_paths: list[Path]) -> list[OfflineTransition]:
             done = bool(record.get("done", False))
             episode_id = int(record.get("episode_id", path_index))
             step_id = int(record.get("step_id", row_index))
+            team_context = build_team_context_from_record(record)
 
             transitions.append(
                 OfflineTransition(
@@ -234,6 +238,7 @@ def read_transitions(dataset_paths: list[Path]) -> list[OfflineTransition]:
                     done=done,
                     episode_id=episode_id,
                     step_id=step_id,
+                    team_context=team_context,
                 )
             )
 
@@ -263,6 +268,7 @@ def build_dataset(transitions: list[OfflineTransition], gamma: float) -> Offline
     observations = np.stack([t.observation for t in transitions], axis=0)
     actions = np.asarray([t.action for t in transitions], dtype=np.int64)
     rewards = np.asarray([t.reward for t in transitions], dtype=np.float32)
+    team_contexts = np.stack([t.team_context for t in transitions], axis=0).astype(np.float32)
 
     reward_mean = float(rewards.mean())
     reward_std = float(rewards.std())
@@ -292,6 +298,7 @@ def build_dataset(transitions: list[OfflineTransition], gamma: float) -> Offline
         returns=torch.as_tensor(returns, dtype=torch.float32),
         normalized_rewards=torch.as_tensor(normalized_rewards, dtype=torch.float32),
         rewards=torch.as_tensor(rewards, dtype=torch.float32),
+        team_contexts=torch.as_tensor(team_contexts, dtype=torch.float32),
     )
 
 
@@ -332,12 +339,13 @@ def train_offline(
             actions = dataset.actions[indices].to(network.device)
             returns = dataset.returns[indices].to(network.device)
             raw_rewards = dataset.rewards[indices].to(network.device)
+            team_context = dataset.team_contexts[indices].to(network.device)
 
             logits = network.actor(obs)
             dist = Categorical(logits=logits)
             log_probs = dist.log_prob(actions)
             entropy = dist.entropy().mean()
-            values = network.critic(obs).squeeze(-1)
+            values = network._estimate_value(obs, team_context)
 
             advantages = returns - values.detach()
             if advantages.numel() > 1:

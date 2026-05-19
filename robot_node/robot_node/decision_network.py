@@ -1,20 +1,26 @@
-from nav_msgs.msg import OccupancyGrid, Odometry
 from collections import deque
-import numpy as np
-import torch.nn as nn
-from torch.optim import Adam
-from torch.distributions import Categorical
-from std_srvs.srv import Trigger
-import torch
-from random import random
-import math
 import copy
+import math
+from random import random
+
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.distributions import Categorical
+from torch.optim import Adam
+from nav_msgs.msg import OccupancyGrid, Odometry
+from std_srvs.srv import Trigger
 
 from robot_node.data_logger import DataLogger
+from robot_node.swarm_coordination import (
+    TEAM_CONTEXT_DIM,
+    MonotonicValueMixer,
+    summarize_map,
+)
 from robot_node.utils import pos_to_map_index
 
 EXPLOITATION_RATIO: float = 0.7  # More use of learned policy, less random overlap revisits
-LEARNING_RATE: float = 1e-3  # Slightly stabler updates
+LEARNING_RATE: float = 3e-4  # Lower variance during swarm updates
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.995  # More long-term planning
 ENTROPY_COEF: float = 0.01  # Less random exploration
@@ -30,7 +36,7 @@ REWARD_NORMALIZATION_CLIP: float = 5.0
 REWARD_NORMALIZATION_EPS: float = 1e-5
 CHECKPOINT_SCORE_KEY: str = "avg_reward"
 CHECKPOINT_ROLLING_WINDOW: int = 20
-MIN_TRAINING_BATCH_SIZE: int = 4
+MIN_TRAINING_BATCH_SIZE: int = 8
 MIN_REWARD_DISTANCE_M: float = 1.0
 REWARD_CLIP_ABS: float = 8.0
 TARGET_ENTROPY: float = TARGET_ENTROPY_RATIO * math.log(ACTION_COUNT)
@@ -40,6 +46,7 @@ REPLAY_WARMUP_SIZE: int = 64
 OFF_POLICY_BATCH_SIZE: int = 32
 OFF_POLICY_UPDATES_PER_EPOCH: int = 4
 TARGET_CRITIC_TAU: float = 0.01
+TEAM_CONTEXT_TAU: float = 0.02
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -75,6 +82,14 @@ class DecisionNetwork(nn.Module):
             nn.SiLU(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
+        self.team_critic = nn.Sequential(
+            layer_init(nn.Linear(TEAM_CONTEXT_DIM, 32)),
+            nn.SiLU(),
+            layer_init(nn.Linear(32, 32)),
+            nn.SiLU(),
+            layer_init(nn.Linear(32, 1), std=1.0),
+        )
+        self.value_mixer = MonotonicValueMixer(TEAM_CONTEXT_DIM)
         self.actor = nn.Sequential(
             layer_init(nn.Linear(OBS_DIM, 64)),
             nn.SiLU(),
@@ -90,8 +105,14 @@ class DecisionNetwork(nn.Module):
         )
         self.optimizer = Adam(self.parameters(), lr=LEARNING_RATE)
         self.target_critic = copy.deepcopy(self.critic)
+        self.target_team_critic = copy.deepcopy(self.team_critic)
+        self.target_value_mixer = copy.deepcopy(self.value_mixer)
         self.target_critic.to(self.device)
+        self.target_team_critic.to(self.device)
+        self.target_value_mixer.to(self.device)
         self.target_critic.eval()
+        self.target_team_critic.eval()
+        self.target_value_mixer.eval()
         self.reward_mean: float = 0.0
         self.reward_variance: float = 1.0
         self.reward_normalization_count: int = 0
@@ -100,6 +121,8 @@ class DecisionNetwork(nn.Module):
         self.latest_training_score: float = float("-inf")
         self.checkpoint_scores: deque[float] = deque(maxlen=CHECKPOINT_ROLLING_WINDOW)
         self.training_steps: int = 0  # For exploration decay
+        self.team_context: torch.Tensor = torch.zeros(TEAM_CONTEXT_DIM, dtype=torch.float32)
+        self.pending_team_context: torch.Tensor = None
         self.to(self.device)
 
         # ----- Rollout storage -----
@@ -107,17 +130,19 @@ class DecisionNetwork(nn.Module):
         self.rollout_actions: list[int] = []
         self.rollout_rewards: list[float] = []
         self.rollout_raw_rewards: list[float] = []
-        self.replay_buffer: deque[tuple[torch.Tensor, int, float, float, torch.Tensor, float]] = (
-            deque(maxlen=REPLAY_BUFFER_SIZE)
-        )
+        self.rollout_team_contexts: list[torch.Tensor] = []
+        self.rollout_reward_components: list[dict[str, float]] = []
+        self.replay_buffer: deque[
+            tuple[torch.Tensor, int, float, float, torch.Tensor, float, torch.Tensor, torch.Tensor]
+        ] = deque(maxlen=REPLAY_BUFFER_SIZE)
 
         # Pending transition for delayed reward assignment
         self.pending_obs: torch.Tensor = None
         self.pending_action: int = None
 
     def get_value(self, x):
-        x = self._obs_to_tensor(x)
-        return self.critic(x)
+        x = self._obs_to_tensor(x).unsqueeze(0)
+        return self._estimate_value(x, self._team_context_tensor().unsqueeze(0))
 
     def get_action_and_value(self, x, action=None):
         x = self._obs_to_tensor(x)
@@ -125,12 +150,55 @@ class DecisionNetwork(nn.Module):
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+        value = self._estimate_value(x.unsqueeze(0), self._team_context_tensor().unsqueeze(0))
+        return action, probs.log_prob(action), probs.entropy(), value
 
     def update_state(self, map: OccupancyGrid, odom: Odometry):
         self.current_map = map
         self.input_map = self.transform_map(map)
         self.current_odom = odom
+
+    def update_team_context(self, team_context):
+        self.team_context = self._team_context_tensor(team_context).detach().cpu()
+
+    def _team_context_tensor(self, team_context=None) -> torch.Tensor:
+        if team_context is None:
+            team_context = self.team_context
+
+        if isinstance(team_context, torch.Tensor):
+            tensor = team_context.to(self.device, dtype=torch.float32).view(-1)
+        else:
+            tensor = torch.as_tensor(team_context, dtype=torch.float32, device=self.device).view(-1)
+
+        if tensor.numel() < TEAM_CONTEXT_DIM:
+            padded = torch.zeros(TEAM_CONTEXT_DIM, dtype=torch.float32, device=self.device)
+            padded[: tensor.numel()] = tensor
+            tensor = padded
+        elif tensor.numel() > TEAM_CONTEXT_DIM:
+            tensor = tensor[:TEAM_CONTEXT_DIM]
+
+        return torch.clamp(tensor, -1.0, 1.0)
+
+    def _estimate_value(
+        self,
+        obs_batch: torch.Tensor,
+        team_context_batch: torch.Tensor | None = None,
+        use_target: bool = False,
+    ) -> torch.Tensor:
+        critic = self.target_critic if use_target else self.critic
+        team_critic = self.target_team_critic if use_target else self.team_critic
+        value_mixer = self.target_value_mixer if use_target else self.value_mixer
+
+        if team_context_batch is None:
+            team_context_batch = (
+                self._team_context_tensor().unsqueeze(0).repeat(obs_batch.shape[0], 1)
+            )
+        elif team_context_batch.dim() == 1:
+            team_context_batch = team_context_batch.unsqueeze(0)
+
+        local_value = critic(obs_batch).squeeze(-1)
+        team_value = team_critic(team_context_batch).squeeze(-1)
+        return value_mixer(local_value, team_value, team_context_batch)
 
     def generate_goal(self) -> tuple[float, float]:
         if not self.current_map or not self.current_odom:
@@ -186,6 +254,7 @@ class DecisionNetwork(nn.Module):
         if self.train_enabled:
             # Save transition context and source state for delayed reward computation.
             self.pending_obs = obs_tensor.detach().cpu()
+            self.pending_team_context = self._team_context_tensor().detach().cpu()
             self.pending_action = int(action.item())
             # Capture "old" state exactly at action commit time.
             self.feedback_layer.save_state(self.current_map, self.current_odom)
@@ -221,6 +290,46 @@ class DecisionNetwork(nn.Module):
         value_loss_mean = float(np.mean([m["value_loss"] for m in update_metrics]))
         entropy_mean = float(np.mean([m["entropy"] for m in update_metrics]))
         entropy_coef_mean = float(np.mean([m["entropy_coef"] for m in update_metrics]))
+        if self.rollout_reward_components:
+            coverage_gain_mean = float(
+                np.mean([item.get("coverage_gain", 0.0) for item in self.rollout_reward_components])
+            )
+            frontier_gain_mean = float(
+                np.mean([item.get("frontier_gain", 0.0) for item in self.rollout_reward_components])
+            )
+            overlap_growth_mean = float(
+                np.mean(
+                    [item.get("overlap_growth", 0.0) for item in self.rollout_reward_components]
+                )
+            )
+            crowding_penalty_mean = float(
+                np.mean(
+                    [item.get("crowding_penalty", 0.0) for item in self.rollout_reward_components]
+                )
+            )
+            redundancy_penalty_mean = float(
+                np.mean(
+                    [item.get("redundancy_penalty", 0.0) for item in self.rollout_reward_components]
+                )
+            )
+            nearest_teammate_mean = float(
+                np.mean(
+                    [item.get("nearest_teammate", 0.0) for item in self.rollout_reward_components]
+                )
+            )
+            team_context_mean = float(
+                np.mean(
+                    [item.get("team_context_mean", 0.0) for item in self.rollout_reward_components]
+                )
+            )
+        else:
+            coverage_gain_mean = 0.0
+            frontier_gain_mean = 0.0
+            overlap_growth_mean = 0.0
+            crowding_penalty_mean = 0.0
+            redundancy_penalty_mean = 0.0
+            nearest_teammate_mean = 0.0
+            team_context_mean = 0.0
 
         # Increment training step counter for exploration decay
         self.training_steps += 1
@@ -236,6 +345,13 @@ class DecisionNetwork(nn.Module):
             "training_steps": self.training_steps,
             "replay_size": int(len(self.replay_buffer)),
             "off_policy_updates": int(off_policy_updates),
+            "coverage_gain": coverage_gain_mean,
+            "frontier_gain": frontier_gain_mean,
+            "overlap_growth": overlap_growth_mean,
+            "crowding_penalty": crowding_penalty_mean,
+            "redundancy_penalty": redundancy_penalty_mean,
+            "nearest_teammate": nearest_teammate_mean,
+            "team_context_mean": team_context_mean,
         }
         self.data_logger.log_batch(metrics)
         self._checkpoint(metrics)
@@ -244,6 +360,7 @@ class DecisionNetwork(nn.Module):
 
     def _run_on_policy_update(self) -> dict[str, float]:
         obs_batch = torch.stack(self.rollout_obs).to(self.device)
+        team_context_batch = torch.stack(self.rollout_team_contexts).to(self.device)
         action_batch = torch.as_tensor(
             self.rollout_actions,
             dtype=torch.int64,
@@ -255,7 +372,7 @@ class DecisionNetwork(nn.Module):
         dist = Categorical(logits=logits)
         log_probs = dist.log_prob(action_batch)
         entropies = dist.entropy()
-        values: torch.Tensor = self.critic(obs_batch).squeeze(-1)
+        values: torch.Tensor = self._estimate_value(obs_batch, team_context_batch)
 
         returns = torch.zeros_like(rewards)
         running_return = torch.tensor(0.0, device=self.device)
@@ -289,6 +406,8 @@ class DecisionNetwork(nn.Module):
         nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
         self._soft_update(self.critic, self.target_critic, TARGET_CRITIC_TAU)
+        self._soft_update(self.team_critic, self.target_team_critic, TEAM_CONTEXT_TAU)
+        self._soft_update(self.value_mixer, self.target_value_mixer, TEAM_CONTEXT_TAU)
 
         return {
             "loss": float(loss.item()),
@@ -324,9 +443,19 @@ class DecisionNetwork(nn.Module):
             dtype=torch.float32,
             device=self.device,
         )
+        team_context_batch = torch.stack([transition[6] for transition in sampled_transitions]).to(
+            self.device
+        )
+        next_team_context_batch = torch.stack(
+            [transition[7] for transition in sampled_transitions]
+        ).to(self.device)
 
         with torch.no_grad():
-            next_values = self.target_critic(next_obs_batch).squeeze(-1)
+            next_values = self._estimate_value(
+                next_obs_batch,
+                next_team_context_batch,
+                use_target=True,
+            )
             td_targets = reward_batch + GAMMA * (1.0 - done_batch) * next_values
 
         logits = torch.clamp(self.actor(obs_batch), -MAX_LOGIT_MAGNITUDE, MAX_LOGIT_MAGNITUDE)
@@ -334,7 +463,7 @@ class DecisionNetwork(nn.Module):
         log_probs = dist.log_prob(action_batch)
         entropy_bonus = dist.entropy().mean()
 
-        values = self.critic(obs_batch).squeeze(-1)
+        values = self._estimate_value(obs_batch, team_context_batch)
         advantages = td_targets - values
         if advantages.numel() > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
@@ -349,6 +478,8 @@ class DecisionNetwork(nn.Module):
         nn.utils.clip_grad_norm_(self.parameters(), 1.0)
         self.optimizer.step()
         self._soft_update(self.critic, self.target_critic, TARGET_CRITIC_TAU)
+        self._soft_update(self.team_critic, self.target_team_critic, TEAM_CONTEXT_TAU)
+        self._soft_update(self.value_mixer, self.target_value_mixer, TEAM_CONTEXT_TAU)
 
         return {
             "loss": float(loss.item()),
@@ -375,12 +506,13 @@ class DecisionNetwork(nn.Module):
         local_patch = self.get_local_patch(map, odom, patch_size=patch_radius)
         transformed = self.transform_map(local_patch).astype(np.float32)
 
-        # Convert 5-channel occupancy encoding into a single scalar utility map.
+        # Convert multi-channel occupancy cues into a compact utility map for the actor.
         unexplored = transformed[:, :, 0]
         occupied = transformed[:, :, 1]
         overlap = transformed[:, :, 2]
         others = transformed[:, :, 4]
-        utility = unexplored + 0.3 * overlap - occupied - 0.2 * others
+        frontier_mask = self._frontier_mask(local_patch)
+        utility = unexplored + 0.6 * frontier_mask + 0.25 * overlap - 1.0 * occupied - 0.35 * others
 
         # Normalize utility to prevent extreme values and improve neural network training
         utility_max = np.abs(utility).max() + 1e-6
@@ -396,6 +528,23 @@ class DecisionNetwork(nn.Module):
         if obs_vec.size > OBS_DIM:
             return obs_vec[:OBS_DIM]
         return obs_vec
+
+    def _frontier_mask(self, local_patch: OccupancyGrid) -> np.ndarray:
+        if local_patch is None or local_patch.data is None:
+            return np.zeros((1, 1), dtype=np.float32)
+
+        map_data = np.asarray(local_patch.data, dtype=np.int16).reshape(
+            (local_patch.info.height, local_patch.info.width)
+        )
+        unknown = map_data < 0
+        free = (map_data >= 0) & (map_data < 50)
+        adjacent_free = np.zeros_like(free)
+        adjacent_free[1:, :] |= free[:-1, :]
+        adjacent_free[:-1, :] |= free[1:, :]
+        adjacent_free[:, 1:] |= free[:, :-1]
+        adjacent_free[:, :-1] |= free[:, 1:]
+        frontier = unknown & adjacent_free
+        return frontier.astype(np.float32)
 
     @staticmethod
     def action_to_goal(
@@ -511,10 +660,17 @@ class DecisionNetwork(nn.Module):
         next_obs = self._obs_to_tensor(
             self.extract_observation(self.current_map, self.current_odom)
         )
+        current_team_context = self._team_context_tensor().detach().cpu()
+        pending_team_context = (
+            self.pending_team_context.clone().detach()
+            if self.pending_team_context is not None
+            else current_team_context
+        )
         reward = self.feedback_layer.calculate_reward(
             self.current_map,
             self.current_odom,
             local_map,
+            team_context=current_team_context,
         )
         if not np.isfinite(reward):
             reward = 0.0
@@ -524,6 +680,8 @@ class DecisionNetwork(nn.Module):
         self.rollout_actions.append(self.pending_action)
         self.rollout_rewards.append(float(normalized_reward))
         self.rollout_raw_rewards.append(float(reward))
+        self.rollout_team_contexts.append(pending_team_context)
+        self.rollout_reward_components.append(dict(self.feedback_layer.last_reward_components))
         self.replay_buffer.append(
             (
                 self.pending_obs.clone().detach().cpu(),
@@ -532,17 +690,22 @@ class DecisionNetwork(nn.Module):
                 float(reward),
                 next_obs.detach().cpu(),
                 0.0,
+                pending_team_context.clone().detach().cpu(),
+                current_team_context.clone().detach().cpu(),
             )
         )
 
         self.pending_obs = None
         self.pending_action = None
+        self.pending_team_context = None
 
     def _clear_rollout(self):
         self.rollout_obs.clear()
         self.rollout_actions.clear()
         self.rollout_rewards.clear()
         self.rollout_raw_rewards.clear()
+        self.rollout_team_contexts.clear()
+        self.rollout_reward_components.clear()
 
     def _checkpoint(self, metrics: dict[str, float] | None = None) -> float:
         score = float("-inf")
@@ -663,10 +826,16 @@ class DecisionNetwork(nn.Module):
 
     def load_model(self, request: Trigger.Request, response: Trigger.Response, path: str):
         try:
-            self.load_state_dict(torch.load(path, map_location=self.device))
+            self.load_state_dict(torch.load(path, map_location=self.device), strict=False)
             self.target_critic.load_state_dict(self.critic.state_dict())
+            self.target_team_critic.load_state_dict(self.team_critic.state_dict())
+            self.target_value_mixer.load_state_dict(self.value_mixer.state_dict())
             self.target_critic.to(self.device)
+            self.target_team_critic.to(self.device)
+            self.target_value_mixer.to(self.device)
             self.target_critic.eval()
+            self.target_team_critic.eval()
+            self.target_value_mixer.eval()
             self.to(self.device)
             response.success = True
             response.message = "Model loaded successfully."
@@ -685,10 +854,17 @@ class DecisionNetwork(nn.Module):
         try:
             self.load_state_dict(
                 torch.load(path, map_location=self.device),
+                strict=False,
             )
             self.target_critic.load_state_dict(self.critic.state_dict())
+            self.target_team_critic.load_state_dict(self.team_critic.state_dict())
+            self.target_value_mixer.load_state_dict(self.value_mixer.state_dict())
             self.target_critic.to(self.device)
+            self.target_team_critic.to(self.device)
+            self.target_value_mixer.to(self.device)
             self.target_critic.eval()
+            self.target_team_critic.eval()
+            self.target_value_mixer.eval()
             self.to(self.device)
             self.logger.info(f"Model loaded successfully from {path}")
             return True
@@ -707,6 +883,7 @@ class FeedbackLayer:
         self.network: DecisionNetwork = network
         self.current_state: OccupancyGrid = None
         self.current_odom: Odometry = None
+        self.last_reward_components: dict[str, float] = {}
 
     def save_state(self, map: OccupancyGrid, odom: Odometry):
         # Keep snapshots so later callbacks cannot overwrite reward baseline semantics.
@@ -721,6 +898,7 @@ class FeedbackLayer:
         new_map: OccupancyGrid,
         new_odom: Odometry,
         local_map: OccupancyGrid = None,
+        team_context: torch.Tensor | np.ndarray | None = None,
     ) -> float:
         if not self.has_state() or new_map is None or new_odom is None:
             return 0.0
@@ -728,9 +906,9 @@ class FeedbackLayer:
         if local_map is None:
             local_map = self.network.get_local_patch(new_map, new_odom, PATCH_RADIUS)
 
-        total_reward: float = 0.0
+        old_summary = summarize_map(self.current_state)
+        new_summary = summarize_map(new_map)
 
-        # Criterion 1: Ratio of explored to unexplored cells
         old_map_data: np.ndarray = np.array(self.current_state.data, dtype=np.int16).reshape(
             self.current_state.info.height, self.current_state.info.width
         )
@@ -738,12 +916,16 @@ class FeedbackLayer:
             new_map.info.height, new_map.info.width
         )
 
-        old_known: int = np.sum((old_map_data >= 0) & (old_map_data <= 100))
-        new_known: int = np.sum((new_map_data >= 0) & (new_map_data <= 100))
+        old_known: int = np.sum(old_map_data >= 0)
+        new_known: int = np.sum(new_map_data >= 0)
         map_cells: float = float(max(new_map_data.size, 1))
         information_gain: float = (new_known - old_known) / map_cells
 
-        # Criterion 2: Traveled distance to information gain from exploration
+        coverage_gain = float(new_summary[0] - old_summary[0])
+        frontier_gain = float(new_summary[6] - old_summary[6])
+        overlap_growth = float(new_summary[4] - old_summary[4])
+        occupied_growth = float(new_summary[3] - old_summary[3])
+
         old_position: np.array = np.array(
             [self.current_odom.pose.pose.position.x, self.current_odom.pose.pose.position.y],
             dtype=np.float32,
@@ -754,23 +936,55 @@ class FeedbackLayer:
         )
         distance_traveled: float = float(np.linalg.norm(new_position - old_position))
 
-        # Reward efficient exploration (gain per meter) instead of rewarding longer travel.
         travel_norm: float = max(distance_traveled, MIN_REWARD_DISTANCE_M)
         exploration_efficiency: float = information_gain / travel_norm
-        total_reward += 3.0 * information_gain + 1.5 * exploration_efficiency
+        total_reward: float = 3.0 * information_gain + 1.5 * exploration_efficiency
 
-        # Criterion 3: Penalize travel through overlap areas to encourage efficient coverage
+        team_vector = self.network._team_context_tensor(team_context).detach().cpu().numpy()
+        teammate_pressure = float(team_vector[4])
+        nearest_teammate = float(team_vector[5])
+        spread_ratio = float(team_vector[6])
+
         local_map_data: np.ndarray = np.array(local_map.data, dtype=np.int16).reshape(
             local_map.info.height, local_map.info.width
         )
         local_cells: float = float(max(local_map_data.size, 1))
-        overlap_ratio: float = np.sum((local_map_data >= 10) & (local_map_data < 100)) / local_cells
+        local_overlap_ratio = float(
+            np.sum((local_map_data >= 10) & (local_map_data < 100)) / local_cells
+        )
+        local_unknown_ratio = float(np.sum(local_map_data < 0) / local_cells)
 
-        # Stronger discouragement of already-explored-by-others areas.
-        total_reward -= 2.5 * overlap_ratio
+        team_redundancy_penalty = 1.5 * local_overlap_ratio + 1.0 * max(0.0, -coverage_gain)
+        crowding_penalty = 1.0 * teammate_pressure + 0.5 * max(0.0, 0.25 - spread_ratio)
+        frontier_penalty = 0.75 * max(0.0, 0.1 - frontier_gain)
+        stagnation_penalty = 0.5 if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5) else 0.0
 
-        # Criterion 4: Penalty for staying still
-        if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5):
-            total_reward -= 0.5
+        total_reward += 4.0 * coverage_gain + 1.25 * frontier_gain
+        total_reward -= 2.0 * overlap_growth + 0.5 * occupied_growth
+        total_reward -= (
+            team_redundancy_penalty + crowding_penalty + frontier_penalty + stagnation_penalty
+        )
+
+        if nearest_teammate > 0.0:
+            total_reward += 0.25 * min(nearest_teammate, 1.0)
+
+        total_reward += 0.1 * local_unknown_ratio
+
+        self.last_reward_components = {
+            "information_gain": float(information_gain),
+            "coverage_gain": float(coverage_gain),
+            "frontier_gain": float(frontier_gain),
+            "overlap_growth": float(overlap_growth),
+            "occupied_growth": float(occupied_growth),
+            "exploration_efficiency": float(exploration_efficiency),
+            "team_redundancy_penalty": float(team_redundancy_penalty),
+            "crowding_penalty": float(crowding_penalty),
+            "frontier_penalty": float(frontier_penalty),
+            "stagnation_penalty": float(stagnation_penalty),
+            "nearest_teammate": float(nearest_teammate),
+            "team_context_mean": float(np.mean(team_vector)),
+            "local_unknown_ratio": float(local_unknown_ratio),
+            "local_overlap_ratio": float(local_overlap_ratio),
+        }
 
         return float(total_reward)

@@ -12,6 +12,13 @@ class Batch:
     value_loss: float
     entropy: float
     entropy_coef: float
+    coverage_gain: float = 0.0
+    frontier_gain: float = 0.0
+    overlap_growth: float = 0.0
+    crowding_penalty: float = 0.0
+    redundancy_penalty: float = 0.0
+    nearest_teammate: float = 0.0
+    team_context_mean: float = 0.0
     replay_size: int = 0
     training_steps: int = 0
     off_policy_updates: int = 0
@@ -31,6 +38,13 @@ class DataLogger:
             value_loss=data.get("value_loss", 0.0),
             entropy=data.get("entropy", 0.0),
             entropy_coef=data.get("entropy_coef", 0.0),
+            coverage_gain=data.get("coverage_gain", 0.0),
+            frontier_gain=data.get("frontier_gain", 0.0),
+            overlap_growth=data.get("overlap_growth", 0.0),
+            crowding_penalty=data.get("crowding_penalty", 0.0),
+            redundancy_penalty=data.get("redundancy_penalty", 0.0),
+            nearest_teammate=data.get("nearest_teammate", 0.0),
+            team_context_mean=data.get("team_context_mean", 0.0),
             avg_reward=data.get("avg_reward", 0.0),
             batch_size=data.get("batch_size", 0),
             replay_size=data.get("replay_size", 0),
@@ -48,6 +62,13 @@ class DataLogger:
             "value_loss",
             "entropy",
             "entropy_coef",
+            "coverage_gain",
+            "frontier_gain",
+            "overlap_growth",
+            "crowding_penalty",
+            "redundancy_penalty",
+            "nearest_teammate",
+            "team_context_mean",
             "avg_reward",
             "replay_size",
             "training_steps",
@@ -75,10 +96,17 @@ class DataLogger:
                     value_loss=float(values[4]),
                     entropy=float(values[5]),
                     entropy_coef=float(values[6]),
-                    avg_reward=float(values[7]),
-                    replay_size=int(values[8]),
-                    training_steps=int(values[9]),
-                    off_policy_updates=int(values[10]),
+                    coverage_gain=float(values[7]) if len(values) > 7 else 0.0,
+                    frontier_gain=float(values[8]) if len(values) > 8 else 0.0,
+                    overlap_growth=float(values[9]) if len(values) > 9 else 0.0,
+                    crowding_penalty=float(values[10]) if len(values) > 10 else 0.0,
+                    redundancy_penalty=float(values[11]) if len(values) > 11 else 0.0,
+                    nearest_teammate=float(values[12]) if len(values) > 12 else 0.0,
+                    team_context_mean=float(values[13]) if len(values) > 13 else 0.0,
+                    avg_reward=float(values[14]) if len(values) > 14 else 0.0,
+                    replay_size=int(values[15]) if len(values) > 15 else 0,
+                    training_steps=int(values[16]) if len(values) > 16 else 0,
+                    off_policy_updates=int(values[17]) if len(values) > 17 else 0,
                 )
                 data[batch.batch_nr] = batch
         return data
@@ -114,7 +142,7 @@ class DataLogger:
         for i, plot_label in enumerate(plot_labels):
             if plot_label in Batch.__dataclass_fields__:
                 values = [getattr(batch, plot_label) for batch in data.values()]
-                plt.subplot(int(ceil(num_plots / 2)), 2, i + 1)
+                plt.subplot(int(ceil(num_plots / 2)), 3, i + 1)
                 plt.plot(batch_nrs, values, label=plot_label)
                 plt.xlabel(data_label)
                 plt.ylabel(plot_label.replace("_", " ").title())

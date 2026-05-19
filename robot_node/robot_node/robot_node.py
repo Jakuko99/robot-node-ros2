@@ -18,6 +18,7 @@ import os
 
 from robot_node.data_collector import DataCollector
 from robot_node.decision_network import DecisionNetwork
+from robot_node.swarm_coordination import build_team_context
 from robot_node.trajectory_recorder import TrajectoryRecorder
 from sim_srvs.srv import SimulationOutput
 
@@ -114,7 +115,17 @@ class RobotNode(Node):
         if os.path.exists(self.model_path):  # auto load model if it exists
             try:
                 self.decision_network.load_state_dict(
-                    torch.load(self.model_path, map_location=device)
+                    torch.load(self.model_path, map_location=device),
+                    strict=False,
+                )
+                self.decision_network.target_critic.load_state_dict(
+                    self.decision_network.critic.state_dict()
+                )
+                self.decision_network.target_team_critic.load_state_dict(
+                    self.decision_network.team_critic.state_dict()
+                )
+                self.decision_network.target_value_mixer.load_state_dict(
+                    self.decision_network.value_mixer.state_dict()
                 )
                 self.get_logger().info(f"Loaded model from {self.model_path}")
             except RuntimeError as e:
@@ -252,6 +263,7 @@ class RobotNode(Node):
     def map_callback(self, msg: OccupancyGrid):
         self.current_map = msg
         self.decision_network.update_state(self.current_map, self.last_odom)
+        self._refresh_team_context()
 
     def local_map_callback(self, msg: OccupancyGrid):
         self.current_local_map = msg
@@ -259,6 +271,8 @@ class RobotNode(Node):
     def goal_timer_callback(self):
         if self.current_local_map is None or self.last_odom is None or self.current_map is None:
             return
+
+        self._refresh_team_context()
 
         if self.moving:
             if self.last_goal and self.goal_reached(
@@ -302,6 +316,10 @@ class RobotNode(Node):
             f"entropy={metrics['entropy']:.4f}, "
             f"entropy_coef={metrics['entropy_coef']:.4f}, "
             f"avg_reward={metrics['avg_reward']:.4f}, "
+            f"coverage={metrics.get('coverage_gain', 0.0):.4f}, "
+            f"frontier={metrics.get('frontier_gain', 0.0):.4f}, "
+            f"overlap={metrics.get('overlap_growth', 0.0):.4f}, "
+            f"crowding={metrics.get('crowding_penalty', 0.0):.4f}, "
             f"batch={metrics['batch_size']}"
         )
 
@@ -352,6 +370,7 @@ class RobotNode(Node):
                 "moving": self.moving,
                 "goal_timeout": self.goal_timeout,
                 "other_goal_count": len(self.other_goals),
+                "team_context": self.decision_network.team_context.detach().cpu().tolist(),
             },
         )
 
@@ -379,11 +398,13 @@ class RobotNode(Node):
                 metadata={
                     "reason": reason,
                     "moving": self.moving,
+                    "team_context": self.decision_network.team_context.detach().cpu().tolist(),
                 },
             )
 
     def other_goal_callback(self, msg: PoseStamped, namespace: str):
         self.other_goals[namespace] = msg
+        self._refresh_team_context()
 
     def goal_collision(self, goal: tuple[float, float]) -> bool:
         for other_goal in self.other_goals.values():
@@ -393,6 +414,18 @@ class RobotNode(Node):
                 return True
 
         return False
+
+    def _refresh_team_context(self):
+        if self.current_map is None:
+            return
+
+        team_context = build_team_context(
+            self.current_map,
+            self.last_odom,
+            self.other_goals,
+            extra_features=[float(len(self.other_goals)), float(self.moving)],
+        )
+        self.decision_network.update_team_context(team_context)
 
     def robot_discovery_callback(self):
         # nodes: list[str] = self.get_node_names()

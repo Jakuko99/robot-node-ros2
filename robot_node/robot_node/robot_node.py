@@ -300,6 +300,7 @@ class RobotNode(Node):
             f"policy={metrics['policy_loss']:.4f}, "
             f"value={metrics['value_loss']:.4f}, "
             f"entropy={metrics['entropy']:.4f}, "
+            f"entropy_coef={metrics['entropy_coef']:.4f}, "
             f"avg_reward={metrics['avg_reward']:.4f}, "
             f"batch={metrics['batch_size']}"
         )

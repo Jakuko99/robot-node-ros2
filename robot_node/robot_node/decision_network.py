@@ -18,7 +18,7 @@ LEARNING_RATE: float = 1e-3  # Slightly stabler updates
 REWARD_EPSILON: float = 1e-6
 GAMMA: float = 0.995  # More long-term planning
 ENTROPY_COEF: float = 0.01  # Less random exploration
-ENTROPY_COEF_MIN: float = 0.005
+ENTROPY_COEF_MIN: float = 0.02
 TARGET_ENTROPY_RATIO: float = 0.55
 VALUE_COEF: float = 0.35
 ACTION_COUNT: int = 8
@@ -34,6 +34,7 @@ MIN_TRAINING_BATCH_SIZE: int = 4
 MIN_REWARD_DISTANCE_M: float = 1.0
 REWARD_CLIP_ABS: float = 8.0
 TARGET_ENTROPY: float = TARGET_ENTROPY_RATIO * math.log(ACTION_COUNT)
+MAX_LOGIT_MAGNITUDE: float = 8.0
 REPLAY_BUFFER_SIZE: int = 128
 REPLAY_WARMUP_SIZE: int = 64
 OFF_POLICY_BATCH_SIZE: int = 32
@@ -120,7 +121,7 @@ class DecisionNetwork(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         x = self._obs_to_tensor(x)
-        logits = self.actor(x)
+        logits = torch.clamp(self.actor(x), -MAX_LOGIT_MAGNITUDE, MAX_LOGIT_MAGNITUDE)
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
@@ -142,7 +143,7 @@ class DecisionNetwork(nn.Module):
         obs_vec = self.extract_observation(self.current_map, self.current_odom)
         obs_tensor = self._obs_to_tensor(obs_vec)
 
-        logits = self.actor(obs_tensor)
+        logits = torch.clamp(self.actor(obs_tensor), -MAX_LOGIT_MAGNITUDE, MAX_LOGIT_MAGNITUDE)
         policy = torch.softmax(logits, dim=-1)
 
         if self.train_enabled and len(self.replay_buffer) < REPLAY_WARMUP_SIZE:
@@ -250,7 +251,7 @@ class DecisionNetwork(nn.Module):
         )
         rewards = torch.tensor(self.rollout_rewards, dtype=torch.float32, device=self.device)
 
-        logits = self.actor(obs_batch)
+        logits = torch.clamp(self.actor(obs_batch), -MAX_LOGIT_MAGNITUDE, MAX_LOGIT_MAGNITUDE)
         dist = Categorical(logits=logits)
         log_probs = dist.log_prob(action_batch)
         entropies = dist.entropy()
@@ -271,7 +272,7 @@ class DecisionNetwork(nn.Module):
         clipped_advantages = torch.clamp(advantages, -5.0, 5.0)
 
         policy_loss: torch.Tensor = -(log_probs * clipped_advantages.detach()).mean()
-        value_loss: torch.Tensor = torch.nn.functional.mse_loss(values, returns)
+        value_loss: torch.Tensor = torch.nn.functional.smooth_l1_loss(values, returns)
         entropy_bonus: torch.Tensor = entropies.mean()
         entropy_coef: float = self._compute_adaptive_entropy_coef(entropy_bonus)
 
@@ -328,7 +329,7 @@ class DecisionNetwork(nn.Module):
             next_values = self.target_critic(next_obs_batch).squeeze(-1)
             td_targets = reward_batch + GAMMA * (1.0 - done_batch) * next_values
 
-        logits = self.actor(obs_batch)
+        logits = torch.clamp(self.actor(obs_batch), -MAX_LOGIT_MAGNITUDE, MAX_LOGIT_MAGNITUDE)
         dist = Categorical(logits=logits)
         log_probs = dist.log_prob(action_batch)
         entropy_bonus = dist.entropy().mean()
@@ -338,10 +339,10 @@ class DecisionNetwork(nn.Module):
         if advantages.numel() > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
 
-        policy_loss = -(log_probs * advantages.detach()).mean()
-        value_loss = torch.nn.functional.mse_loss(values, td_targets)
+        policy_loss: torch.Tensor = -(log_probs * advantages.detach()).mean()
+        value_loss: torch.Tensor = torch.nn.functional.smooth_l1_loss(values, td_targets)
         entropy_coef: float = self._compute_adaptive_entropy_coef(entropy_bonus)
-        loss = policy_loss + VALUE_COEF * value_loss - entropy_coef * entropy_bonus
+        loss: torch.Tensor = policy_loss + VALUE_COEF * value_loss - entropy_coef * entropy_bonus
 
         self.optimizer.zero_grad()
         loss.backward()

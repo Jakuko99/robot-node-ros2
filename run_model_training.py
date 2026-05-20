@@ -269,6 +269,7 @@ if __name__ == "__main__":
                             "entropy",
                             "coverage_gain",
                             "frontier_gain",
+                            "overlap_growth",
                             "crowding_penalty",
                             "redundancy_penalty",
                         ],

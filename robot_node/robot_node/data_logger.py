@@ -133,7 +133,11 @@ class DataLogger:
 
     @staticmethod
     def subplot_data(
-        data: dict[int, Batch], plot_labels: list[str], save_path: str, data_label: str = "Batch"
+        data: dict[int, Batch],
+        plot_labels: list[str],
+        save_path: str,
+        data_label: str = "Batch",
+        grid_size: int = 3,
     ):
         batch_nrs = [batch.batch_nr for batch in data.values()]
         num_plots = len(plot_labels)
@@ -142,7 +146,7 @@ class DataLogger:
         for i, plot_label in enumerate(plot_labels):
             if plot_label in Batch.__dataclass_fields__:
                 values = [getattr(batch, plot_label) for batch in data.values()]
-                plt.subplot(int(ceil(num_plots / 2)), 3, i + 1)
+                plt.subplot(int(ceil(num_plots / 2)), grid_size, i + 1)
                 plt.plot(batch_nrs, values, label=plot_label)
                 plt.xlabel(data_label)
                 plt.ylabel(plot_label.replace("_", " ").title())
@@ -161,5 +165,9 @@ class DataLogger:
 if __name__ == "__main__":
     data = DataLogger.load_from_csv("export/kris_robot1_training_1.csv")
     DataLogger.subplot_data(
-        data, ["loss", "policy_loss", "avg_reward", "entropy"], "export/subplot.png", "Batch"
+        data,
+        ["loss", "policy_loss", "avg_reward", "entropy"],
+        "export/subplot.png",
+        "Epoch",
+        grid_size=2,
     )

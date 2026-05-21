@@ -26,13 +26,13 @@ from launch.actions import SetLaunchConfiguration
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
-SIM_PERIOD: int = 1800  # duration of each simulation run in seconds
+NUM_SIMULATIONS: int = 10
+SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
 OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
 EXPLORATION_THRESHOLD: float = 0.6  # threshold for ratio of explored vs total cells
 LOG_FILE: str = "export/training_log.log"
-METRICS_FILE: str = "export/training_metrics.csv"
+METRICS_FILE: str = "export/exploration_metrics.csv"
 # -------------------------
 
 
@@ -165,7 +165,7 @@ def sim_shutdown(
 
             with open(METRICS_FILE, "a") as f:
                 f.write(
-                    f"{sim_nr}-{i+1},{call_result.result().overlap_ratio:.4f},{call_result.result().explore_ratio:.4f}\n"
+                    f"{sim_nr}-{i},{call_result.result().overlap_ratio:.4f},{call_result.result().explore_ratio:.4f}\n"
                 )
 
     else:
@@ -177,6 +177,42 @@ def sim_shutdown(
 
     sleep(5)  # give some time for services to complete before shutting down
     ls.shutdown()
+
+
+def plot_metrics(metrics_file: str = METRICS_FILE):
+    try:
+        data: dict[str, list[float]] = {"overlap_ratio": [], "explore_ratio": [], "tick_labels": []}
+        with open(metrics_file, "r") as f:
+            for line in f:
+                tick_str, overlap_str, explore_str = line.strip().split(",")
+                data["tick_labels"].append(tick_str)
+                data["overlap_ratio"].append(float(overlap_str))
+                data["explore_ratio"].append(float(explore_str))
+
+        # Generate plots using matplotlib
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(data["overlap_ratio"], label="Overlap Ratio")
+        plt.plot(data["explore_ratio"], label="Explore Ratio")
+        plt.axhline(y=OVERLAP_THRESHOLD, color="r", linestyle="--", label="Overlap Threshold")
+        plt.axhline(
+            y=EXPLORATION_THRESHOLD,
+            color="g",
+            linestyle="--",
+            label="Exploration Threshold",
+        )
+        plt.xlabel("Simulation - interval")
+        plt.xticks(range(len(data["tick_labels"])), data["tick_labels"])
+        plt.ylabel("Ratio")
+        plt.title("Simulation Exploration Metrics Over Time")
+        plt.legend()
+        plt.grid()
+        plt.savefig("export/exploration_metrics.png")
+        log_message("Metrics plot generated and saved to export/exploration_metrics.png")
+
+    except Exception as e:
+        log_message(f"Error generating metrics plot: {e}")
 
 
 if __name__ == "__main__":
@@ -283,6 +319,7 @@ if __name__ == "__main__":
                         data_label="Epoch",
                     )
 
+                plot_metrics()
                 log_message("Plots generated and saved in export directory.")
 
             except Exception as e:

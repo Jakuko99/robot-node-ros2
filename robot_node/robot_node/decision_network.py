@@ -47,6 +47,51 @@ OFF_POLICY_BATCH_SIZE: int = 32
 OFF_POLICY_UPDATES_PER_EPOCH: int = 4
 TARGET_CRITIC_TAU: float = 0.01
 TEAM_CONTEXT_TAU: float = 0.02
+REWARD_WEIGHT_NAMES: tuple[str] = (
+    "information_gain",
+    "exploration_efficiency",
+    "coverage_gain",
+    "frontier_gain",
+    "overlap_growth",
+    "occupied_growth",
+    "team_redundancy_penalty",
+    "crowding_penalty",
+    "frontier_penalty",
+    "stagnation_penalty",
+    "nearest_teammate",
+    "local_unknown_ratio",
+)
+REWARD_WEIGHT_PRIOR: np.ndarray = np.array(
+    [3.0, 1.5, 4.0, 1.25, 2.0, 0.5, 1.5, 1.0, 0.75, 0.5, 0.25, 0.1],
+    dtype=np.float32,
+)
+REWARD_WEIGHT_BOUNDS: np.ndarray = np.array(
+    [
+        [0.0, 6.0],
+        [0.0, 4.0],
+        [0.0, 8.0],
+        [0.0, 4.0],
+        [0.0, 5.0],
+        [0.0, 3.0],
+        [0.0, 3.0],
+        [0.0, 3.0],
+        [0.0, 3.0],
+        [0.0, 3.0],
+        [0.0, 1.0],
+        [0.0, 0.5],
+    ],
+    dtype=np.float32,
+)
+REWARD_BO_WARMUP: int = 12
+REWARD_BO_UPDATE_PERIOD: int = 8
+REWARD_BO_HISTORY_SIZE: int = 96
+REWARD_BO_CANDIDATES: int = 48
+REWARD_BO_POOL_SIZE: int = 64
+REWARD_BO_NOISE: float = 1e-4
+REWARD_BO_UCB: float = 1.25
+REWARD_WEIGHT_SMOOTHING: float = 0.25
+REWARD_WEIGHT_PRIOR_PENALTY: float = 0.04
+REWARD_BO_RNG_SEED: int = 29
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):
@@ -884,6 +929,14 @@ class FeedbackLayer:
         self.current_state: OccupancyGrid = None
         self.current_odom: Odometry = None
         self.last_reward_components: dict[str, float] = {}
+        self.reward_weight_names: tuple[str] = REWARD_WEIGHT_NAMES
+        self.reward_weight_prior: np.ndarray = REWARD_WEIGHT_PRIOR.copy()
+        self.reward_weight_bounds: np.ndarray = REWARD_WEIGHT_BOUNDS.copy()
+        self.reward_weights: np.ndarray = self.reward_weight_prior.copy()
+        self._reward_feature_history: deque[np.ndarray] = deque(maxlen=REWARD_BO_HISTORY_SIZE)
+        self._reward_value_history: deque[float] = deque(maxlen=REWARD_BO_HISTORY_SIZE)
+        self._reward_call_count: int = 0
+        self._reward_rng = np.random.default_rng(REWARD_BO_RNG_SEED)
 
     def save_state(self, map: OccupancyGrid, odom: Odometry):
         # Keep snapshots so later callbacks cannot overwrite reward baseline semantics.
@@ -892,6 +945,175 @@ class FeedbackLayer:
 
     def has_state(self) -> bool:
         return self.current_state is not None and self.current_odom is not None
+
+    def _clip_reward_weights(self, weights: np.ndarray) -> np.ndarray:
+        lower_bounds = self.reward_weight_bounds[:, 0]
+        upper_bounds = self.reward_weight_bounds[:, 1]
+        return np.clip(weights, lower_bounds, upper_bounds).astype(np.float32, copy=False)
+
+    def _reward_feature_vector(
+        self,
+        information_gain: float,
+        exploration_efficiency: float,
+        coverage_gain: float,
+        frontier_gain: float,
+        overlap_growth: float,
+        occupied_growth: float,
+        team_redundancy_base: float,
+        crowding_base: float,
+        frontier_gap_base: float,
+        stagnation_flag: float,
+        nearest_teammate_bonus: float,
+        local_unknown_ratio: float,
+    ) -> np.ndarray:
+        return np.array(
+            [
+                information_gain,
+                exploration_efficiency,
+                coverage_gain,
+                frontier_gain,
+                -overlap_growth,
+                -occupied_growth,
+                -team_redundancy_base,
+                -crowding_base,
+                -frontier_gap_base,
+                -stagnation_flag,
+                nearest_teammate_bonus,
+                local_unknown_ratio,
+            ],
+            dtype=np.float32,
+        )
+
+    def _reward_model_score(self, weights: np.ndarray) -> float:
+        if not self._reward_feature_history:
+            return float("-inf")
+
+        feature_matrix = np.vstack(self._reward_feature_history).astype(np.float32, copy=False)
+        raw_rewards = feature_matrix @ weights.astype(np.float32, copy=False)
+        transformed_rewards = np.tanh(raw_rewards / 6.0)
+        mean_reward = float(np.mean(transformed_rewards))
+        stability_penalty = float(np.std(transformed_rewards))
+        distance_penalty = float(np.linalg.norm(weights - self.reward_weight_prior))
+        prior_scale = float(max(np.linalg.norm(self.reward_weight_prior), 1.0))
+        return (
+            mean_reward
+            - 0.15 * stability_penalty
+            - REWARD_WEIGHT_PRIOR_PENALTY * (distance_penalty / prior_scale)
+        )
+
+    @staticmethod
+    def _squared_exponential_kernel(
+        x_a: np.ndarray,
+        x_b: np.ndarray,
+        length_scale: np.ndarray,
+        signal_variance: float,
+    ) -> np.ndarray:
+        scaled_a = x_a / length_scale
+        scaled_b = x_b / length_scale
+        diff = scaled_a[:, None, :] - scaled_b[None, :, :]
+        squared_distance = np.sum(diff * diff, axis=-1)
+        return signal_variance * np.exp(-0.5 * squared_distance)
+
+    def _gp_predict(
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_test: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if x_train.shape[0] == 0:
+            return (
+                np.zeros((x_test.shape[0],), dtype=np.float32),
+                np.ones((x_test.shape[0],), dtype=np.float32),
+            )
+
+        y_mean = float(np.mean(y_train))
+        centered_targets = y_train - y_mean
+        length_scale = np.maximum(
+            0.35 * (self.reward_weight_bounds[:, 1] - self.reward_weight_bounds[:, 0]),
+            1e-3,
+        ).astype(np.float32)
+        signal_variance = float(max(np.var(y_train), 1e-3))
+        kernel_train = self._squared_exponential_kernel(
+            x_train,
+            x_train,
+            length_scale,
+            signal_variance,
+        )
+        kernel_train.flat[:: kernel_train.shape[0] + 1] += REWARD_BO_NOISE
+
+        try:
+            chol = np.linalg.cholesky(kernel_train)
+            alpha = np.linalg.solve(chol.T, np.linalg.solve(chol, centered_targets))
+            kernel_cross = self._squared_exponential_kernel(
+                x_train,
+                x_test,
+                length_scale,
+                signal_variance,
+            )
+            mean = y_mean + kernel_cross.T @ alpha
+            v = np.linalg.solve(chol, kernel_cross)
+            kernel_test = self._squared_exponential_kernel(
+                x_test,
+                x_test,
+                length_scale,
+                signal_variance,
+            )
+            variance = np.clip(np.diag(kernel_test) - np.sum(v * v, axis=0), 1e-8, None)
+            return mean.astype(np.float32, copy=False), np.sqrt(variance).astype(
+                np.float32, copy=False
+            )
+        except np.linalg.LinAlgError:
+            fallback_mean = np.full((x_test.shape[0],), y_mean, dtype=np.float32)
+            fallback_std = np.full((x_test.shape[0],), np.std(y_train) + 1e-3, dtype=np.float32)
+            return fallback_mean, fallback_std
+
+    def _sample_reward_weight_candidates(self, candidate_count: int) -> np.ndarray:
+        lower_bounds = self.reward_weight_bounds[:, 0]
+        upper_bounds = self.reward_weight_bounds[:, 1]
+        span = np.maximum(upper_bounds - lower_bounds, 1e-3)
+        center = self.reward_weights
+
+        candidates: list[np.ndarray] = [self.reward_weight_prior.copy(), center.copy()]
+        for _ in range(max(candidate_count - len(candidates), 0)):
+            if self._reward_rng.random() < 0.5:
+                sample = self._reward_rng.uniform(lower_bounds, upper_bounds)
+            else:
+                sample = center + self._reward_rng.normal(0.0, 0.2, size=center.shape) * span
+            candidates.append(self._clip_reward_weights(np.asarray(sample, dtype=np.float32)))
+
+        return np.vstack(candidates)
+
+    def _maybe_optimize_reward_weights(self):
+        if len(self._reward_feature_history) < REWARD_BO_WARMUP:
+            return
+
+        if self._reward_call_count % REWARD_BO_UPDATE_PERIOD != 0:
+            return
+
+        candidate_pool = self._sample_reward_weight_candidates(REWARD_BO_CANDIDATES)
+        candidate_scores = np.asarray(
+            [self._reward_model_score(candidate) for candidate in candidate_pool],
+            dtype=np.float32,
+        )
+
+        x_train = candidate_pool.astype(np.float32, copy=False)
+        y_train = candidate_scores.astype(np.float32, copy=False)
+
+        proposal_pool = self._sample_reward_weight_candidates(REWARD_BO_POOL_SIZE)
+        posterior_mean, posterior_std = self._gp_predict(x_train, y_train, proposal_pool)
+        acquisition = posterior_mean + REWARD_BO_UCB * posterior_std
+        best_index = int(np.argmax(acquisition))
+        proposal = proposal_pool[best_index]
+        proposal_score = float(self._reward_model_score(proposal))
+
+        current_score = self._reward_model_score(self.reward_weights)
+        if proposal_score <= current_score:
+            return
+
+        blended_weights = (
+            1.0 - REWARD_WEIGHT_SMOOTHING
+        ) * self.reward_weights + REWARD_WEIGHT_SMOOTHING * proposal
+        self.reward_weights = self._clip_reward_weights(blended_weights)
 
     def calculate_reward(
         self,
@@ -954,21 +1176,53 @@ class FeedbackLayer:
         )
         local_unknown_ratio = float(np.sum(local_map_data < 0) / local_cells)
 
-        team_redundancy_penalty = 1.5 * local_overlap_ratio + 1.0 * max(0.0, -coverage_gain)
-        crowding_penalty = 1.0 * teammate_pressure + 0.5 * max(0.0, 0.25 - spread_ratio)
-        frontier_penalty = 0.75 * max(0.0, 0.1 - frontier_gain)
-        stagnation_penalty = 0.5 if distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5) else 0.0
+        team_redundancy_base = local_overlap_ratio + max(0.0, -coverage_gain)
+        crowding_base = teammate_pressure + max(0.0, 0.25 - spread_ratio)
+        frontier_gap_base = max(0.0, 0.1 - frontier_gain)
+        stagnation_flag = float(distance_traveled < (MIN_REWARD_DISTANCE_M * 0.5))
 
-        total_reward += 4.0 * coverage_gain + 1.25 * frontier_gain
-        total_reward -= 2.0 * overlap_growth + 0.5 * occupied_growth
-        total_reward -= (
-            team_redundancy_penalty + crowding_penalty + frontier_penalty + stagnation_penalty
+        weight_vector = self._clip_reward_weights(self.reward_weights)
+        team_redundancy_penalty = weight_vector[6] * team_redundancy_base
+        crowding_penalty = weight_vector[7] * crowding_base
+        frontier_penalty = weight_vector[8] * frontier_gap_base
+        stagnation_penalty = weight_vector[9] * stagnation_flag
+        total_reward = float(
+            weight_vector[0] * information_gain
+            + weight_vector[1] * exploration_efficiency
+            + weight_vector[2] * coverage_gain
+            + weight_vector[3] * frontier_gain
+            - weight_vector[4] * overlap_growth
+            - weight_vector[5] * occupied_growth
+            - team_redundancy_penalty
+            - crowding_penalty
+            - frontier_penalty
+            - stagnation_penalty
         )
 
         if nearest_teammate > 0.0:
-            total_reward += 0.25 * min(nearest_teammate, 1.0)
+            total_reward += weight_vector[10] * min(nearest_teammate, 1.0)
 
-        total_reward += 0.1 * local_unknown_ratio
+        total_reward += weight_vector[11] * local_unknown_ratio
+
+        reward_feature_vector = self._reward_feature_vector(
+            information_gain=information_gain,
+            exploration_efficiency=exploration_efficiency,
+            coverage_gain=coverage_gain,
+            frontier_gain=frontier_gain,
+            overlap_growth=overlap_growth,
+            occupied_growth=occupied_growth,
+            team_redundancy_base=team_redundancy_base,
+            crowding_base=crowding_base,
+            frontier_gap_base=frontier_gap_base,
+            stagnation_flag=stagnation_flag,
+            nearest_teammate_bonus=min(nearest_teammate, 1.0) if nearest_teammate > 0.0 else 0.0,
+            local_unknown_ratio=local_unknown_ratio,
+        )
+
+        self._reward_feature_history.append(reward_feature_vector)
+        self._reward_value_history.append(float(total_reward))
+        self._reward_call_count += 1
+        self._maybe_optimize_reward_weights()
 
         self.last_reward_components = {
             "information_gain": float(information_gain),
@@ -985,6 +1239,7 @@ class FeedbackLayer:
             "team_context_mean": float(np.mean(team_vector)),
             "local_unknown_ratio": float(local_unknown_ratio),
             "local_overlap_ratio": float(local_overlap_ratio),
+            "reward_weight_mean": float(np.mean(weight_vector)),
         }
 
         return float(total_reward)

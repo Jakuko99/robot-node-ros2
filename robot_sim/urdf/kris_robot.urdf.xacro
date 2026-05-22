@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="kris_robot">
+  <xacro:arg name="robot_name" default="kris_robot"/>
+  <xacro:arg name="frame_prefix" default=""/>
+
+  <xacro:property name="p" value="$(arg frame_prefix)"/>
+
+  <!--
+    URDF companion model for robot_state_publisher / joint_state_publisher.
+    Use frame_prefix (for example robot1_) to avoid TF frame collisions.
+  -->
+  <link name="${p}base_link">
+    <visual>
+      <geometry>
+        <cylinder length="0.08" radius="0.055"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0.041"/>
+      <material name="white">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="${p}base_link_to_lwheel" type="continuous">
+    <parent link="${p}base_link"/>
+    <child link="${p}lwheel"/>
+    <origin rpy="1.5708 1.5708 0" xyz="0.050 0 0.02"/>
+  </joint>
+
+  <link name="${p}lwheel">
+    <visual>
+      <geometry>
+        <cylinder length="0.025" radius="0.0325"/>
+      </geometry>
+      <origin rpy="1.5708 1.5708 0" xyz="0 0.050 0.02"/>
+      <material name="black">
+        <color rgba="0 0 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="${p}base_link_to_rwheel" type="continuous">
+    <parent link="${p}base_link"/>
+    <child link="${p}rwheel"/>
+    <origin rpy="1.5708 1.5708 0" xyz="-0.050 0 0.02"/>
+  </joint>
+
+  <link name="${p}rwheel">
+    <visual>
+      <geometry>
+        <cylinder length="0.025" radius="0.0325"/>
+      </geometry>
+      <origin rpy="1.5708 1.5708 0" xyz="0 -0.050 0.02"/>
+      <material name="black">
+        <color rgba="0 0 0 1"/>
+      </material>
+    </visual>
+  </link>
+</robot>

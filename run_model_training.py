@@ -148,6 +148,11 @@ def sim_shutdown(
             if call_result.result() is not None:
                 ratio: float = call_result.result().overlap_ratio
 
+                with open(METRICS_FILE, "a") as f:
+                    f.write(
+                        f"{sim_nr}-{i},{call_result.result().overlap_ratio:.4f},{call_result.result().explore_ratio:.4f}\n"
+                    )
+
                 if ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 0:
                     log_message(
                         f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
@@ -162,11 +167,6 @@ def sim_shutdown(
                         f"UPDATE: Exploration ratio {ratio:.2f} is above exploration threshold of {EXPLORATION_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )
                     break
-
-            with open(METRICS_FILE, "a") as f:
-                f.write(
-                    f"{sim_nr}-{i},{call_result.result().overlap_ratio:.4f},{call_result.result().explore_ratio:.4f}\n"
-                )
 
     else:
         sleep(wait_period)

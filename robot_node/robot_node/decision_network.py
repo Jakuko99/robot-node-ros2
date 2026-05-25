@@ -83,7 +83,7 @@ REWARD_WEIGHT_BOUNDS: np.ndarray = np.array(
     dtype=np.float32,
 )
 REWARD_BO_WARMUP: int = 12
-REWARD_BO_UPDATE_PERIOD: int = 8
+REWARD_BO_UPDATE_PERIOD: int = 6
 REWARD_BO_HISTORY_SIZE: int = 96
 REWARD_BO_CANDIDATES: int = 48
 REWARD_BO_POOL_SIZE: int = 64
@@ -91,7 +91,7 @@ REWARD_BO_NOISE: float = 1e-4
 REWARD_BO_UCB: float = 1.25
 REWARD_WEIGHT_SMOOTHING: float = 0.25
 REWARD_WEIGHT_PRIOR_PENALTY: float = 0.04
-REWARD_BO_RNG_SEED: int = 29
+REWARD_BO_RNG_SEED: int = 13
 
 
 def layer_init(layer: nn.Module, std=np.sqrt(2), bias_const=0.0):

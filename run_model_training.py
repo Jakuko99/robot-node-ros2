@@ -192,7 +192,7 @@ def plot_metrics(metrics_file: str = METRICS_FILE):
         # Generate plots using matplotlib
         import matplotlib.pyplot as plt
 
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(15, 5))
         plt.plot(data["overlap_ratio"], label="Overlap Ratio")
         plt.plot(data["explore_ratio"], label="Explore Ratio")
         plt.axhline(y=OVERLAP_THRESHOLD, color="r", linestyle="--", label="Overlap Threshold")
@@ -203,11 +203,12 @@ def plot_metrics(metrics_file: str = METRICS_FILE):
             label="Exploration Threshold",
         )
         plt.xlabel("Simulation - interval")
-        plt.xticks(range(len(data["tick_labels"])), data["tick_labels"])
+        plt.xticks(range(len(data["tick_labels"])), data["tick_labels"], rotation=45)
         plt.ylabel("Ratio")
         plt.title("Simulation Exploration Metrics Over Time")
         plt.legend()
         plt.grid()
+        plt.tight_layout()
         plt.savefig("export/exploration_metrics.png")
         log_message("Metrics plot generated and saved to export/exploration_metrics.png")
 

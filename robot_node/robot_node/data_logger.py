@@ -141,12 +141,12 @@ class DataLogger:
     ):
         batch_nrs = [batch.batch_nr for batch in data.values()]
         num_plots = len(plot_labels)
-        plt.figure(figsize=(15, 5 * int(ceil(num_plots / 2))))
+        plt.figure(figsize=(15, 5 * int(ceil(num_plots / grid_size))))
 
         for i, plot_label in enumerate(plot_labels):
             if plot_label in Batch.__dataclass_fields__:
                 values = [getattr(batch, plot_label) for batch in data.values()]
-                plt.subplot(int(ceil(num_plots / 2)), grid_size, i + 1)
+                plt.subplot(int(ceil(num_plots / grid_size)), grid_size, i + 1)
                 plt.plot(batch_nrs, values, label=plot_label)
                 plt.xlabel(data_label)
                 plt.ylabel(plot_label.replace("_", " ").title())

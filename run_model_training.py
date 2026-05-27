@@ -26,11 +26,11 @@ from launch.actions import SetLaunchConfiguration
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 2
+NUM_SIMULATIONS: int = 10
 SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
-OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
-EXPLORATION_THRESHOLD: float = 0.6  # threshold for ratio of explored vs total cells
+OVERLAP_THRESHOLD: float = 0.6  # threshold for ratio of overlapped vs total cells
+EXPLORATION_THRESHOLD: float = 0.7  # threshold for ratio of explored vs total cells
 LOG_FILE: str = "export/training_log.log"
 METRICS_FILE: str = "export/exploration_metrics.csv"
 # -------------------------
@@ -153,7 +153,9 @@ def sim_shutdown(
                         f"{sim_nr}-{i},{call_result.result().overlap_ratio:.4f},{call_result.result().explore_ratio:.4f}\n"
                     )
 
-                if ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 0:
+                if (
+                    ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 1
+                ):  # longer grace period
                     log_message(
                         f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )
@@ -223,9 +225,9 @@ if __name__ == "__main__":
         node: Node = rclpy.create_node("training_launcher")
         cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
         cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
-        cli2_: Client = node.create_client(SimulationOutput, "/kris_robot3/save_model")
-        cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
-        cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
+        cli3: Client = node.create_client(SimulationOutput, "/kris_robot3/save_model")
+        cli4: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
+        cli5: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
         exploration_client: Client = node.create_client(
             ExplorationStatus, "/kris_robot1/exploration_progress"
         )
@@ -273,7 +275,7 @@ if __name__ == "__main__":
                     target=lambda: sim_shutdown(
                         ls=launch_service,
                         node=node,
-                        clients=[cli1, cli2, cli2_, cli3, cli4],
+                        clients=[cli1, cli2, cli3, cli4, cli5],
                         wait_period=SIM_PERIOD,
                         sim_nr=i + 1,
                         exploration_client=exploration_client,

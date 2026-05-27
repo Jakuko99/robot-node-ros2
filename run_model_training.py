@@ -26,7 +26,7 @@ from launch.actions import SetLaunchConfiguration
 ONLINE_TRAINING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 10
+NUM_SIMULATIONS: int = 2
 SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
 OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
@@ -223,6 +223,7 @@ if __name__ == "__main__":
         node: Node = rclpy.create_node("training_launcher")
         cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
         cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
+        cli2_: Client = node.create_client(SimulationOutput, "/kris_robot3/save_model")
         cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
         cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
         exploration_client: Client = node.create_client(
@@ -272,7 +273,7 @@ if __name__ == "__main__":
                     target=lambda: sim_shutdown(
                         ls=launch_service,
                         node=node,
-                        clients=[cli1, cli2, cli3, cli4],
+                        clients=[cli1, cli2, cli2_, cli3, cli4],
                         wait_period=SIM_PERIOD,
                         sim_nr=i + 1,
                         exploration_client=exploration_client,

@@ -75,6 +75,22 @@ def generate_launch_description():
                     "kris_robot2_map",
                 ]
             ),
+            ExecuteProcess(
+                cmd=[
+                    "ros2",
+                    "run",
+                    "tf2_ros",
+                    "static_transform_publisher",
+                    "0",
+                    "1.0",
+                    "0",
+                    "0",
+                    "0",
+                    "0",
+                    "global_map",
+                    "kris_robot3_map",
+                ]
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(launch_dir, "mapping_launch.py")),
             ),

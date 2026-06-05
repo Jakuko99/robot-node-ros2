@@ -29,9 +29,10 @@ PLOT_RESULTS: bool = True
 NUM_SIMULATIONS: int = 10
 SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
 CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
-OVERLAP_THRESHOLD: float = 0.5  # threshold for ratio of overlapped vs total cells
-EXPLORATION_THRESHOLD: float = 0.6  # threshold for ratio of explored vs total cells
+OVERLAP_THRESHOLD: float = 0.6  # threshold for ratio of overlapped vs total cells
+EXPLORATION_THRESHOLD: float = 0.7  # threshold for ratio of explored vs total cells
 LOG_FILE: str = "export/training_log.log"
+METRICS_FILE: str = "export/exploration_metrics.csv"
 # -------------------------
 
 
@@ -147,7 +148,14 @@ def sim_shutdown(
             if call_result.result() is not None:
                 ratio: float = call_result.result().overlap_ratio
 
-                if ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 0:
+                with open(METRICS_FILE, "a") as f:
+                    f.write(
+                        f"{sim_nr}-{i},{call_result.result().overlap_ratio:.4f},{call_result.result().explore_ratio:.4f}\n"
+                    )
+
+                if (
+                    ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 1
+                ):  # longer grace period
                     log_message(
                         f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
                     )
@@ -173,6 +181,43 @@ def sim_shutdown(
     ls.shutdown()
 
 
+def plot_metrics(metrics_file: str = METRICS_FILE):
+    try:
+        data: dict[str, list[float]] = {"overlap_ratio": [], "explore_ratio": [], "tick_labels": []}
+        with open(metrics_file, "r") as f:
+            for line in f:
+                tick_str, overlap_str, explore_str = line.strip().split(",")
+                data["tick_labels"].append(tick_str)
+                data["overlap_ratio"].append(float(overlap_str))
+                data["explore_ratio"].append(float(explore_str))
+
+        # Generate plots using matplotlib
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(15, 5))
+        plt.plot(data["overlap_ratio"], label="Overlap Ratio")
+        plt.plot(data["explore_ratio"], label="Explore Ratio")
+        plt.axhline(y=OVERLAP_THRESHOLD, color="r", linestyle="--", label="Overlap Threshold")
+        plt.axhline(
+            y=EXPLORATION_THRESHOLD,
+            color="g",
+            linestyle="--",
+            label="Exploration Threshold",
+        )
+        plt.xlabel("Simulation - interval")
+        plt.xticks(range(len(data["tick_labels"])), data["tick_labels"], rotation=45)
+        plt.ylabel("Ratio")
+        plt.title("Simulation Exploration Metrics Over Time")
+        plt.legend()
+        plt.grid()
+        plt.tight_layout()
+        plt.savefig("export/exploration_metrics.png")
+        log_message("Metrics plot generated and saved to export/exploration_metrics.png")
+
+    except Exception as e:
+        log_message(f"Error generating metrics plot: {e}")
+
+
 if __name__ == "__main__":
     if ONLINE_TRAINING:
         # ROS 2 environment setup
@@ -180,8 +225,9 @@ if __name__ == "__main__":
         node: Node = rclpy.create_node("training_launcher")
         cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
         cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
-        cli3: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
-        cli4: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
+        cli3: Client = node.create_client(SimulationOutput, "/kris_robot3/save_model")
+        cli4: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
+        cli5: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
         exploration_client: Client = node.create_client(
             ExplorationStatus, "/kris_robot1/exploration_progress"
         )
@@ -229,7 +275,7 @@ if __name__ == "__main__":
                     target=lambda: sim_shutdown(
                         ls=launch_service,
                         node=node,
-                        clients=[cli1, cli2, cli3, cli4],
+                        clients=[cli1, cli2, cli3, cli4, cli5],
                         wait_period=SIM_PERIOD,
                         sim_nr=i + 1,
                         exploration_client=exploration_client,
@@ -267,13 +313,17 @@ if __name__ == "__main__":
                             "policy_loss",
                             "avg_reward",
                             "entropy",
-                            "entropy_coef",
-                            "replay_size",
+                            "coverage_gain",
+                            "frontier_gain",
+                            "overlap_growth",
+                            "crowding_penalty",
+                            "redundancy_penalty",
                         ],
                         f"{os.path.splitext(file)[0]}.png",
                         data_label="Epoch",
                     )
 
+                plot_metrics()
                 log_message("Plots generated and saved in export directory.")
 
             except Exception as e:

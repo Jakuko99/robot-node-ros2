@@ -26,10 +26,10 @@ def generate_launch_description():
             cmd=[
                 "ign",
                 "gazebo",
-                # "-s",
+                "-s",
                 "-r",
                 PathJoinSubstitution(["src", "robot_sim", "gazebo", sdf_file]),
-                # "--headless-rendering",
+                "--headless-rendering",
             ],
         )
     )
@@ -94,6 +94,25 @@ def generate_launch_description():
                 "0",
                 "global_map",
                 "kris_robot2_map",
+            ]
+        )
+    )
+
+    launch_description.add_action(
+        ExecuteProcess(
+            cmd=[
+                "ros2",
+                "run",
+                "tf2_ros",
+                "static_transform_publisher",
+                "0",
+                "1.0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "global_map",
+                "kris_robot3_map",
             ]
         )
     )

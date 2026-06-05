@@ -83,6 +83,10 @@ class TrajectoryRecorder:
             }
 
             trajectory_dict["paths"].append(path_dict)
+            trajectory_dict["timeouted_goals"] = [
+                {"x": goal.pose.position.x, "y": goal.pose.position.y}
+                for goal in self.timeouted_goals
+            ]
 
         with open(filename, "w") as f:
             json.dump(trajectory_dict, f, indent=2)
@@ -159,7 +163,12 @@ class TrajectoryRecorder:
 
         cv2.imwrite(filename, map_image)
 
-    def plot_movement(self, filename: str):
+    def plot_movement(
+        self,
+        filename: str,
+        extra_robot: str = None,
+        extra_transform: tuple[float] = None,
+    ):
         end_points_x: list[float] = []
         end_points_y: list[float] = []
         for path in self.trajectory:  # visualize goals
@@ -172,6 +181,14 @@ class TrajectoryRecorder:
             odom_x_values.append(odom.pose.pose.position.x + self.static_transform_x)
             odom_y_values.append(odom.pose.pose.position.y + self.static_transform_y)
 
+        if extra_robot and extra_transform:
+            self.load_odometry(extra_robot)
+            extra_odom_x_values: list[float] = []
+            extra_odom_y_values: list[float] = []
+            for odom in self.odometry_history:
+                extra_odom_x_values.append(odom.pose.pose.position.x + extra_transform[0])
+                extra_odom_y_values.append(odom.pose.pose.position.y + extra_transform[1])
+
         plt.scatter(odom_x_values, odom_y_values, c="red", marker="x", label="Odometry")
         plt.scatter(odom_x_values[0], odom_y_values[0], c="lime", marker="o", label="Start")
         plt.scatter(odom_x_values[-1], odom_y_values[-1], c="purple", marker="o", label="End")
@@ -183,10 +200,49 @@ class TrajectoryRecorder:
             marker="x",
             label="Timeouted Goals",
         )
+
+        if extra_robot and extra_transform:
+            plt.scatter(
+                extra_odom_x_values,
+                extra_odom_y_values,
+                c="blue",
+                marker="x",
+                label="Extra Robot Odometry",
+            )
+            plt.scatter(
+                extra_odom_x_values[0],
+                extra_odom_y_values[0],
+                c="lime",
+                marker="o",
+                label="Extra Start",
+            )
+            plt.scatter(
+                extra_odom_x_values[-1],
+                extra_odom_y_values[-1],
+                c="purple",
+                marker="o",
+                label="Extra End",
+            )
+
         plt.xlabel("X Position")
         plt.ylabel("Y Position")
         plt.title("Robot Trajectory")
-        plt.legend(["Odometry", "Odometry start", "Odometry end", "Goals", "Timeouted Goals"])
+
+        if extra_robot and extra_transform:
+            plt.legend(
+                [
+                    "Odometry",
+                    "Odometry start",
+                    "Odometry end",
+                    "Goals",
+                    "Timeouted Goals",
+                    "Other Robot Odometry",
+                ]
+            )
+
+        else:
+            plt.legend(["Odometry", "Odometry start", "Odometry end", "Goals", "Timeouted Goals"])
+
         plt.tight_layout()
         plt.savefig(filename)
 
@@ -204,6 +260,12 @@ class TrajectoryRecorder:
 
                 self.trajectory.append(path)
 
+            for goal in data.get("timeouted_goals", []):
+                timeouted_goal = PoseStamped()
+                timeouted_goal.pose.position.x = goal["x"]
+                timeouted_goal.pose.position.y = goal["y"]
+                self.timeouted_goals.append(timeouted_goal)
+
     def load_odometry(self, filename: str):
         self.odometry_history.clear()
         with open(filename, "r") as f:
@@ -219,4 +281,8 @@ if __name__ == "__main__":
     recorder = TrajectoryRecorder()
     recorder.load_trajectory("export/kris_robot1_trajectory_2.json")
     recorder.load_odometry("export/kris_robot1_odometry_2.txt")
-    recorder.plot_movement("export/kris_robot1_trajectory_2_plot.png")
+    recorder.plot_movement(
+        "export/kris_robot1_trajectory_2_plot.png",
+        extra_robot="export/kris_robot2_odometry_2.txt",
+        extra_transform=(1.0, 0.0),
+    )

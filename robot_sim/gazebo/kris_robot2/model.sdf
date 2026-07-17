@@ -232,7 +232,7 @@
       </collision>
     </link>
     <link name='lwheel'>
-      <pose>0 0.045 0 -1.65698 1.57079 -0.087623</pose>
+      <pose>0.045 0 0 -1.65698 1.57079 1.57</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>
@@ -332,7 +332,7 @@
       </collision>
     </link>
     <link name='rwheel'>
-      <pose>0 -0.045 0 -1.65698 1.57079 -0.087623</pose>
+      <pose>-0.045 0 0 -1.65698 1.57079 1.57</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>

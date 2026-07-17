@@ -2,7 +2,12 @@
 
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+)
+from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
@@ -33,15 +38,17 @@ def generate_launch_description():
         )
     )
 
-    # Node(
-    #     package="rviz2",
-    #     executable="rviz2",
-    #     name="rviz2",
-    #     output="screen",
-    #     arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
-    #     parameters=[{"use_sim_time": True}],
-    #     remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
-    # )
+    launch_description.add_action(
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2",
+            output="screen",
+            arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
+            parameters=[{"use_sim_time": True}],
+            remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
+        )
+    )
 
     launch_description.add_action(
         ExecuteProcess(  # ros gz topic bridge
@@ -116,7 +123,9 @@ def generate_launch_description():
 
     launch_description.add_action(
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(launch_dir, "mapping_launch.py")),
+            PythonLaunchDescriptionSource(
+                os.path.join(launch_dir, "mapping_launch.py")
+            ),
         )
     )
 

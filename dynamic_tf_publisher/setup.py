@@ -19,8 +19,7 @@ setup(
     maintainer="abdulkadrtr",
     maintainer_email="abdulkadirthe@gmail.com",
     description="ROS2 Merge_Map package",
-    license="TODO: License declaration",
-    tests_require=["pytest"],
+    license="TODO: License declaration",    
     entry_points={
         "console_scripts": [
             "dynamic_tf_publisher = dynamic_tf_publisher.dynamic_tf_publisher:main"

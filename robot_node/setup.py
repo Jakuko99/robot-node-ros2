@@ -23,7 +23,8 @@ setup(
     maintainer="ubuntu",
     maintainer_email="ubuntu@todo.todo",
     description="TODO: Package description",
-    license="Apache-2.0",    
+    license="Apache-2.0",
+    tests_require=["pytest"],
     entry_points={
         "console_scripts": ["robot_node = robot_node.robot_node:main"],
     },

@@ -38,17 +38,17 @@ def generate_launch_description():
         )
     )
 
-    launch_description.add_action(
-        Node(
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2",
-            output="screen",
-            arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
-            parameters=[{"use_sim_time": True}],
-            remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
-        )
-    )
+    # launch_description.add_action(
+    #     Node(
+    #         package="rviz2",
+    #         executable="rviz2",
+    #         name="rviz2",
+    #         output="screen",
+    #         arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
+    #         parameters=[{"use_sim_time": True}],
+    #         remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
+    #     )
+    # )
 
     launch_description.add_action(
         ExecuteProcess(  # ros gz topic bridge

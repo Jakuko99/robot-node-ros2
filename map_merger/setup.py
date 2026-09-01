@@ -20,7 +20,6 @@ setup(
     maintainer_email="abdulkadirthe@gmail.com",
     description="ROS2 Merge_Map package",
     license="TODO: License declaration",
-    tests_require=["pytest"],
     entry_points={
         "console_scripts": ["map_merger = map_merger.map_merger:main"],
     },

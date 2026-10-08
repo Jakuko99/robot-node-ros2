@@ -27,9 +27,9 @@ ONLINE_TRAINING: bool = True
 MODEL_TESTING: bool = True
 RANDOM_ENV: bool = False
 PLOT_RESULTS: bool = True
-NUM_SIMULATIONS: int = 1
-SIM_PERIOD: int = 600  # duration of each simulation run in seconds
-CHECK_INTERVAL: int = 100  # interval in seconds for checking simulation progress
+NUM_SIMULATIONS: int = 4
+SIM_PERIOD: int = 3600  # duration of each simulation run in seconds
+CHECK_INTERVAL: int = 600  # interval in seconds for checking simulation progress
 OVERLAP_THRESHOLD: float = 0.6  # threshold for ratio of overlapped vs total cells
 EXPLORATION_THRESHOLD: float = 0.7  # threshold for ratio of explored vs total cells
 LOG_FILE: str = "export/training_log.log"
@@ -68,11 +68,15 @@ def prepare_launch(
         get_package_share_directory("robot_node"), "launch", "swarm_launch.py"
     )
 
-    if not os.path.exists(sim_launch_file_path) or not os.path.exists(optimizer_file_path):
+    if not os.path.exists(sim_launch_file_path) or not os.path.exists(
+        optimizer_file_path
+    ):
         log_message(f"Error: One or more launch files not found at the specified paths")
         sys.exit(1)
 
-    launch_description: LaunchDescription = load_launch_description(sim_launch_file_path)
+    launch_description: LaunchDescription = load_launch_description(
+        sim_launch_file_path
+    )
     if not random_env:
         log_message(f"Using SDF file for simulation: {sdf_file}")
         launch_description.entities.insert(
@@ -80,7 +84,9 @@ def prepare_launch(
             SetLaunchConfiguration("sdf_file", sdf_file),
         )
 
-    optimizer_launch_description: LaunchDescription = load_launch_description(optimizer_file_path)
+    optimizer_launch_description: LaunchDescription = load_launch_description(
+        optimizer_file_path
+    )
 
     launch_serv.include_launch_description(launch_description)
     launch_serv.include_launch_description(optimizer_launch_description)
@@ -115,7 +121,9 @@ def call_service(
         future: Future = client.call_async(req)
         rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
         if future.result() is not None:
-            log_message(f"Service call to {client.srv_name} succeeded: {future.result().message}")
+            log_message(
+                f"Service call to {client.srv_name} succeeded: {future.result().message}"
+            )
 
         else:
             log_message(f"Service call to {client.srv_name} failed")
@@ -155,7 +163,9 @@ def sim_shutdown(
                     )
 
                 if (
-                    ratio >= OVERLAP_THRESHOLD and call_result.result().success and i > 1
+                    ratio >= OVERLAP_THRESHOLD
+                    and call_result.result().success
+                    and i > 1
                 ):  # longer grace period
                     log_message(
                         f"UPDATE: Overlap ratio {ratio:.2f} exceeds threshold of {OVERLAP_THRESHOLD:.2f}. Ending simulation run {sim_nr} early."
@@ -184,7 +194,11 @@ def sim_shutdown(
 
 def plot_metrics(metrics_file: str = METRICS_FILE):
     try:
-        data: dict[str, list[float]] = {"overlap_ratio": [], "explore_ratio": [], "tick_labels": []}
+        data: dict[str, list[float]] = {
+            "overlap_ratio": [],
+            "explore_ratio": [],
+            "tick_labels": [],
+        }
         with open(metrics_file, "r") as f:
             for line in f:
                 tick_str, overlap_str, explore_str = line.strip().split(",")
@@ -198,7 +212,9 @@ def plot_metrics(metrics_file: str = METRICS_FILE):
         plt.figure(figsize=(15, 5))
         plt.plot(data["overlap_ratio"], label="Overlap Ratio")
         plt.plot(data["explore_ratio"], label="Explore Ratio")
-        plt.axhline(y=OVERLAP_THRESHOLD, color="r", linestyle="--", label="Overlap Threshold")
+        plt.axhline(
+            y=OVERLAP_THRESHOLD, color="r", linestyle="--", label="Overlap Threshold"
+        )
         plt.axhline(
             y=EXPLORATION_THRESHOLD,
             color="g",
@@ -213,7 +229,9 @@ def plot_metrics(metrics_file: str = METRICS_FILE):
         plt.grid()
         plt.tight_layout()
         plt.savefig("export/exploration_metrics.png")
-        log_message("Metrics plot generated and saved to export/exploration_metrics.png")
+        log_message(
+            "Metrics plot generated and saved to export/exploration_metrics.png"
+        )
 
     except Exception as e:
         log_message(f"Error generating metrics plot: {e}")
@@ -228,7 +246,9 @@ if __name__ == "__main__":
         cli2: Client = node.create_client(SimulationOutput, "/kris_robot2/save_model")
         cli3: Client = node.create_client(SimulationOutput, "/kris_robot3/save_model")
         cli4: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
-        cli5: Client = node.create_client(SimulationOutput, "/kris_robot2/export_map")  # backup
+        cli5: Client = node.create_client(
+            SimulationOutput, "/kris_robot2/export_map"
+        )  # backup
         exploration_client: Client = node.create_client(
             ExplorationStatus, "/kris_robot1/exploration_progress"
         )
@@ -266,7 +286,9 @@ if __name__ == "__main__":
                     sdf_file=choice(gibson_files if not MODEL_TESTING else test_files),
                 )
 
-                if RANDOM_ENV:  # generate new random environment for each simulation run
+                if (
+                    RANDOM_ENV
+                ):  # generate new random environment for each simulation run
                     log_message(
                         f"Generating random environment for simulation run {i + 1}/{NUM_SIMULATIONS} ..."
                     )

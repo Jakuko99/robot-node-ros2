@@ -6,8 +6,10 @@ from sim_srvs.srv import SimulationOutput, ExplorationStatus
 
 rclpy.init()
 node: Node = rclpy.create_node("training_launcher")
-cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/save_model")
-cli2: Client = node.create_client(ExplorationStatus, "/kris_robot1/exploration_progress")
+cli1: Client = node.create_client(SimulationOutput, "/kris_robot1/export_map")
+cli2: Client = node.create_client(
+    ExplorationStatus, "/kris_robot1/exploration_progress"
+)
 
 while not cli1.wait_for_service(timeout_sec=1.0):
     print(f"Waiting for service {cli1.srv_name} to become available...")

@@ -43,7 +43,9 @@ class RobotNode(Node):
         self.declare_parameter("collect_offline_data", True)
         self.declare_parameter("offline_dataset_name", "offline_dataset")
 
-        self.namespace: str = self.get_parameter("robot_name").get_parameter_value().string_value
+        self.namespace: str = (
+            self.get_parameter("robot_name").get_parameter_value().string_value
+        )
         self.map_frame_id: str = (
             self.get_parameter("map_frame_id").get_parameter_value().string_value
         )
@@ -51,12 +53,18 @@ class RobotNode(Node):
             self.get_parameter("pheromone_map_topic").get_parameter_value().string_value
         )
         self.goal_process_interval: float = (
-            self.get_parameter("goal_process_interval").get_parameter_value().double_value
+            self.get_parameter("goal_process_interval")
+            .get_parameter_value()
+            .double_value
         )
         self.goal_reach_threshold: float = (
-            self.get_parameter("goal_reach_threshold").get_parameter_value().double_value
+            self.get_parameter("goal_reach_threshold")
+            .get_parameter_value()
+            .double_value
         )
-        self.goal_topic: str = self.get_parameter("goal_topic").get_parameter_value().string_value
+        self.goal_topic: str = (
+            self.get_parameter("goal_topic").get_parameter_value().string_value
+        )
         self.static_transform_x: float = (
             self.get_parameter("static_transform_x").get_parameter_value().double_value
         )
@@ -69,13 +77,19 @@ class RobotNode(Node):
         self.training_interval: float = (
             self.get_parameter("training_interval").get_parameter_value().double_value
         )
-        self.model_path: str = self.get_parameter("model_path").get_parameter_value().string_value
-        self.train: bool = self.get_parameter("train_network").get_parameter_value().bool_value
+        self.model_path: str = (
+            self.get_parameter("model_path").get_parameter_value().string_value
+        )
+        self.train: bool = (
+            self.get_parameter("train_network").get_parameter_value().bool_value
+        )
         self.collect_offline_data: bool = (
             self.get_parameter("collect_offline_data").get_parameter_value().bool_value
         )
         self.offline_dataset_name: str = (
-            self.get_parameter("offline_dataset_name").get_parameter_value().string_value
+            self.get_parameter("offline_dataset_name")
+            .get_parameter_value()
+            .string_value
         )
 
         # ----- Variables -----
@@ -94,7 +108,9 @@ class RobotNode(Node):
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
         )  # correct map QoS profile
-        self.other_goals: dict[str, PoseStamped] = dict()  # track other robots' goals by namespace
+        self.other_goals: dict[str, PoseStamped] = (
+            dict()
+        )  # track other robots' goals by namespace
         self.trajectory_recorder: TrajectoryRecorder = TrajectoryRecorder(
             self.static_transform_x, self.static_transform_y
         )
@@ -109,7 +125,9 @@ class RobotNode(Node):
         self.decision_network: DecisionNetwork = DecisionNetwork(
             self.namespace, pheromone_decay=0.1, train=self.train, parent=self
         )
-        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device: torch.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
         self.decision_network.to(device)
 
         if os.path.exists(self.model_path):  # auto load model if it exists
@@ -129,7 +147,9 @@ class RobotNode(Node):
                 )
                 self.get_logger().info(f"Loaded model from {self.model_path}")
             except RuntimeError as e:
-                self.get_logger().error(f"Error loading model from {self.model_path}: {e}")
+                self.get_logger().error(
+                    f"Error loading model from {self.model_path}: {e}"
+                )
 
         # ----- Timers -----
         self.goal_timer: Timer = self.create_timer(
@@ -154,7 +174,9 @@ class RobotNode(Node):
         self.create_service(
             Trigger,
             f"{self.namespace}/load_model",
-            lambda req, res: self.decision_network.load_model(req, res, self.model_path),
+            lambda req, res: self.decision_network.load_model(
+                req, res, self.model_path
+            ),
         )
 
         # ----- Subscribers -----
@@ -269,7 +291,11 @@ class RobotNode(Node):
         self.current_local_map = msg
 
     def goal_timer_callback(self):
-        if self.current_local_map is None or self.last_odom is None or self.current_map is None:
+        if (
+            self.current_local_map is None
+            or self.last_odom is None
+            or self.current_map is None
+        ):
             return
 
         self._refresh_team_context()
@@ -280,15 +306,21 @@ class RobotNode(Node):
                 self.last_odom,
                 threshold=self.goal_reach_threshold,
             ):
-                self._finalize_collected_transition(done=True, success=True, reason="goal_reached")
+                self._finalize_collected_transition(
+                    done=True, success=True, reason="goal_reached"
+                )
                 self.get_logger().info("Goal reached")
                 self.moving = False
                 return
 
             if (time() - self.goal_publish_time) > self.goal_timeout:
-                self._finalize_collected_transition(done=True, success=False, reason="timeout")
+                self._finalize_collected_transition(
+                    done=True, success=False, reason="timeout"
+                )
                 self.get_logger().warn("Goal timeout exceeded, canceling goal")
-                self.trajectory_recorder.goal_timeout(self.last_goal)  # track timeouted goal
+                self.trajectory_recorder.goal_timeout(
+                    self.last_goal
+                )  # track timeouted goal
                 self.moving = False
 
             return
@@ -298,10 +330,13 @@ class RobotNode(Node):
             if new_goal and not self.goal_collision(new_goal):
                 self._begin_collected_transition(new_goal)
                 self.publish_goal(
-                    new_goal[0] + self.static_transform_x, new_goal[1] + self.static_transform_y
+                    new_goal[0] + self.static_transform_x,
+                    new_goal[1] + self.static_transform_y,
                 )
             else:
-                self.get_logger().warn("No valid goal generated or goal collision detected")
+                self.get_logger().warn(
+                    "No valid goal generated or goal collision detected"
+                )
 
     def training_timer_callback(self):
         metrics = self.decision_network.train_epoch()
@@ -359,7 +394,9 @@ class RobotNode(Node):
             self.get_logger().warn(
                 "Pending offline transition detected; finalizing as interrupted before recording new transition"
             )
-            self._finalize_collected_transition(done=True, success=False, reason="interrupted")
+            self._finalize_collected_transition(
+                done=True, success=False, reason="interrupted"
+            )
 
         self.data_collector.begin_transition(
             current_map=self.current_map,
@@ -370,18 +407,25 @@ class RobotNode(Node):
                 "moving": self.moving,
                 "goal_timeout": self.goal_timeout,
                 "other_goal_count": len(self.other_goals),
-                "team_context": self.decision_network.team_context.detach().cpu().tolist(),
+                "team_context": self.decision_network.team_context.detach()
+                .cpu()
+                .tolist(),
             },
         )
 
     def _finalize_collected_transition(self, done: bool, success: bool, reason: str):
-        if not self.collect_offline_data or not self.data_collector.has_pending_transition:
+        if (
+            not self.collect_offline_data
+            or not self.data_collector.has_pending_transition
+        ):
             return
 
         if self.current_map is None or self.last_odom is None:
             return
 
-        local_map = self.decision_network.get_local_patch(self.current_map, self.last_odom)
+        local_map = self.decision_network.get_local_patch(
+            self.current_map, self.last_odom
+        )
         reward = self.decision_network.feedback_layer.calculate_reward(
             self.current_map,
             self.last_odom,
@@ -398,7 +442,9 @@ class RobotNode(Node):
                 metadata={
                     "reason": reason,
                     "moving": self.moving,
-                    "team_context": self.decision_network.team_context.detach().cpu().tolist(),
+                    "team_context": self.decision_network.team_context.detach()
+                    .cpu()
+                    .tolist(),
                 },
             )
 
@@ -432,9 +478,14 @@ class RobotNode(Node):
         topics: list[str] = [topic[0] for topic in self.get_topic_names_and_types()]
 
         for topic in topics:
-            if topic.endswith("/navigate_to_pose") and topic.split("/")[1] != self.namespace:
+            if (
+                topic.endswith("/navigate_to_pose")
+                and topic.split("/")[1] != self.namespace
+            ):
                 other_robot_namespace: str = topic.split("/")[1]
-                if other_robot_namespace in [sub.topic.split("/")[1] for sub in self.goal_sub]:
+                if other_robot_namespace in [
+                    sub.topic.split("/")[1] for sub in self.goal_sub
+                ]:
                     continue  # already subscribed to this robot's goal topic
 
                 self.get_logger().info(f"Discovered new robot: {other_robot_namespace}")
@@ -442,7 +493,9 @@ class RobotNode(Node):
                     self.create_subscription(
                         PoseStamped,
                         f"/{other_robot_namespace}/{self.goal_topic}",
-                        lambda msg, ns=other_robot_namespace: self.other_goal_callback(msg, ns),
+                        lambda msg, ns=other_robot_namespace: self.other_goal_callback(
+                            msg, ns
+                        ),
                         10,
                     )
                 )

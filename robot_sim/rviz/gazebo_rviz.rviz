@@ -14,8 +14,9 @@ Panels:
         - /Map2
         - /Map3
         - /Path3
+        - /Path4
       Splitter Ratio: 0.5
-    Tree Height: 690
+    Tree Height: 726
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -114,6 +115,12 @@ Visualization Manager:
           Value: true
         kris_robot3_odom:
           Value: true
+        kris_robot4_base_link:
+          Value: true
+        kris_robot4_map:
+          Value: true
+        kris_robot4_odom:
+          Value: true
       Marker Scale: 1
       Name: TF
       Show Arrows: true
@@ -132,6 +139,10 @@ Visualization Manager:
           kris_robot3_map:
             kris_robot3_odom:
               kris_robot3_base_link:
+                {}
+          kris_robot4_map:
+            kris_robot4_odom:
+              kris_robot4_base_link:
                 {}
       Update Interval: 0
       Value: true
@@ -335,6 +346,34 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /kris_robot3/plan
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 120; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /kris_robot4/plan
       Value: true
   Enabled: true
   Global Options:

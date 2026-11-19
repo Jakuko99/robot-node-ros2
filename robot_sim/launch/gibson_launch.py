@@ -38,17 +38,17 @@ def generate_launch_description():
         )
     )
 
-    # launch_description.add_action(
-    #     Node(
-    #         package="rviz2",
-    #         executable="rviz2",
-    #         name="rviz2",
-    #         output="screen",
-    #         arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
-    #         parameters=[{"use_sim_time": True}],
-    #         remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
-    #     )
-    # )
+    launch_description.add_action(
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2",
+            output="screen",
+            arguments=["-d", "src/robot_sim/rviz/gazebo_rviz.rviz"],
+            parameters=[{"use_sim_time": True}],
+            remappings=[("/goal_pose", "/kris_robot1/goal_pose")],
+        )
+    )
 
     launch_description.add_action(
         ExecuteProcess(  # ros gz topic bridge
@@ -120,6 +120,25 @@ def generate_launch_description():
             ]
         )
     )
+
+    launch_description.add_action(
+            ExecuteProcess(
+                cmd=[
+                    "ros2",
+                    "run",
+                    "tf2_ros",
+                    "static_transform_publisher",
+                    "1.0",
+                    "1.0",
+                    "0",
+                    "0",
+                    "0",
+                    "0",
+                    "global_map",
+                    "kris_robot4_map",
+                ]
+            )
+        )
 
     launch_description.add_action(
         IncludeLaunchDescription(

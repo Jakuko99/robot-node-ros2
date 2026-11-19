@@ -12,7 +12,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(launch_dir, "navigation_launch.py")),
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "navigation_launch.py")
+                ),
                 launch_arguments={
                     "namespace": "kris_robot1",
                     "use_sim_time": "true",
@@ -22,7 +24,9 @@ def generate_launch_description():
                 }.items(),
             ),
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(launch_dir, "navigation_launch.py")),
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "navigation_launch.py")
+                ),
                 launch_arguments={
                     "namespace": "kris_robot2",
                     "use_sim_time": "true",
@@ -32,12 +36,26 @@ def generate_launch_description():
                 }.items(),
             ),
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(launch_dir, "navigation_launch.py")),
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "navigation_launch.py")
+                ),
                 launch_arguments={
                     "namespace": "kris_robot3",
                     "use_sim_time": "true",
                     "autostart": "true",
                     "params_file": f"{config_dir}/nav2_params3.yaml",
+                    "use_lifecycle_mgr": "true",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(launch_dir, "navigation_launch.py")
+                ),
+                launch_arguments={
+                    "namespace": "kris_robot4",
+                    "use_sim_time": "true",
+                    "autostart": "true",
+                    "params_file": f"{config_dir}/nav2_params4.yaml",
                     "use_lifecycle_mgr": "true",
                 }.items(),
             ),

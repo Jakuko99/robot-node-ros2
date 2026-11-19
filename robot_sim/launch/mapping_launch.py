@@ -36,6 +36,16 @@ def generate_launch_description():
                 ],
             ),
             Node(
+                package="slam_toolbox",
+                executable="async_slam_toolbox_node",
+                name="slam_toolbox",
+                output="screen",
+                parameters=["src/robot_sim/config/slam_toolbox_params3.yaml"],
+                remappings=[
+                    ("/map", "/kris_robot4/map"),
+                ],
+            ),
+            Node(
                 package="dynamic_tf_publisher",
                 executable="dynamic_tf_publisher",
                 name="dynamic_tf_publisher_robot1",
@@ -84,6 +94,22 @@ def generate_launch_description():
                 ],
             ),
             Node(
+                package="dynamic_tf_publisher",
+                executable="dynamic_tf_publisher",
+                name="dynamic_tf_publisher_robot4",
+                output="screen",
+                parameters=[
+                    {
+                        "publish_rate": 2.0,
+                        "frame_id": "global_map",
+                        "child_frame_id": "kris_robot4_map",
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                    }
+                ],
+            ),
+            Node(
                 name="kris_robot1_merger",
                 package="map_merger",
                 executable="map_merger",
@@ -119,6 +145,19 @@ def generate_launch_description():
                         "robot_name": "kris_robot3",
                         "merge_topic_name": "pheromones",
                         "map_frame_id": "kris_robot3_pheromone_map",
+                    }
+                ],
+            ),
+            Node(
+                name="kris_robot4_merger",
+                package="map_merger",
+                executable="map_merger",
+                output="screen",
+                parameters=[
+                    {
+                        "robot_name": "kris_robot4",
+                        "merge_topic_name": "pheromones",
+                        "map_frame_id": "kris_robot4_pheromone_map",
                     }
                 ],
             ),
